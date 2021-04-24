@@ -97,6 +97,13 @@ func TestRun(t *testing.T) {
 			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5002"}, secret, log.Printf)
 		}()
 
+		// Wait for the server to start.
+		conn, err := net.DialTimeout("tcp", "localhost:5002", 10*time.Millisecond)
+		if err != nil {
+			t.Fatalf("Server could not be reached: %v", err)
+		}
+		conn.Close()
+
 		baseUrl := "http://localhost:5002"
 
 		for _, path := range []string{
