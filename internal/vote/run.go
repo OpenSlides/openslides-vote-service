@@ -11,6 +11,7 @@ import (
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	messageBusRedis "github.com/OpenSlides/openslides-autoupdate-service/pkg/redis"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
+	"github.com/OpenSlides/openslides-vote-service/internal/backends/postgres"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/redis"
 )
 
@@ -102,7 +103,7 @@ func defaultEnv(environment []string) map[string]string {
 		"VOTE_HOST":         "",
 		"VOTE_PORT":         "9013",
 		"VOTE_BACKEND_FAST": "redis",
-		"VOTE_BACKEND_LONG": "redis", // TODO: postgres
+		"VOTE_BACKEND_LONG": "postgres",
 		"VOTE_REDIS_HOST":   "localhost",
 		"VOTE_REDIS_PORT":   "6379",
 
@@ -119,6 +120,13 @@ func defaultEnv(environment []string) map[string]string {
 		"MESSAGE_BUS_HOST": "localhost",
 		"MESSAGE_BUS_PORT": "6379",
 		"REDIS_TEST_CONN":  "true",
+
+		// TODO: Add to readme.
+		"VOTE_DATABASE_USER":     "postgres",
+		"VOTE_DATABASE_PASSWORD": "password",
+		"VOTE_DATABASE_HOST":     "localhost",
+		"VOTE_DATABASE_PORT":     "5432",
+		"VOTE_DATABASE_NAME":     "vote",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
 	}
@@ -270,16 +278,34 @@ func buildBackend(ctx context.Context, log func(string, ...interface{}), env map
 		return memory.New(), nil
 	case "redis":
 		addr := env["VOTE_REDIS_HOST"] + ":" + env["VOTE_REDIS_PORT"]
-		b := redis.New(addr)
-		b.Wait(ctx, log)
+		r := redis.New(addr)
+		r.Wait(ctx, log)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 
-		return b, nil
+		return r, nil
 
-	case "long":
-		return nil, errors.New("TODO")
+	case "postgres":
+		addr := fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s",
+			env["VOTE_DATABASE_USER"],
+			env["VOTE_DATABASE_PASSWORD"],
+			env["VOTE_DATABASE_HOST"],
+			env["VOTE_DATABASE_PORT"],
+			env["VOTE_DATABASE_NAME"],
+		)
+		p, err := postgres.New(ctx, addr)
+		if err != nil {
+			return nil, fmt.Errorf("creating postgres connection pool: %w", err)
+		}
+		defer p.Close()
+
+		p.Wait(ctx, nil)
+		if err := p.Migrate(context.Background()); err != nil {
+			return nil, fmt.Errorf("creating shema: %w", err)
+		}
+		return p, nil
 
 	default:
 		return nil, fmt.Errorf("unknown backend %s", name)
