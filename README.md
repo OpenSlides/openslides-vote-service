@@ -125,6 +125,13 @@ The Service uses the following environment variables:
 * `VOTE_REDIS_HOST`: Host of the redis used for the fast backend and the vote
   config. Default is `localhost'.
 * `VOTE_REDIS_PORT`: Port of the redis host. Default is `6379`.
+* `VOTE_DATABASE_USER`: Username of the postgres database for the long running
+  backend. Default is `postgres`.
+* `VOTE_DATABASE_PASSWORD`: Password for the postgres database. Default is
+  `password`.
+* `VOTE_DATABASE_HOST`: Host of the postgres database. Default is `localhost`.
+* `VOTE_DATABASE_PORT`: Port of the postgres database. Default is `5432`.
+* `VOTE_DATABASE_NAME`: Name of the postgres database. Default is `vote`.
 * `AUTH`: Sets the type of the auth service. `fake` (default) or `ticket`.
 * `AUTH_HOST`: Host of the auth service. The default is `localhost`.
 * `AUTH_PORT`: Port of the auth service. The default is `9004`.
