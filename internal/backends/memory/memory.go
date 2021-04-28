@@ -29,6 +29,10 @@ func New() *Backend {
 	return &b
 }
 
+func (b *Backend) String() string {
+	return "memory"
+}
+
 // Start opens opens a poll.
 func (b *Backend) Start(ctx context.Context, pollID int) error {
 	b.mu.Lock()

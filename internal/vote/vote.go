@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
 
 // Vote holds the state of the service.
@@ -33,7 +34,12 @@ func New(fast, long Backend, ds datastore.Getter) *Vote {
 // This function is idempotence. If you call it with the same input, you will
 // get the same output. This means, that when a poll is stopped, Create() will
 // not throw an error.
-func (v *Vote) Create(ctx context.Context, pollID int) error {
+func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
+	log.Debug("Receive create event for poll %d", pollID)
+	defer func() {
+		log.Debug("End create event with error: %v", err)
+	}()
+
 	fetcher := datastore.NewFetcher(v.ds)
 	var config pollConfig
 	fetcher.Object(ctx, &config, "poll/%d", pollID)
@@ -43,6 +49,8 @@ func (v *Vote) Create(ctx context.Context, pollID int) error {
 		}
 	}
 
+	log.Debug("Preload cache. Received keys: %v", fetcher.Keys())
+
 	if err := fetcher.Error(); err != nil {
 		return fmt.Errorf("fetching poll data: %w", err)
 	}
@@ -51,6 +59,7 @@ func (v *Vote) Create(ctx context.Context, pollID int) error {
 	if config.Backend == "fast" {
 		backend = v.fastBackend
 	}
+	log.Debug("Used backend: %v", backend)
 
 	if err := backend.Start(ctx, pollID); err != nil {
 		return fmt.Errorf("starting poll in the backend: %w", err)
@@ -63,7 +72,12 @@ func (v *Vote) Create(ctx context.Context, pollID int) error {
 //
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
-func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) error {
+func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
+	log.Debug("Receive stop event for poll %d", pollID)
+	defer func() {
+		log.Debug("End stop event with error: %v", err)
+	}()
+
 	fetcher := datastore.NewFetcher(v.ds)
 	var config pollConfig
 	fetcher.Object(ctx, &config, "poll/%d", pollID)
@@ -79,6 +93,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) error {
 	if config.Backend == "fast" {
 		backend = v.fastBackend
 	}
+	log.Debug("Used backend: %v", backend)
 
 	objects, err := backend.Stop(ctx, pollID)
 	if err != nil {
@@ -103,7 +118,12 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) error {
 }
 
 // Clear removes all knowlage of a poll.
-func (v *Vote) Clear(ctx context.Context, pollID int) error {
+func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
+	log.Debug("Receive clear event for poll %d", pollID)
+	defer func() {
+		log.Debug("End clear event with error: %v", err)
+	}()
+
 	if err := v.fastBackend.Clear(ctx, pollID); err != nil {
 		return fmt.Errorf("clearing the config: %w", err)
 	}
@@ -115,7 +135,12 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 }
 
 // Vote validates and saves the vote.
-func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
+func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (err error) {
+	log.Debug("Receive vote event for poll %d from user %d", pollID, requestUser)
+	defer func() {
+		log.Debug("End vote event with error: %v", err)
+	}()
+
 	fetcher := datastore.NewFetcher(v.ds)
 	var poll pollConfig
 	fetcher.Object(ctx, &poll, "poll/%d", pollID)
@@ -123,6 +148,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	if err := fetcher.Error(); err != nil {
 		return fmt.Errorf("fetching poll data: %w", err)
 	}
+	log.Debug("Poll config: %v", poll)
 
 	if !isPresent(poll.MeetingID, presentMeetings) {
 		return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", poll.MeetingID)}
@@ -135,6 +161,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	if vote.UserID == 0 {
 		vote.UserID = requestUser
 	}
+	log.Debug("Ballot: %v", vote)
 
 	if err := vote.validate(poll); err != nil {
 		return fmt.Errorf("validating vote: %w", err)
@@ -144,6 +171,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	if poll.Backend == "fast" {
 		backend = v.fastBackend
 	}
+	log.Debug("Used backend: %v", backend)
 
 	if vote.UserID != requestUser {
 		delegation := fetcher.Int(ctx, "user/%d/vote_delegated_$%d_to_id", vote.UserID, poll.MeetingID)
@@ -157,6 +185,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		if delegation != requestUser {
 			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", vote.UserID)}
 		}
+		log.Debug("User %d is voting for user %d", requestUser, vote.UserID)
 	}
 
 	groupIDs := fetcher.Ints(ctx, "user/%d/group_$%d_ids", vote.UserID, poll.MeetingID)
@@ -181,24 +210,24 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
-	voteWeight := 1_000_000
-
+	voteWeight := "1.000000"
 	if voteWeightConfig {
-		voteWeight = fetcher.Int(ctx, "user/%d/vote_weight_$%d", vote.UserID, poll.MeetingID)
+		voteWeight = fetcher.String(ctx, "user/%d/vote_weight_$%d", vote.UserID, poll.MeetingID)
 		if err := fetcher.Error(); err != nil {
 			var errNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching groups of user %d in meeting %d: %v", vote.UserID, poll.MeetingID, err)
+				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %v", vote.UserID, poll.MeetingID, err)
 			}
-			voteWeight = 1_000_000
+			voteWeight = "1.000000"
 		}
 	}
+	log.Debug("Using voteWeight %s", voteWeight)
 
 	voteData := struct {
 		RequestUser int             `json:"request_user_id,omitempty"`
 		VoteUser    int             `json:"vote_user_id,omitempty"`
 		Value       json.RawMessage `json:"value"`
-		Weight      int             `json:"weight"`
+		Weight      string          `json:"weight"`
 	}{
 		requestUser,
 		vote.UserID,
@@ -215,6 +244,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	if err != nil {
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
+	log.Debug("Saving vote date: %s", bs)
 
 	if err := backend.Vote(ctx, pollID, vote.UserID, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
@@ -262,6 +292,8 @@ type Backend interface {
 	// Clear has to remove all data. It can be called on a started or stopped or
 	// non existing poll.
 	Clear(ctx context.Context, pollID int) error
+
+	fmt.Stringer
 }
 
 type pollConfig struct {
@@ -279,9 +311,25 @@ type pollConfig struct {
 	Options       []int  `json:"option_ids"`
 }
 
+func (p pollConfig) String() string {
+	bs, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Sprintf("Error decoding pollConfig: %v", err)
+	}
+	return string(bs)
+}
+
 type ballot struct {
 	UserID int         `json:"user_id"`
 	Value  ballotValue `json:"value"`
+}
+
+func (v ballot) String() string {
+	bs, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("Error decoding ballot: %v", err)
+	}
+	return string(bs)
 }
 
 func (v *ballot) validate(poll pollConfig) error {
@@ -314,7 +362,7 @@ func (v *ballot) validate(poll pollConfig) error {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
 			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Your answer is invalid")
+				return InvalidVote("Global vote %s is not enabled", v.Value.str)
 			}
 			return voteIsValid
 
@@ -322,7 +370,7 @@ func (v *ballot) validate(poll pollConfig) error {
 			var sumAmount int
 			for optionID, amount := range v.Value.optionAmount {
 				if amount < 0 {
-					return InvalidVote("Your answer for option %d has to be >= 0", optionID)
+					return InvalidVote("Your vote for option %d has to be >= 0", optionID)
 				}
 
 				if !allowedOptions[optionID] {
@@ -339,7 +387,7 @@ func (v *ballot) validate(poll pollConfig) error {
 			return voteIsValid
 
 		default:
-			return MessageError{ErrInvalid, "Your answer is invalid"}
+			return MessageError{ErrInvalid, "Your vote has a wrong format"}
 		}
 
 	case "YN", "YNA":
@@ -347,7 +395,7 @@ func (v *ballot) validate(poll pollConfig) error {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
 			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Your answer is invalid")
+				return InvalidVote("Global vote %s is not enabled", v.Value.str)
 			}
 			return voteIsValid
 
@@ -365,11 +413,11 @@ func (v *ballot) validate(poll pollConfig) error {
 			return voteIsValid
 
 		default:
-			return InvalidVote("Your answer is invalid")
+			return InvalidVote("Your vote has a wrong format")
 		}
 
 	default:
-		return InvalidVote("Your answer is invalid")
+		return InvalidVote("Your vote has a wrong format")
 	}
 }
 
@@ -382,8 +430,8 @@ type ballotValue struct {
 	original json.RawMessage
 }
 
-func (v *ballotValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.original)
+func (v ballotValue) MarshalJSON() ([]byte, error) {
+	return v.original, nil
 }
 
 func (v *ballotValue) UnmarshalJSON(b []byte) error {

@@ -12,6 +12,7 @@ import (
 	messageBusRedis "github.com/OpenSlides/openslides-autoupdate-service/pkg/redis"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/redis"
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
 
 const authDebugKey = "auth-dev-key"
@@ -25,12 +26,12 @@ const authDebugKey = "auth-dev-key"
 //
 // log messages are written with the function given in the argument log. It has
 // the signature from log.Printf().
-func Run(ctx context.Context, environment []string, secret func(name string) (string, error), log func(format string, v ...interface{})) error {
+func Run(ctx context.Context, environment []string, secret func(name string) (string, error)) error {
 	env := defaultEnv(environment)
 
-	errHandler := buildErrHandler(log)
+	errHandler := buildErrHandler()
 
-	messageBus, err := buildMessageBus(env, log)
+	messageBus, err := buildMessageBus(env)
 	if err != nil {
 		return fmt.Errorf("building message bus: %w", err)
 	}
@@ -45,19 +46,18 @@ func Run(ctx context.Context, environment []string, secret func(name string) (st
 		secret,
 		messageBus,
 		ctx.Done(),
-		log,
 		errHandler,
 	)
 	if err != nil {
 		return fmt.Errorf("building auth: %w", err)
 	}
 
-	fastBackend, err := buildBackend(ctx, log, env, env["VOTE_BACKEND_FAST"])
+	fastBackend, err := buildBackend(ctx, env, env["VOTE_BACKEND_FAST"])
 	if err != nil {
 		return fmt.Errorf("building fast backend: %w", err)
 	}
 
-	longBackend, err := buildBackend(ctx, log, env, env["VOTE_BACKEND_LONG"])
+	longBackend, err := buildBackend(ctx, env, env["VOTE_BACKEND_LONG"])
 	if err != nil {
 		return fmt.Errorf("building long backend: %w", err)
 	}
@@ -65,10 +65,10 @@ func Run(ctx context.Context, environment []string, secret func(name string) (st
 	service := New(fastBackend, longBackend, ds)
 
 	mux := http.NewServeMux()
-	handleCreate(mux, log, service)
-	handleStop(mux, log, service)
-	handleClear(mux, log, service)
-	handleVote(mux, log, service, auth)
+	handleCreate(mux, service)
+	handleStop(mux, service)
+	handleClear(mux, service)
+	handleVote(mux, service, auth)
 	handleHealth(mux)
 
 	listenAddr := ":" + env["VOTE_PORT"]
@@ -87,7 +87,7 @@ func Run(ctx context.Context, environment []string, secret func(name string) (st
 		wait <- nil
 	}()
 
-	log("Listen on %s", listenAddr)
+	log.Info("Listen on %s", listenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		return fmt.Errorf("HTTP Server failed: %v", err)
 	}
@@ -155,13 +155,13 @@ func secret(name string, getSecret func(name string) (string, error), dev bool) 
 	return s, nil
 }
 
-func buildErrHandler(log func(format string, v ...interface{})) func(err error) {
+func buildErrHandler() func(err error) {
 	return func(err error) {
 		var closing interface {
 			Closing()
 		}
 		if !errors.As(err, &closing) {
-			log("Error: %v", err)
+			log.Info("Error: %v", err)
 		}
 	}
 }
@@ -180,13 +180,12 @@ func buildAuth(
 	getSecret func(name string) (string, error),
 	receiver auth.LogoutEventer,
 	closed <-chan struct{},
-	log func(format string, v ...interface{}),
 	errHandler func(error),
 ) (authenticater, error) {
 	method := env["AUTH"]
 	switch method {
 	case "ticket":
-		log("Auth Method: ticket")
+		log.Info("Auth Method: ticket")
 		tokenKey, err := secret("auth_token_key", getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
 		if err != nil {
 			return nil, fmt.Errorf("getting token secret: %w", err)
@@ -198,7 +197,7 @@ func buildAuth(
 		}
 
 		if tokenKey == authDebugKey || cookieKey == authDebugKey {
-			log("Auth with debug key")
+			log.Info("Auth with debug key")
 		}
 
 		protocol := env["AUTH_PROTOCOL"]
@@ -206,12 +205,12 @@ func buildAuth(
 		port := env["AUTH_PORT"]
 		url := protocol + "://" + host + ":" + port
 
-		log("Auth Service: %s", url)
+		log.Info("Auth Service: %s", url)
 
 		return auth.New(url, receiver, closed, errHandler, []byte(tokenKey), []byte(cookieKey))
 
 	case "fake":
-		log("Auth Method: FakeAuth (User ID 1 for all requests)")
+		log.Info("Auth Method: FakeAuth (User ID 1 for all requests)")
 		return authStub(1), nil
 
 	default:
@@ -238,9 +237,9 @@ type messageBus interface {
 	auth.LogoutEventer
 }
 
-func buildMessageBus(env map[string]string, log func(format string, v ...interface{})) (messageBus, error) {
+func buildMessageBus(env map[string]string) (messageBus, error) {
 	serviceName := env["MESSAGING"]
-	log("Messaging Service: %s", serviceName)
+	log.Info("Messaging Service: %s", serviceName)
 
 	var conn messageBusRedis.Connection
 	switch serviceName {
@@ -264,14 +263,14 @@ func buildMessageBus(env map[string]string, log func(format string, v ...interfa
 	return &messageBusRedis.Redis{Conn: conn}, nil
 }
 
-func buildBackend(ctx context.Context, log func(string, ...interface{}), env map[string]string, name string) (Backend, error) {
+func buildBackend(ctx context.Context, env map[string]string, name string) (Backend, error) {
 	switch name {
 	case "memory":
 		return memory.New(), nil
 	case "redis":
 		addr := env["VOTE_REDIS_HOST"] + ":" + env["VOTE_REDIS_PORT"]
 		b := redis.New(addr)
-		b.Wait(ctx, log)
+		b.Wait(ctx)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}

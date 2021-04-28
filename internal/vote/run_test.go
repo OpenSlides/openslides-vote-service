@@ -1,14 +1,17 @@
 package vote_test
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	goLogger "log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
 )
 
@@ -16,12 +19,13 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	log := testLog{}
+	logmock := testLog{}
+	log.SetInfoLogger(goLogger.New(&logmock, "", 0))
 
 	t.Run("Start Server with default port", func(t *testing.T) {
 		var runErr error
 		go func() {
-			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory"}, secret, log.Printf)
+			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory"}, secret)
 		}()
 
 		_, err := net.DialTimeout("tcp", "localhost:9013", 10*time.Millisecond)
@@ -33,15 +37,15 @@ func TestRun(t *testing.T) {
 			t.Errorf("Vote.Run retunred unexpected error: %v", err)
 		}
 
-		if got := log.LastMSG(); got != "Listen on :9013" {
-			t.Errorf("Expected listen on message, got: %s", got)
+		if got := logmock.LastMSG(); got != "Listen on :9013" {
+			t.Errorf("Expected listen on message, got: `%s`", got)
 		}
 	})
 
 	t.Run("Start Server with given port", func(t *testing.T) {
 		var err error
 		go func() {
-			err = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5000"}, secret, log.Printf)
+			err = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5000"}, secret)
 		}()
 
 		if _, err := net.DialTimeout("tcp", "localhost:5000", 10*time.Millisecond); err != nil {
@@ -52,7 +56,7 @@ func TestRun(t *testing.T) {
 			t.Errorf("Vote.Run retunred unexpected error: %v", err)
 		}
 
-		if got := log.LastMSG(); got != "Listen on :5000" {
+		if got := logmock.LastMSG(); got != "Listen on :5000" {
 			t.Errorf("Expected listen on message, got: %s", got)
 		}
 	})
@@ -63,7 +67,7 @@ func TestRun(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			// Use an individuel port because the default port could be used by other tests.
-			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5001"}, secret, log.Printf)
+			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5001"}, secret)
 			close(done)
 		}()
 
@@ -94,7 +98,7 @@ func TestRun(t *testing.T) {
 		var runErr error
 		go func() {
 			// Use an individuel port because the default port could be used by other tests.
-			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5002"}, secret, log.Printf)
+			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5002"}, secret)
 		}()
 
 		baseUrl := "http://localhost:5002"
@@ -126,14 +130,16 @@ func TestRun(t *testing.T) {
 
 type testLog struct {
 	mu      sync.Mutex
+	buf     bytes.Buffer
 	lastMSG string
 }
 
-func (l *testLog) Printf(format string, a ...interface{}) {
+func (l *testLog) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.lastMSG = fmt.Sprintf(format, a...)
+	l.lastMSG = strings.TrimSpace(string(p))
+	return l.buf.Write(p)
 }
 
 func (l *testLog) LastMSG() string {

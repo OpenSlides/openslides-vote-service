@@ -26,7 +26,7 @@ func TestHandleCreate(t *testing.T) {
 
 	url := "/internal/vote/create"
 	mux := http.NewServeMux()
-	handleCreate(mux, noLog, creater)
+	handleCreate(mux, creater)
 
 	t.Run("Get request", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -141,7 +141,7 @@ func TestHandleStop(t *testing.T) {
 
 	url := "/internal/vote/stop"
 	mux := http.NewServeMux()
-	handleStop(mux, noLog, stopper)
+	handleStop(mux, stopper)
 
 	t.Run("Get request", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -219,7 +219,7 @@ func TestHandleClear(t *testing.T) {
 
 	url := "/internal/vote/clear"
 	mux := http.NewServeMux()
-	handleClear(mux, noLog, clearer)
+	handleClear(mux, clearer)
 
 	t.Run("Get request", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func TestHandleVote(t *testing.T) {
 
 	url := "/system/vote"
 	mux := http.NewServeMux()
-	handleVote(mux, noLog, voter, auther)
+	handleVote(mux, voter, auther)
 
 	t.Run("Get request", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -464,5 +464,3 @@ func TestHandleHealth(t *testing.T) {
 		t.Errorf("Got body `%s`, expected `%s`", got, expect)
 	}
 }
-
-func noLog(string, ...interface{}) {}

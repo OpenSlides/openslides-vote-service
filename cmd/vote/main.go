@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	golog "log"
 	"os"
 	"os/signal"
 
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
 )
 
@@ -15,8 +16,12 @@ func main() {
 	ctx, cancel := interruptContext()
 	defer cancel()
 
-	if err := vote.Run(ctx, os.Environ(), secret, log.Printf); err != nil {
-		log.Printf("Error: %v", err)
+	if os.Getenv("OPENSLIDES_DEVELOPMENT") != "" {
+		log.SetDebugLogger(golog.New(os.Stderr, "DEBUG ", golog.LstdFlags))
+	}
+
+	if err := vote.Run(ctx, os.Environ(), secret); err != nil {
+		log.Info("Error: %v", err)
 	}
 }
 
