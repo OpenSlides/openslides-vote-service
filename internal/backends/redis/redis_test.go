@@ -34,7 +34,7 @@ func TestImplementBackendInterface(t *testing.T) {
 	defer close()
 
 	r := redis.New("localhost:" + port)
-	r.Wait(context.Background(), nil)
+	r.Wait(context.Background())
 	t.Logf("Redis port: %s", port)
 
 	test.Backend(t, r)

@@ -44,6 +44,10 @@ func New(ctx context.Context, url string) (*Backend, error) {
 	return &b, nil
 }
 
+func (b *Backend) String() string {
+	return "postgres"
+}
+
 // Wait blocks until a connection to postgres can be established.
 func (b *Backend) Wait(ctx context.Context, log func(format string, a ...interface{})) {
 	for ctx.Err() == nil {

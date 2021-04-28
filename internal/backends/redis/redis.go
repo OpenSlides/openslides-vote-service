@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/gomodule/redigo/redis"
 )
 
@@ -41,7 +42,7 @@ func New(addr string) *Backend {
 }
 
 // Wait blocks until a connection to redis can be established.
-func (b *Backend) Wait(ctx context.Context, log func(format string, a ...interface{})) {
+func (b *Backend) Wait(ctx context.Context) {
 	for ctx.Err() == nil {
 		conn := b.pool.Get()
 		_, err := conn.Do("PING")
@@ -49,11 +50,13 @@ func (b *Backend) Wait(ctx context.Context, log func(format string, a ...interfa
 		if err == nil {
 			return
 		}
-		if log != nil {
-			log("Waiting for redis: %v", err)
-		}
+		log.Info("Waiting for redis: %v", err)
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func (b *Backend) String() string {
+	return "redis"
 }
 
 // Start starts the poll.
@@ -63,6 +66,7 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 
 	sKey := fmt.Sprintf(keyState, pollID)
 
+	log.Debug("Redis: SETNX %s 1", sKey)
 	if _, err := conn.Do("SETNX", sKey, 1); err != nil {
 		return fmt.Errorf("set state key to 1: %w", err)
 	}
@@ -107,10 +111,13 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
+	log.Debug("Redis: EVAL '%s' 2 %s %s %d %s", luaVoteScript, sKey, vKey, userID, object)
 	result, err := redis.Int(conn.Do("EVAL", luaVoteScript, 2, sKey, vKey, userID, object))
 	if err != nil {
 		return fmt.Errorf("executing luaVoteScript: %w", err)
 	}
+
+	log.Debug("Redis: Returned %d", result)
 	switch result {
 	case 0:
 		return nil
@@ -135,6 +142,7 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
+	log.Debug("SET %s 2 XX", sKey)
 	_, err := redis.String(conn.Do("SET", sKey, "2", "XX"))
 	if err != nil {
 		if err == redis.ErrNil {
@@ -143,9 +151,17 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 		return nil, fmt.Errorf("set key %s to 2: %w", sKey, err)
 	}
 
+	log.Debug("REDIS: HVALS %s", vKey)
 	voteObjects, err := redis.ByteSlices(conn.Do("HVALS", vKey))
 	if err != nil {
 		return nil, fmt.Errorf("getting vote objects from %s: %w", vKey, err)
+	}
+	if log.IsDebug() {
+		results := make([]string, len(voteObjects))
+		for i := range voteObjects {
+			results[i] = string(voteObjects[i])
+		}
+		log.Debug("Redis: Recieved %v", results)
 	}
 	return voteObjects, nil
 }
@@ -158,6 +174,7 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
+	log.Debug("REDIS: DEL %s %s", vKey, sKey)
 	if _, err := conn.Do("DEL", vKey, sKey); err != nil {
 		return fmt.Errorf("removing keys: %w", err)
 	}
