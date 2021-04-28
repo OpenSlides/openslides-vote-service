@@ -30,13 +30,13 @@ func handleCreate(mux *http.ServeMux, create creater) {
 				return
 			}
 
-			pid, err := pollID(r)
+			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
 				return
 			}
 
-			if err := create.Create(r.Context(), pid); err != nil {
+			if err := create.Create(r.Context(), id); err != nil {
 				handleError(w, err, true)
 				return
 			}
@@ -58,13 +58,13 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			pid, err := pollID(r)
+			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
 				return
 			}
 
-			if err := stop.Stop(r.Context(), pid, w); err != nil {
+			if err := stop.Stop(r.Context(), id, w); err != nil {
 				handleError(w, err, true)
 				return
 			}
@@ -86,13 +86,13 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 				return
 			}
 
-			pid, err := pollID(r)
+			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
 				return
 			}
 
-			if err := clear.Clear(r.Context(), pid); err != nil {
+			if err := clear.Clear(r.Context(), id); err != nil {
 				handleError(w, err, true)
 				return
 			}
@@ -131,13 +131,13 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 				return
 			}
 
-			pid, err := pollID(r)
+			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
 				return
 			}
 
-			if err := vote.Vote(ctx, pid, uid, r.Body); err != nil {
+			if err := vote.Vote(ctx, id, uid, r.Body); err != nil {
 				handleError(w, err, false)
 				return
 			}
@@ -155,17 +155,17 @@ func handleHealth(mux *http.ServeMux) {
 }
 
 func pollID(r *http.Request) (int, error) {
-	rawPid := r.URL.Query().Get("pid")
-	if rawPid == "" {
-		return 0, fmt.Errorf("no pid argument provided")
+	rawID := r.URL.Query().Get("id")
+	if rawID == "" {
+		return 0, fmt.Errorf("no id argument provided")
 	}
 
-	pid, err := strconv.Atoi(rawPid)
+	id, err := strconv.Atoi(rawID)
 	if err != nil {
-		return 0, fmt.Errorf("pid invalid. Expected int, got %s", rawPid)
+		return 0, fmt.Errorf("id invalid. Expected int, got %s", rawID)
 	}
 
-	return pid, nil
+	return id, nil
 }
 
 func handleError(w http.ResponseWriter, err error, internal bool) {

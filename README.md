@@ -60,7 +60,7 @@ To start a poll a POST request has to be send to the create-url.
 To send the same request twice is ok.
 
 ```
-curl -X POST localhost:9013/internal/vote/create?pid=1 
+curl -X POST localhost:9013/internal/vote/create?id=1 
 ```
 
 
@@ -74,7 +74,7 @@ This handler is not idempotent. If the same user sends the same data twice, it
 is an error.
 
 ```
-curl localhost:9013/system/vote?pid=1 -d '{"value":"Y"}'
+curl localhost:9013/system/vote?id=1 -d '{"value":"Y"}'
 ```
 
 
@@ -86,7 +86,7 @@ stop request is a POST request without a body.
 A stop request can be send many times and will return the same data again.
 
 ```
-curl -X POST localhost:9013/internal/vote/stop?pid=1 -
+curl -X POST localhost:9013/internal/vote/stop?id=1 -
 ```
 
 
@@ -98,7 +98,7 @@ especially important on fast votes to remove the mapping between the user id and
 the vote. The clear requet is idempotent.
 
 ```
-curl -X POST localhost:9013/internal/vote/clear?pid=1 
+curl -X POST localhost:9013/internal/vote/clear?id=1 
 ```
 
 
@@ -110,7 +110,7 @@ The Service uses the following environment variables:
 
 * `VOTE_HOST`: The device where the service starts. The default is am empty
   string which starts the service on any device.
-* `VOTE_PORT`: The port the vote service listens on. The default is `9012`. 
+* `VOTE_PORT`: The port the vote service listens on. The default is `9013`. 
 * `DATASTORE_READER_HOST`: Host of the datastore reader. The default is
   `localhost`.
 * `DATASTORE_READER_PORT`: Port of the datastore reader. The default is `9010`.
