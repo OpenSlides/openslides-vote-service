@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS poll(
-    id SERIAL PRIMARY KEY,
-    poll_id INTEGER UNIQUE NOT NULL,
+    id INTEGER UNIQUE NOT NULL,
     stopped BOOLEAN NOT NULL,
 
     -- user_ids is managed by the application. It stores all user ids in a way
@@ -12,12 +11,9 @@ CREATE TABLE IF NOT EXISTS poll(
 CREATE TABLE IF NOT EXISTS objects (
     id SERIAL PRIMARY KEY,
 
-    -- There are many raws per poll. This is not the poll_id from the datastore,
-    -- but the poll from this database.
-    poll_id INTEGER NOT NULL,
+    -- There are many raws per poll.
+    poll_id INTEGER NOT NULL REFERENCES poll(id) ON DELETE CASCADE,
 
     -- The vote object.
-    vote BYTEA,
-
-    FOREIGN KEY (poll_id) REFERENCES poll(id) ON DELETE CASCADE
+    vote BYTEA
 );
