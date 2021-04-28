@@ -142,7 +142,7 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
-	log.Debug("SET %s 2 XX", sKey, 2)
+	log.Debug("SET %s 2 XX", sKey)
 	_, err := redis.String(conn.Do("SET", sKey, "2", "XX"))
 	if err != nil {
 		if err == redis.ErrNil {
