@@ -12,12 +12,12 @@ import (
 )
 
 type CreaterStub struct {
-	pid       int
+	id        int
 	expectErr error
 }
 
 func (c *CreaterStub) Create(ctx context.Context, pollID int) error {
-	c.pid = pollID
+	c.id = pollID
 	return c.expectErr
 }
 
@@ -37,7 +37,7 @@ func TestHandleCreate(t *testing.T) {
 		}
 	})
 
-	t.Run("No pid", func(t *testing.T) {
+	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
 
@@ -46,9 +46,9 @@ func TestHandleCreate(t *testing.T) {
 		}
 	})
 
-	t.Run("Invalid pid", func(t *testing.T) {
+	t.Run("Invalid id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=value", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -57,14 +57,14 @@ func TestHandleCreate(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if creater.pid != 1 {
-			t.Errorf("Creater was called with pid %d, expected 1", creater.pid)
+		if creater.id != 1 {
+			t.Errorf("Creater was called with id %d, expected 1", creater.id)
 		}
 	})
 
@@ -72,7 +72,7 @@ func TestHandleCreate(t *testing.T) {
 		creater.expectErr = ErrExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -95,7 +95,7 @@ func TestHandleCreate(t *testing.T) {
 		creater.expectErr = errors.New("foobar")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -121,13 +121,13 @@ func TestHandleCreate(t *testing.T) {
 }
 
 type StopperStub struct {
-	pid          int
+	id           int
 	expectWriter string
 	expectErr    error
 }
 
 func (s *StopperStub) Stop(ctx context.Context, pollID int, w io.Writer) error {
-	s.pid = pollID
+	s.id = pollID
 
 	if s.expectErr != nil {
 		return s.expectErr
@@ -152,7 +152,7 @@ func TestHandleStop(t *testing.T) {
 		}
 	})
 
-	t.Run("No pid", func(t *testing.T) {
+	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
 
@@ -165,14 +165,14 @@ func TestHandleStop(t *testing.T) {
 		stopper.expectWriter = "some text"
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if stopper.pid != 1 {
-			t.Errorf("Stopper was called with pid %d, expected 1", stopper.pid)
+		if stopper.id != 1 {
+			t.Errorf("Stopper was called with id %d, expected 1", stopper.id)
 		}
 
 		if resp.Body.String() != stopper.expectWriter {
@@ -184,7 +184,7 @@ func TestHandleStop(t *testing.T) {
 		stopper.expectErr = ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -205,12 +205,12 @@ func TestHandleStop(t *testing.T) {
 }
 
 type ClearerStub struct {
-	pid       int
+	id        int
 	expectErr error
 }
 
 func (c *ClearerStub) Clear(ctx context.Context, pollID int) error {
-	c.pid = pollID
+	c.id = pollID
 	return c.expectErr
 }
 
@@ -230,7 +230,7 @@ func TestHandleClear(t *testing.T) {
 		}
 	})
 
-	t.Run("No pid", func(t *testing.T) {
+	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
 
@@ -241,14 +241,14 @@ func TestHandleClear(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if clearer.pid != 1 {
-			t.Errorf("Clearer was called with pid %d, expected 1", clearer.pid)
+		if clearer.id != 1 {
+			t.Errorf("Clearer was called with id %d, expected 1", clearer.id)
 		}
 	})
 
@@ -256,7 +256,7 @@ func TestHandleClear(t *testing.T) {
 		clearer.expectErr = ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -277,14 +277,14 @@ func TestHandleClear(t *testing.T) {
 }
 
 type VoterStub struct {
-	pid       int
+	id        int
 	user      int
 	body      string
 	expectErr error
 }
 
 func (v *VoterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
-	v.pid = pollID
+	v.id = pollID
 	v.user = requestUser
 
 	body, err := io.ReadAll(r)
@@ -338,7 +338,7 @@ func TestHandleVote(t *testing.T) {
 		}
 	})
 
-	t.Run("No pid", func(t *testing.T) {
+	t.Run("No id", func(t *testing.T) {
 		auther.userID = 5
 
 		resp := httptest.NewRecorder()
@@ -353,7 +353,7 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = ErrDoubleVote
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -376,7 +376,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = true
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -401,7 +401,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = false
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
 
 		if resp.Result().StatusCode != 401 {
 			t.Errorf("Got status %s, expected 401", resp.Result().Status)
@@ -427,14 +427,14 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = nil
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?pid=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if voter.pid != 1 {
-			t.Errorf("Voter was called with pid %d, expected 1", voter.pid)
+		if voter.id != 1 {
+			t.Errorf("Voter was called with id %d, expected 1", voter.id)
 		}
 
 		if voter.user != 5 {
