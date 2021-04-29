@@ -5,6 +5,8 @@ package test
 import (
 	"context"
 	"errors"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
@@ -29,7 +31,10 @@ func Backend(t *testing.T, backend vote.Backend) {
 		})
 
 		t.Run("Start a stopped poll", func(t *testing.T) {
-			backend.Stop(context.Background(), 1)
+			if _, err := backend.Stop(context.Background(), 1); err != nil {
+				t.Fatalf("Stop returned: %v", err)
+			}
+
 			if err := backend.Start(context.Background(), 1); err != nil {
 				t.Errorf("Start an started poll returned error: %v", err)
 			}
@@ -156,5 +161,130 @@ func Backend(t *testing.T, backend vote.Backend) {
 		if err := backend.Vote(context.Background(), 6, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clear returned unexpected error: %v", err)
 		}
+	})
+
+	t.Run("Concurrency", func(t *testing.T) {
+		t.Run("Many Votes", func(t *testing.T) {
+			count := 100
+			backend.Start(context.Background(), 7)
+
+			var wg sync.WaitGroup
+			for i := 0; i < count; i++ {
+				wg.Add(1)
+				go func(uid int) {
+					defer wg.Done()
+
+					if err := backend.Vote(context.Background(), 7, uid, []byte("vote")); err != nil {
+						t.Errorf("Vote %d returned undexpected error: %v", uid, err)
+					}
+				}(i + 1)
+			}
+			wg.Wait()
+
+			data, err := backend.Stop(context.Background(), 7)
+			if err != nil {
+				t.Fatalf("Stop returned unexpected error: %v", err)
+			}
+
+			if len(data) != count {
+				t.Fatalf("Found %d vote objects, expected %d", len(data), count)
+			}
+		})
+
+		t.Run("Many starts and stops", func(t *testing.T) {
+			starts := 50
+			stops := 50
+
+			var wg sync.WaitGroup
+			for i := 0; i < starts; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					if err := backend.Start(context.Background(), 8); err != nil {
+						t.Errorf("Start returned undexpected error: %v", err)
+					}
+				}()
+			}
+
+			for i := 0; i < stops; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					if _, err := backend.Stop(context.Background(), 8); err != nil {
+						var errDoesNotExist interface{ DoesNotExist() }
+						if errors.As(err, &errDoesNotExist) {
+							// Does not exist errors are expected
+							return
+						}
+						t.Errorf("Stop returned undexpected error: %v", err)
+					}
+				}()
+			}
+			wg.Wait()
+		})
+
+		t.Run("Many Stops and Votes", func(t *testing.T) {
+			stopsCount := 50
+			votesCount := 50
+
+			backend.Start(context.Background(), 9)
+
+			objects := make([][][]byte, stopsCount)
+			var stoppedErrsMu sync.Mutex
+			var stoppedErrs int
+
+			var wg sync.WaitGroup
+			for i := 0; i < votesCount; i++ {
+				wg.Add(1)
+				go func(uid int) {
+					defer wg.Done()
+
+					err := backend.Vote(context.Background(), 9, uid, []byte("vote"))
+
+					if err != nil {
+						var errStopped interface{ Stopped() }
+						if errors.As(err, &errStopped) {
+							// Stopped errors are expected.
+							stoppedErrsMu.Lock()
+							stoppedErrs++
+							stoppedErrsMu.Unlock()
+							return
+						}
+
+						t.Errorf("Vote %d returned undexpected error: %v", uid, err)
+					}
+
+				}(i + 1)
+			}
+
+			// Let the other goroutines run
+			runtime.Gosched()
+
+			for i := 0; i < stopsCount; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+
+					obj, err := backend.Stop(context.Background(), 9)
+
+					if err != nil {
+						t.Errorf("Stop returned undexpected error: %v", err)
+						return
+					}
+					objects[i] = obj
+				}(i)
+			}
+			wg.Wait()
+
+			expectedVotes := votesCount - stoppedErrs
+
+			for _, objs := range objects {
+				if len(objs) != expectedVotes {
+					t.Errorf("Stop returned %d objects, expected %d", len(objs), expectedVotes)
+				}
+			}
+		})
 	})
 }

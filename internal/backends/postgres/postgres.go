@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 )
@@ -87,7 +88,19 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 }
 
 // Vote adds a vote to a poll.
+//
+// If an transaction error happens, the vote is saved again. This is done until
+// either the vote is saved or the given context is canceled.
 func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+	err := continueOnTransactionError(ctx, func() error {
+		return b.voteOnce(ctx, pollID, userID, object)
+	})
+
+	return err
+}
+
+// voteOnce tries to add the vote once.
+func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object []byte) error {
 	err := b.pool.BeginTxFunc(
 		ctx,
 		pgx.TxOptions{
@@ -136,7 +149,25 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 }
 
 // Stop ends a poll and returns all vote objects.
+//
+// If an transaction error happens, the poll is stopped again. This is done
+// until either the poll is stopped or the given context is canceled.
 func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
+	var objs [][]byte
+	err := continueOnTransactionError(ctx, func() error {
+		o, err := b.stopOnce(ctx, pollID)
+		if err != nil {
+			return err
+		}
+		objs = o
+		return nil
+	})
+
+	return objs, err
+}
+
+// stopOnce ends a poll and returns all vote objects.
+func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
 	var objects [][]byte
 	err := b.pool.BeginTxFunc(
 		ctx,
@@ -157,7 +188,7 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 
 			sql = "UPDATE poll SET stopped = true WHERE id = $1;"
 			if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-				return fmt.Errorf("setting poll %d to stopped: %v", pollID, err)
+				return fmt.Errorf("setting poll %d to stopped: %w", pollID, err)
 			}
 
 			sql = `
@@ -200,6 +231,26 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 		return fmt.Errorf("setting poll %d to stopped: %v", pollID, err)
 	}
 	return nil
+}
+
+// ContinueOnTransactionError runs the given many times until is does not return
+// an transaction error. Also stopes, when the given context is canceled.
+func continueOnTransactionError(ctx context.Context, f func() error) error {
+	var err error
+	for ctx.Err() == nil {
+		err = f()
+		var perr *pgconn.PgError
+		if !errors.As(err, &perr) {
+			break
+		}
+
+		// The error code is returned if another vote has manipulated the vote
+		// users while this vote was saved.
+		if perr.Code != "40001" {
+			break
+		}
+	}
+	return err
 }
 
 type userIDs []int32
