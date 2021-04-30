@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -50,15 +51,13 @@ func (b *Backend) String() string {
 }
 
 // Wait blocks until a connection to postgres can be established.
-func (b *Backend) Wait(ctx context.Context, log func(format string, a ...interface{})) {
+func (b *Backend) Wait(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := b.pool.Ping(ctx)
 		if err == nil {
 			return
 		}
-		if log != nil {
-			log("Waiting for postgres: %v", err)
-		}
+		log.Info("Waiting for postgres: %v", err)
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -81,6 +80,7 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 	sql := `
 	INSERT INTO poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
 	`
+	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("insert poll: %w", err)
 	}
@@ -100,8 +100,13 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 }
 
 // voteOnce tries to add the vote once.
-func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object []byte) error {
-	err := b.pool.BeginTxFunc(
+func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object []byte) (err error) {
+	log.Debug("SQL: Begin transaction for vote")
+	defer func() {
+		log.Debug("SQL: End transaction for vote with error: %v", err)
+	}()
+
+	err = b.pool.BeginTxFunc(
 		ctx,
 		pgx.TxOptions{
 			IsoLevel: "REPEATABLE READ",
@@ -114,6 +119,7 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 			`
 			var stopped bool
 			var uIDs userIDs
+			log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 			if err := tx.QueryRow(ctx, sql, pollID).Scan(&stopped, &uIDs); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return doesNotExistError{fmt.Errorf("unknown poll")}
@@ -130,11 +136,13 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 			}
 
 			sql = "UPDATE poll SET user_ids = $1 WHERE id = $2;"
+			log.Debug("SQL: `%s` (values: [user_ids], %d", sql, pollID)
 			if _, err := tx.Exec(ctx, sql, uIDs, pollID); err != nil {
 				return fmt.Errorf("writing user ids: %w", err)
 			}
 
 			sql = "INSERT INTO objects (poll_id, vote) VALUES ($1, $2);"
+			log.Debug("SQL: `%s` (values: %d, %s", sql, pollID, object)
 			if _, err := tx.Exec(ctx, sql, pollID, object); err != nil {
 				return fmt.Errorf("writing vote: %w", err)
 			}
@@ -167,15 +175,20 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 }
 
 // stopOnce ends a poll and returns all vote objects.
-func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
-	var objects [][]byte
-	err := b.pool.BeginTxFunc(
+func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, err error) {
+	log.Debug("SQL: Begin transaction for vote")
+	defer func() {
+		log.Debug("SQL: End transaction for vote with error: %v", err)
+	}()
+
+	err = b.pool.BeginTxFunc(
 		ctx,
 		pgx.TxOptions{
 			IsoLevel: "REPEATABLE READ",
 		},
 		func(tx pgx.Tx) error {
 			sql := "SELECT EXISTS(SELECT 1 FROM poll WHERE id = $1);"
+			log.Debug("SQL: `%s` (values: %d", sql, pollID)
 
 			var exists bool
 			if err := tx.QueryRow(ctx, sql, pollID).Scan(&exists); err != nil {
@@ -197,6 +210,7 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
 			LEFT JOIN objects Obj ON Obj.poll_id = Poll.id
 			WHERE Poll.id= $1;
 			`
+			log.Debug("SQL: `%s` (values: %d", sql, pollID)
 			rows, err := tx.Query(ctx, sql, pollID)
 			if err != nil {
 				return fmt.Errorf("fetching vote objects: %w", err)
@@ -227,6 +241,7 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
 // Clear removes all data about a poll from the database.
 func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	sql := "DELETE FROM poll WHERE id = $1"
+	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("setting poll %d to stopped: %v", pollID, err)
 	}

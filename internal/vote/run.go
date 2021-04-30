@@ -300,7 +300,7 @@ func buildBackend(ctx context.Context, env map[string]string, name string) (Back
 		}
 		defer p.Close()
 
-		p.Wait(ctx, nil)
+		p.Wait(ctx)
 		if err := p.Migrate(context.Background()); err != nil {
 			return nil, fmt.Errorf("creating shema: %w", err)
 		}
