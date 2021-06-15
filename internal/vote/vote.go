@@ -95,7 +95,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 	}
 	log.Debug("Used backend: %v", backend)
 
-	objects, err := backend.Stop(ctx, pollID)
+	objects, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
@@ -110,7 +110,15 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 		encodableObjects[i] = objects[i]
 	}
 
-	if err := json.NewEncoder(w).Encode(encodableObjects); err != nil {
+	out := struct {
+		Votes []json.RawMessage `json:"votes"`
+		Users []int             `json:"user_ids"`
+	}{
+		encodableObjects,
+		userIDs,
+	}
+
+	if err := json.NewEncoder(w).Encode(out); err != nil {
 		return fmt.Errorf("encoding and sending objects: %w", err)
 	}
 
@@ -285,9 +293,10 @@ type Backend interface {
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
 	Vote(ctx context.Context, pollID int, userID int, object []byte) error
 
-	// Stop ends a poll and returns all poll objects. It is ok the call Stop on
-	// a stopped poll. On a unknown poll `DoesNotExist()` has to be returned.
-	Stop(ctx context.Context, pollID int) ([][]byte, error)
+	// Stop ends a poll and returns all poll objects and all userIDs from users
+	// that have voted. It is ok to call Stop() on a stopped poll. On a unknown
+	// poll `DoesNotExist()` has to be returned.
+	Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 
 	// Clear has to remove all data. It can be called on a started or stopped or
 	// non existing poll.

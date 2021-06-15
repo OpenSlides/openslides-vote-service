@@ -24,9 +24,6 @@ const authDebugKey = "auth-dev-key"
 //
 // The service is configured by the argument `environment`. It expect strings in
 // the format `KEY=VALUE`, like the output from `os.Environmen()`.
-//
-// log messages are written with the function given in the argument log. It has
-// the signature from log.Printf().
 func Run(ctx context.Context, environment []string, secret func(name string) (string, error)) error {
 	env := defaultEnv(environment)
 

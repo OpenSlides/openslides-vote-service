@@ -152,7 +152,7 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 //
 // If an transaction error happens, the poll is stopped again. This is done
 // until either the poll is stopped or the given context is canceled.
-func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
+func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error) {
 	var objs [][]byte
 	err := continueOnTransactionError(ctx, func() error {
 		o, err := b.stopOnce(ctx, pollID)
@@ -163,7 +163,8 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, error) {
 		return nil
 	})
 
-	return objs, err
+	// TODO
+	return objs, []int{}, err
 }
 
 // stopOnce ends a poll and returns all vote objects.

@@ -44,6 +44,8 @@ func handleCreate(mux *http.ServeMux, create creater) {
 	)
 }
 
+// stopper stops a poll. It sets the state of the poll, so that no other user
+// can vote. It writes the vote results to the writer.
 type stopper interface {
 	Stop(ctx context.Context, pollID int, w io.Writer) error
 }

@@ -50,7 +50,7 @@ func TestVoteCreate(t *testing.T) {
 			t.Errorf("Create returned unexpected error: %v", err)
 		}
 
-		if _, err := backend.Stop(context.Background(), 2); err != nil {
+		if _, _, err := backend.Stop(context.Background(), 2); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 

@@ -11,18 +11,18 @@ import (
 	"testing"
 )
 
-type CreaterStub struct {
+type createrStub struct {
 	id        int
 	expectErr error
 }
 
-func (c *CreaterStub) Create(ctx context.Context, pollID int) error {
+func (c *createrStub) Create(ctx context.Context, pollID int) error {
 	c.id = pollID
 	return c.expectErr
 }
 
 func TestHandleCreate(t *testing.T) {
-	creater := &CreaterStub{}
+	creater := &createrStub{}
 
 	url := "/internal/vote/create"
 	mux := http.NewServeMux()
@@ -120,13 +120,13 @@ func TestHandleCreate(t *testing.T) {
 	})
 }
 
-type StopperStub struct {
+type stopperStub struct {
 	id           int
 	expectWriter string
 	expectErr    error
 }
 
-func (s *StopperStub) Stop(ctx context.Context, pollID int, w io.Writer) error {
+func (s *stopperStub) Stop(ctx context.Context, pollID int, w io.Writer) error {
 	s.id = pollID
 
 	if s.expectErr != nil {
@@ -137,7 +137,7 @@ func (s *StopperStub) Stop(ctx context.Context, pollID int, w io.Writer) error {
 }
 
 func TestHandleStop(t *testing.T) {
-	stopper := &StopperStub{}
+	stopper := &stopperStub{}
 
 	url := "/internal/vote/stop"
 	mux := http.NewServeMux()
@@ -204,18 +204,18 @@ func TestHandleStop(t *testing.T) {
 	})
 }
 
-type ClearerStub struct {
+type clearerStub struct {
 	id        int
 	expectErr error
 }
 
-func (c *ClearerStub) Clear(ctx context.Context, pollID int) error {
+func (c *clearerStub) Clear(ctx context.Context, pollID int) error {
 	c.id = pollID
 	return c.expectErr
 }
 
 func TestHandleClear(t *testing.T) {
-	clearer := &ClearerStub{}
+	clearer := &clearerStub{}
 
 	url := "/internal/vote/clear"
 	mux := http.NewServeMux()
@@ -276,14 +276,14 @@ func TestHandleClear(t *testing.T) {
 	})
 }
 
-type VoterStub struct {
+type voterStub struct {
 	id        int
 	user      int
 	body      string
 	expectErr error
 }
 
-func (v *VoterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
+func (v *voterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
 	v.id = pollID
 	v.user = requestUser
 
@@ -305,25 +305,25 @@ func (AuthError) Type() string {
 	return "auth"
 }
 
-type AutherStub struct {
+type autherStub struct {
 	userID  int
 	authErr bool
 }
 
-func (a *AutherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+func (a *autherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 	if a.authErr {
 		return nil, AuthError{}
 	}
 	return r.Context(), nil
 }
 
-func (a *AutherStub) FromContext(context.Context) int {
+func (a *autherStub) FromContext(context.Context) int {
 	return a.userID
 }
 
 func TestHandleVote(t *testing.T) {
-	voter := &VoterStub{}
-	auther := &AutherStub{}
+	voter := &voterStub{}
+	auther := &autherStub{}
 
 	url := "/system/vote"
 	mux := http.NewServeMux()
