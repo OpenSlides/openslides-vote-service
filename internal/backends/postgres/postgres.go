@@ -148,28 +148,30 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 	return nil
 }
 
-// Stop ends a poll and returns all vote objects.
+// Stop ends a poll and returns all vote objects and users who have voted.
 //
 // If an transaction error happens, the poll is stopped again. This is done
 // until either the poll is stopped or the given context is canceled.
 func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error) {
 	var objs [][]byte
+	var userIDs []int
 	err := continueOnTransactionError(ctx, func() error {
-		o, err := b.stopOnce(ctx, pollID)
+		o, uids, err := b.stopOnce(ctx, pollID)
 		if err != nil {
 			return err
 		}
 		objs = o
+		userIDs = uids
 		return nil
 	})
 
-	// TODO
-	return objs, []int{}, err
+	return objs, userIDs, err
 }
 
 // stopOnce ends a poll and returns all vote objects.
-func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
+func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, []int, error) {
 	var objects [][]byte
+	var users []int
 	err := b.pool.BeginTxFunc(
 		ctx,
 		pgx.TxOptions{
@@ -193,10 +195,10 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
 			}
 
 			sql = `
-			SELECT Obj.vote 
+			SELECT Obj.vote
 			FROM poll Poll
 			LEFT JOIN objects Obj ON Obj.poll_id = Poll.id
-			WHERE Poll.id= $1;
+			WHERE Poll.id = $1;
 			`
 			rows, err := tx.Query(ctx, sql, pollID)
 			if err != nil {
@@ -216,13 +218,26 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) ([][]byte, error) {
 				return fmt.Errorf("parsing query rows: %w", err)
 			}
 
+			sql = `
+			SELECT user_ids
+			FROM poll Poll
+			WHERE Poll.id = $1;
+			`
+			var uIDs userIDs
+			if err := tx.QueryRow(ctx, sql, pollID).Scan(&uIDs); err != nil {
+				return fmt.Errorf("fetching poll data: %w", err)
+			}
+			for _, id := range uIDs {
+				users = append(users, int(id))
+			}
+
 			return nil
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("running transaction: %w", err)
+		return nil, nil, fmt.Errorf("running transaction: %w", err)
 	}
-	return objects, nil
+	return objects, users, nil
 }
 
 // Clear removes all data about a poll from the database.

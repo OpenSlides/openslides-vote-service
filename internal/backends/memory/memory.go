@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Backend is a simple (not concurent) vote backend that can be used for
+// Backend is a simple vote backend that can be used for
 // testing.
 type Backend struct {
 	mu      sync.Mutex
@@ -81,8 +81,12 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 	}
 
 	b.state[pollID] = 2
-	//TODO
-	return b.objects[pollID], []int{}, nil
+
+	userIDs := make([]int, 0, len(b.voted[pollID]))
+	for id := range b.voted[pollID] {
+		userIDs = append(userIDs, id)
+	}
+	return b.objects[pollID], userIDs, nil
 }
 
 // Clear removes all data for a poll.

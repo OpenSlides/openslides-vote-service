@@ -3,6 +3,8 @@ package redis
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
 	"time"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
@@ -152,19 +154,27 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 	}
 
 	log.Debug("REDIS: HVALS %s", vKey)
-	voteObjects, err := redis.ByteSlices(conn.Do("HVALS", vKey))
+	data, err := redis.StringMap(conn.Do("HGETALL", vKey))
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting vote objects from %s: %w", vKey, err)
 	}
-	if log.IsDebug() {
-		results := make([]string, len(voteObjects))
-		for i := range voteObjects {
-			results[i] = string(voteObjects[i])
+
+	userIDs := make([]int, 0, len(data))
+	voteObjects := make([][]byte, 0, len(data))
+	for uid, vote := range data {
+		id, err := strconv.Atoi(uid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid userID %s: %w", uid, err)
 		}
-		log.Debug("Redis: Recieved %v", results)
+		userIDs = append(userIDs, id)
+		voteObjects = append(voteObjects, []byte(vote))
 	}
-	//TODO
-	return voteObjects, []int{}, nil
+
+	if log.IsDebug() {
+		log.Debug("Redis: Recieved %v", data)
+	}
+	sort.Ints(userIDs)
+	return voteObjects, userIDs, nil
 }
 
 // Clear delete all information from a poll.

@@ -216,8 +216,8 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 			sort.Ints(userIDs)
 			for i := 0; i < count; i++ {
-				if userIDs[i] != i {
-					t.Fatalf("Found user id %d on place %d, expected %d", userIDs[i], i, i)
+				if userIDs[i] != i+1 {
+					t.Fatalf("Found user id %d on place %d, expected %d", userIDs[i], i, i+1)
 				}
 			}
 		})
