@@ -92,13 +92,13 @@ func TestHandleCreate(t *testing.T) {
 	})
 
 	t.Run("Internal error", func(t *testing.T) {
-		creater.expectErr = errors.New("foobar")
+		creater.expectErr = errors.New("TEST_Error")
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 500 {
-			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
 		}
 
 		var body struct {
@@ -114,8 +114,8 @@ func TestHandleCreate(t *testing.T) {
 			t.Errorf("Got error `%s`, expected `internal`", body.Error)
 		}
 
-		if body.MSG != "foobar" {
-			t.Errorf("Got error message `%s`, expected `foobar`", body.MSG)
+		if body.MSG != "TEST_Error" {
+			t.Errorf("Got error message `%s`, expected `TEST_Error`", body.MSG)
 		}
 	})
 }
