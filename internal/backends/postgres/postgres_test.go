@@ -51,7 +51,7 @@ func TestImplementBackendInterface(t *testing.T) {
 	}
 	defer p.Close()
 
-	p.Wait(context.Background(), nil)
+	p.Wait(context.Background())
 	if err := p.Migrate(context.Background()); err != nil {
 		t.Fatalf("Creating db schema: %v", err)
 	}
