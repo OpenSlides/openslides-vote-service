@@ -160,7 +160,7 @@ func TestVoteStop(t *testing.T) {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		expect := `["polldata1","polldata2"]`
+		expect := `{"votes":["polldata1","polldata2"],"user_ids":[1,2]}`
 		if got := strings.TrimSpace(buf.String()); got != expect {
 			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}

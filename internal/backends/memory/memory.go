@@ -6,6 +6,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"testing"
 )
@@ -86,6 +87,7 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 	for id := range b.voted[pollID] {
 		userIDs = append(userIDs, id)
 	}
+	sort.Ints(userIDs)
 	return b.objects[pollID], userIDs, nil
 }
 
