@@ -317,7 +317,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 			for _, objs := range expectedObjects {
 				if len(objs) != expectedVotes {
-					t.Errorf("Stop returned %d objects, expected %d", len(objs), expectedVotes)
+					t.Errorf("Stop returned %d objects, expected %d: %v", len(objs), expectedVotes, objs)
 				}
 			}
 
