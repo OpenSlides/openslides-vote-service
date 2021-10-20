@@ -16,9 +16,11 @@ func TestVoteCreate(t *testing.T) {
 	backend := memory.New()
 
 	ds := StubGetter{data: dsmock.YAMLData(`
-	poll/1:
-		id: 1
-		meeting_id: 5
+	poll:
+		1:
+			meeting_id: 5
+		2:
+			meeting_id: 5
 
 	group/1/user_ids: [1]
 	user/1/is_present_in_meeting_ids: [1]
@@ -57,37 +59,6 @@ func TestVoteCreate(t *testing.T) {
 			t.Errorf("Create returned unexpected error: %v", err)
 		}
 	})
-}
-
-type StubGetter struct {
-	data      map[string][]byte
-	err       error
-	requested map[string]bool
-}
-
-func (g *StubGetter) Get(ctx context.Context, keys ...string) (map[string][]byte, error) {
-	if g.err != nil {
-		return nil, g.err
-	}
-	if g.requested == nil {
-		g.requested = make(map[string]bool)
-	}
-
-	out := make(map[string][]byte, len(keys))
-	for _, k := range keys {
-		out[k] = g.data[k]
-		g.requested[k] = true
-	}
-	return out, nil
-}
-
-func (g *StubGetter) assertKeys(t *testing.T, keys ...string) {
-	t.Helper()
-	for _, key := range keys {
-		if !g.requested[key] {
-			t.Errorf("Key %s is was not requested", key)
-		}
-	}
 }
 
 func TestVoteCreatePreloadData(t *testing.T) {
@@ -130,8 +101,8 @@ func TestVoteCreateDSError(t *testing.T) {
 func TestVoteStop(t *testing.T) {
 	backend := memory.New()
 	v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(`
-	poll/1/id: 1
-	poll/2/id: 2
+	poll/1/meeting_id: 1
+	poll/2/meeting_id: 1
 	`)})
 
 	t.Run("Unknown poll", func(t *testing.T) {
