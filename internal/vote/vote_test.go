@@ -3,7 +3,6 @@ package vote_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -61,12 +60,12 @@ func TestVoteCreate(t *testing.T) {
 }
 
 type StubGetter struct {
-	data      map[string]string
+	data      map[string][]byte
 	err       error
 	requested map[string]bool
 }
 
-func (g *StubGetter) Get(ctx context.Context, keys ...string) ([]json.RawMessage, error) {
+func (g *StubGetter) Get(ctx context.Context, keys ...string) (map[string][]byte, error) {
 	if g.err != nil {
 		return nil, g.err
 	}
@@ -74,16 +73,12 @@ func (g *StubGetter) Get(ctx context.Context, keys ...string) ([]json.RawMessage
 		g.requested = make(map[string]bool)
 	}
 
-	values := make([]json.RawMessage, len(keys))
-	for i, key := range keys {
-		g.requested[key] = true
-
-		v, ok := g.data[key]
-		if ok {
-			values[i] = []byte(v)
-		}
+	out := make(map[string][]byte, len(keys))
+	for _, k := range keys {
+		out[k] = g.data[k]
+		g.requested[k] = true
 	}
-	return values, nil
+	return out, nil
 }
 
 func (g *StubGetter) assertKeys(t *testing.T, keys ...string) {

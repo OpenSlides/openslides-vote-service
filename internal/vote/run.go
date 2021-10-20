@@ -24,7 +24,7 @@ const authDebugKey = "auth-dev-key"
 //
 // The service is configured by the argument `environment`. It expect strings in
 // the format `KEY=VALUE`, like the output from `os.Environmen()`.
-func Run(ctx context.Context, environment []string, secret func(name string) (string, error)) error {
+func Run(ctx context.Context, environment []string, getSecret func(name string) (string, error)) error {
 	env := defaultEnv(environment)
 
 	errHandler := buildErrHandler()
@@ -34,17 +34,14 @@ func Run(ctx context.Context, environment []string, secret func(name string) (st
 		return fmt.Errorf("building message bus: %w", err)
 	}
 
-	ds, err := buildDatastore(env, messageBus, ctx.Done(), errHandler)
-	if err != nil {
-		return fmt.Errorf("building datastore: %w", err)
-	}
+	ds := buildDatastore(ctx, env, messageBus, errHandler)
 
 	auth, err := buildAuth(
+		ctx,
 		env,
-		secret,
 		messageBus,
-		ctx.Done(),
 		errHandler,
+		getSecret,
 	)
 	if err != nil {
 		return fmt.Errorf("building auth: %w", err)
@@ -141,8 +138,8 @@ func defaultEnv(environment []string) map[string]string {
 
 func secret(name string, getSecret func(name string) (string, error), dev bool) (string, error) {
 	defaultSecrets := map[string]string{
-		"auth_token_key":  authDebugKey,
-		"auth_cookie_key": authDebugKey,
+		"auth_token_key":  auth.DebugTokenKey,
+		"auth_cookie_key": auth.DebugCookieKey,
 	}
 
 	d, ok := defaultSecrets[name]
@@ -171,26 +168,31 @@ func buildErrHandler() func(err error) {
 	}
 }
 
-func buildDatastore(env map[string]string, receiver datastore.Updater, closed <-chan struct{}, errHandler func(error)) (*datastore.Datastore, error) {
+func buildDatastore(ctx context.Context, env map[string]string, receiver datastore.Updater, errHandler func(error)) *datastore.Datastore {
 	protocol := env["DATASTORE_READER_PROTOCOL"]
 	host := env["DATASTORE_READER_HOST"]
 	port := env["DATASTORE_READER_PORT"]
 	url := protocol + "://" + host + ":" + port
-	return datastore.New(url, closed, errHandler, receiver), nil
+	ds := datastore.New(url)
+	go ds.ListenOnUpdates(ctx, receiver, errHandler)
+	return ds
 }
 
 // buildAuth returns the auth service needed by the http server.
+//
+// This function is not blocking. The context is used to give it to auth.New
+// that uses it to stop background goroutines.
 func buildAuth(
+	ctx context.Context,
 	env map[string]string,
-	getSecret func(name string) (string, error),
-	receiver auth.LogoutEventer,
-	closed <-chan struct{},
+	messageBus auth.LogoutEventer,
 	errHandler func(error),
+	getSecret func(name string) (string, error),
 ) (authenticater, error) {
 	method := env["AUTH"]
 	switch method {
 	case "ticket":
-		log.Info("Auth Method: ticket")
+		fmt.Println("Auth Method: ticket")
 		tokenKey, err := secret("auth_token_key", getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
 		if err != nil {
 			return nil, fmt.Errorf("getting token secret: %w", err)
@@ -201,8 +203,8 @@ func buildAuth(
 			return nil, fmt.Errorf("getting cookie secret: %w", err)
 		}
 
-		if tokenKey == authDebugKey || cookieKey == authDebugKey {
-			log.Info("Auth with debug key")
+		if tokenKey == auth.DebugTokenKey || cookieKey == auth.DebugCookieKey {
+			fmt.Println("Auth with debug key")
 		}
 
 		protocol := env["AUTH_PROTOCOL"]
@@ -210,12 +212,18 @@ func buildAuth(
 		port := env["AUTH_PORT"]
 		url := protocol + "://" + host + ":" + port
 
-		log.Info("Auth Service: %s", url)
+		fmt.Printf("Auth Service: %s\n", url)
+		a, err := auth.New(url, ctx.Done(), []byte(tokenKey), []byte(cookieKey))
+		if err != nil {
+			return nil, fmt.Errorf("creating auth service: %w", err)
+		}
+		go a.ListenOnLogouts(ctx, messageBus, errHandler)
+		go a.PruneOldData(ctx)
 
-		return auth.New(url, receiver, closed, errHandler, []byte(tokenKey), []byte(cookieKey))
+		return a, nil
 
 	case "fake":
-		log.Info("Auth Method: FakeAuth (User ID 1 for all requests)")
+		fmt.Println("Auth Method: FakeAuth (User ID 1 for all requests)")
 		return authStub(1), nil
 
 	default:

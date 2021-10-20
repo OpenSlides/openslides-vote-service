@@ -29,6 +29,15 @@ func New(fast, long Backend, ds datastore.Getter) *Vote {
 	}
 }
 
+func (v *Vote) backend(p pollConfig) Backend {
+	backend := v.longBackend
+	if p.backend == "fast" {
+		backend = v.fastBackend
+	}
+	log.Debug("Used backend: %v", backend)
+	return backend
+}
+
 // Create an electronic vote.
 //
 // This function is idempotence. If you call it with the same input, you will
@@ -40,27 +49,20 @@ func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
 		log.Debug("End create event with error: %v", err)
 	}()
 
-	fetcher := datastore.NewFetcher(v.ds)
-	var config pollConfig
-	fetcher.Object(ctx, &config, "poll/%d", pollID)
-	for _, gid := range config.Groups {
-		for _, id := range fetcher.Ints(ctx, "group/%d/user_ids", gid) {
-			fetcher.Ints(ctx, "user/%d/is_present_in_meeting_ids", id)
-		}
+	recorder := datastore.NewRecorder(v.ds)
+	fetcher := datastore.NewFetcher(recorder)
+
+	poll, err := loadPoll(ctx, fetcher, pollID)
+	if err != nil {
+		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	log.Debug("Preload cache. Received keys: %v", fetcher.Keys())
-
-	if err := fetcher.Error(); err != nil {
-		return fmt.Errorf("fetching poll data: %w", err)
+	if err := poll.preloadUsers(ctx, fetcher); err != nil {
+		return fmt.Errorf("loading present users: %w", err)
 	}
+	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
-	backend := v.longBackend
-	if config.Backend == "fast" {
-		backend = v.fastBackend
-	}
-	log.Debug("Used backend: %v", backend)
-
+	backend := v.backend(poll)
 	if err := backend.Start(ctx, pollID); err != nil {
 		return fmt.Errorf("starting poll in the backend: %w", err)
 	}
@@ -79,32 +81,23 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 	}()
 
 	fetcher := datastore.NewFetcher(v.ds)
-	var config pollConfig
-	fetcher.Object(ctx, &config, "poll/%d", pollID)
-	if err := fetcher.Error(); err != nil {
-		return fmt.Errorf("fetching poll data: %w", err)
+	poll, err := loadPoll(ctx, fetcher, pollID)
+	if err != nil {
+		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	if config.ID == 0 {
-		return fmt.Errorf("Poll %d does not exist in the datastore", pollID)
-	}
-
-	backend := v.longBackend
-	if config.Backend == "fast" {
-		backend = v.fastBackend
-	}
-	log.Debug("Used backend: %v", backend)
-
+	backend := v.backend(poll)
 	objects, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the datastore", pollID)}
+			return MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
 		}
 
 		return fmt.Errorf("fetching vote objects: %w", err)
 	}
 
+	// Convert vote objects to json.RawMessage
 	encodableObjects := make([]json.RawMessage, len(objects))
 	for i := range objects {
 		encodableObjects[i] = objects[i]
@@ -150,16 +143,19 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}()
 
 	fetcher := datastore.NewFetcher(v.ds)
-	var poll pollConfig
-	fetcher.Object(ctx, &poll, "poll/%d", pollID)
-	presentMeetings := fetcher.Ints(ctx, "user/%d/is_present_in_meeting_ids", requestUser)
-	if err := fetcher.Error(); err != nil {
-		return fmt.Errorf("fetching poll data: %w", err)
+	poll, err := loadPoll(ctx, fetcher, pollID)
+	if err != nil {
+		return fmt.Errorf("loading poll: %w", err)
 	}
 	log.Debug("Poll config: %v", poll)
 
-	if !isPresent(poll.MeetingID, presentMeetings) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", poll.MeetingID)}
+	presentMeetings := fetcher.Field().User_IsPresentInMeetingIDs(ctx, requestUser)
+	if err := fetcher.Err(); err != nil {
+		return fmt.Errorf("fetching is present in meetings: %w", err)
+	}
+
+	if !isPresent(poll.meetingID, presentMeetings) {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", poll.meetingID)}
 	}
 
 	var vote ballot
@@ -175,18 +171,15 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("validating vote: %w", err)
 	}
 
-	backend := v.longBackend
-	if poll.Backend == "fast" {
-		backend = v.fastBackend
-	}
-	log.Debug("Used backend: %v", backend)
+	backend := v.backend(poll)
 
 	if vote.UserID != requestUser {
-		delegation := fetcher.Int(ctx, "user/%d/vote_delegated_$%d_to_id", vote.UserID, poll.MeetingID)
-		if err := fetcher.Error(); err != nil {
+		delegation := fetcher.Field().User_VoteDelegatedToID(ctx, vote.UserID, poll.meetingID)
+		if err := fetcher.Err(); err != nil {
+			// Ignore does not exist errors. In this case, delegation will be 0.
 			var errNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %v", vote.UserID, poll.MeetingID, err)
+				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
 			}
 		}
 
@@ -196,38 +189,42 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		log.Debug("User %d is voting for user %d", requestUser, vote.UserID)
 	}
 
-	groupIDs := fetcher.Ints(ctx, "user/%d/group_$%d_ids", vote.UserID, poll.MeetingID)
-	if err := fetcher.Error(); err != nil {
+	groupIDs := fetcher.Field().User_GroupIDs(ctx, vote.UserID, poll.meetingID)
+	if err := fetcher.Err(); err != nil {
+		// Ignore does not exist errors. In this case, groupIDs will be an empty slice.
 		var errNotExist datastore.DoesNotExistError
 		if !errors.As(err, &errNotExist) {
-			return fmt.Errorf("fetching groups of user %d in meeting %d: %v", vote.UserID, poll.MeetingID, err)
+			return fmt.Errorf("fetching groups of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
 		}
 	}
 
-	if !sliceMatch(groupIDs, poll.Groups) {
+	if !equalElement(groupIDs, poll.groups) {
 		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", vote.UserID)}
 	}
 
-	var voteWeightConfig bool
-	fetcher.Value(ctx, &voteWeightConfig, "meeting/%d/users_enable_vote_weight", poll.MeetingID)
-	if err := fetcher.Error(); err != nil {
+	voteWeightConfig := fetcher.Field().Meeting_UsersEnableVoteWeight(ctx, poll.meetingID)
+	if err := fetcher.Err(); err != nil {
+		// Ignore does not exist errors. In this case, voteWeightConfig will be false.
 		var errNotExist datastore.DoesNotExistError
 		if !errors.As(err, &errNotExist) {
-			return fmt.Errorf("fetching users_enable_vote_weight of meeting %d: %v", poll.MeetingID, err)
+			return fmt.Errorf("fetching users_enable_vote_weight of meeting %d: %w", poll.meetingID, err)
 		}
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
-	voteWeight := "1.000000"
+	var voteWeight string
 	if voteWeightConfig {
-		voteWeight = fetcher.String(ctx, "user/%d/vote_weight_$%d", vote.UserID, poll.MeetingID)
-		if err := fetcher.Error(); err != nil {
+		voteWeight = fetcher.Field().User_VoteWeight(ctx, vote.UserID, poll.meetingID)
+		if err := fetcher.Err(); err != nil {
+			// Ignore does not exist errors. The default case will be handled below.
 			var errNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %v", vote.UserID, poll.MeetingID, err)
+				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
 			}
-			voteWeight = "1.000000"
 		}
+	}
+	if voteWeight == "" {
+		voteWeight = "1.000000"
 	}
 	log.Debug("Using voteWeight %s", voteWeight)
 
@@ -243,7 +240,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		voteWeight,
 	}
 
-	if poll.Type == "pseudoanonymous" {
+	if poll.pollType == "pseudoanonymous" {
 		voteData.RequestUser = 0
 		voteData.VoteUser = 0
 	}
@@ -306,26 +303,57 @@ type Backend interface {
 }
 
 type pollConfig struct {
-	ID            int    `json:"id"`
-	MeetingID     int    `json:"meeting_id"`
-	Backend       string `json:"backend"`
-	Type          string `json:"type"`
-	Method        string `json:"pollmethod"`
-	Groups        []int  `json:"entitled_group_ids"`
-	GlobalYes     bool   `json:"global_yes"`
-	GlobalNo      bool   `json:"global_no"`
-	GlobalAbstain bool   `json:"global_abstain"`
-	MinAmount     int    `json:"min_votes_amount"`
-	MaxAmount     int    `json:"max_votes_amount"`
-	Options       []int  `json:"option_ids"`
+	id            int
+	meetingID     int
+	backend       string
+	pollType      string
+	method        string
+	groups        []int
+	globalYes     bool
+	globalNo      bool
+	globalAbstain bool
+	minAmount     int
+	maxAmount     int
+	options       []int
 }
 
-func (p pollConfig) String() string {
-	bs, err := json.Marshal(p)
-	if err != nil {
-		return fmt.Sprintf("Error decoding pollConfig: %v", err)
+func loadPoll(ctx context.Context, fetcher *datastore.Fetcher, pollID int) (pollConfig, error) {
+	p := pollConfig{id: pollID}
+	p.meetingID = fetcher.Field().Poll_MeetingID(ctx, pollID)
+	p.backend = fetcher.Field().Poll_Backend(ctx, pollID)
+	p.pollType = fetcher.Field().Poll_Type(ctx, pollID)
+	p.method = fetcher.Field().Poll_Pollmethod(ctx, pollID)
+	p.groups = fetcher.Field().Poll_EntitledGroupIDs(ctx, pollID)
+	p.globalYes = fetcher.Field().Poll_GlobalYes(ctx, pollID)
+	p.globalNo = fetcher.Field().Poll_GlobalNo(ctx, pollID)
+	p.globalAbstain = fetcher.Field().Poll_GlobalAbstain(ctx, pollID)
+	p.minAmount = fetcher.Field().Poll_MinVotesAmount(ctx, pollID)
+	p.maxAmount = fetcher.Field().Poll_MaxVotesAmount(ctx, pollID)
+	p.options = fetcher.Field().Poll_OptionIDs(ctx, pollID)
+
+	if err := fetcher.Err(); err != nil {
+		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
 	}
-	return string(bs)
+
+	return p, nil
+}
+
+// preloadUsers loads the information which user from all relevant groups are
+// present.
+//
+// Fetching this keys makes sure, they are in the cache and gets autoupdated if
+// they change. If they are fetched later, it will only by from cache and
+// therefore fast.
+func (p pollConfig) preloadUsers(ctx context.Context, fetcher *datastore.Fetcher) error {
+	for _, groupID := range p.groups {
+		for _, userID := range fetcher.Field().Group_UserIDs(ctx, groupID) {
+			fetcher.Field().User_IsPresentInMeetingIDs(ctx, userID)
+		}
+	}
+	if err := fetcher.Err(); err != nil {
+		return fmt.Errorf("preloading present users: %w", err)
+	}
+	return nil
 }
 
 type ballot struct {
@@ -343,29 +371,29 @@ func (v ballot) String() string {
 
 func (v *ballot) validate(poll pollConfig) error {
 	// TODO: global options
-	if poll.MinAmount == 0 {
-		poll.MinAmount = 1
+	if poll.minAmount == 0 {
+		poll.minAmount = 1
 	}
 
-	if poll.MaxAmount == 0 {
-		poll.MaxAmount = 1
+	if poll.maxAmount == 0 {
+		poll.maxAmount = 1
 	}
 
-	allowedOptions := make(map[int]bool, len(poll.Options))
-	for _, o := range poll.Options {
+	allowedOptions := make(map[int]bool, len(poll.options))
+	for _, o := range poll.options {
 		allowedOptions[o] = true
 	}
 
 	allowedGlobal := map[string]bool{
-		"Y": poll.GlobalYes,
-		"N": poll.GlobalNo,
-		"A": poll.GlobalAbstain,
+		"Y": poll.globalYes,
+		"N": poll.globalNo,
+		"A": poll.globalAbstain,
 	}
 
 	// Helper "error" that is not an error. Should help readability.
 	var voteIsValid error
 
-	switch poll.Method {
+	switch poll.method {
 	case "Y", "N":
 		switch v.Value.Type() {
 		case ballotValueString:
@@ -389,8 +417,8 @@ func (v *ballot) validate(poll pollConfig) error {
 				sumAmount += amount
 			}
 
-			if sumAmount < poll.MinAmount || sumAmount > poll.MaxAmount {
-				return InvalidVote("The sum of your answers has to be between %d and %d", poll.MinAmount, poll.MaxAmount)
+			if sumAmount < poll.minAmount || sumAmount > poll.maxAmount {
+				return InvalidVote("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
 			}
 
 			return voteIsValid
@@ -414,7 +442,7 @@ func (v *ballot) validate(poll pollConfig) error {
 					return InvalidVote("Option_id %d does not belong to the poll", optionID)
 				}
 
-				if yna != "Y" && yna != "N" && (yna != "A" || poll.Method != "YNA") {
+				if yna != "Y" && yna != "N" && (yna != "A" || poll.method != "YNA") {
 					// Valid that given data matches poll method.
 					return InvalidVote("Data for option %d does not fit the poll method.", optionID)
 				}
@@ -497,8 +525,8 @@ func isPresent(meetingID int, presentMeetings []int) bool {
 	return false
 }
 
-// sliceMatch returns true, if g1 and g2 have at lease one same element.
-func sliceMatch(g1, g2 []int) bool {
+// equalElement returns true, if g1 and g2 have at lease one equal element.
+func equalElement(g1, g2 []int) bool {
 	set := make(map[int]bool, len(g1))
 	for _, e := range g1 {
 		set[e] = true
