@@ -16,7 +16,7 @@ func main() {
 	ctx, cancel := interruptContext()
 	defer cancel()
 
-	if os.Getenv("OPENSLIDES_DEVELOPMENT") != "" {
+	if os.Getenv("OPENSLIDES_DEVELOPMENT") != "" && os.Getenv("VOTE_DISABLE_LOG") == "" {
 		log.SetDebugLogger(golog.New(os.Stderr, "DEBUG ", golog.LstdFlags))
 	}
 

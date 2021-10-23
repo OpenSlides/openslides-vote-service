@@ -125,6 +125,7 @@ func defaultEnv(environment []string) map[string]string {
 		"VOTE_DATABASE_NAME":     "vote",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
+		"VOTE_DISABLE_LOG":       "false",
 	}
 
 	for _, value := range environment {
