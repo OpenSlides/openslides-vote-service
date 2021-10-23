@@ -47,15 +47,17 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 		return fmt.Errorf("building auth: %w", err)
 	}
 
-	fastBackend, err := buildBackend(ctx, env, env["VOTE_BACKEND_FAST"])
+	fastBackend, fastClose, err := buildBackend(ctx, env, env["VOTE_BACKEND_FAST"])
 	if err != nil {
 		return fmt.Errorf("building fast backend: %w", err)
 	}
+	defer fastClose()
 
-	longBackend, err := buildBackend(ctx, env, env["VOTE_BACKEND_LONG"])
+	longBackend, longClose, err := buildBackend(ctx, env, env["VOTE_BACKEND_LONG"])
 	if err != nil {
 		return fmt.Errorf("building long backend: %w", err)
 	}
+	defer longClose()
 
 	service := New(fastBackend, longBackend, ds)
 
@@ -276,19 +278,19 @@ func buildMessageBus(env map[string]string) (messageBus, error) {
 	return &messageBusRedis.Redis{Conn: conn}, nil
 }
 
-func buildBackend(ctx context.Context, env map[string]string, name string) (Backend, error) {
+func buildBackend(ctx context.Context, env map[string]string, name string) (Backend, func(), error) {
 	switch name {
 	case "memory":
-		return memory.New(), nil
+		return memory.New(), func() {}, nil
 	case "redis":
 		addr := env["VOTE_REDIS_HOST"] + ":" + env["VOTE_REDIS_PORT"]
 		r := redis.New(addr)
 		r.Wait(ctx)
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
 
-		return r, nil
+		return r, func() {}, nil
 
 	case "postgres":
 		addr := fmt.Sprintf(
@@ -301,17 +303,16 @@ func buildBackend(ctx context.Context, env map[string]string, name string) (Back
 		)
 		p, err := postgres.New(ctx, addr)
 		if err != nil {
-			return nil, fmt.Errorf("creating postgres connection pool: %w", err)
+			return nil, nil, fmt.Errorf("creating postgres connection pool: %w", err)
 		}
-		defer p.Close()
 
 		p.Wait(ctx)
-		if err := p.Migrate(context.Background()); err != nil {
-			return nil, fmt.Errorf("creating shema: %w", err)
+		if err := p.Migrate(ctx); err != nil {
+			return nil, nil, fmt.Errorf("creating shema: %w", err)
 		}
-		return p, nil
+		return p, p.Close, nil
 
 	default:
-		return nil, fmt.Errorf("unknown backend %s", name)
+		return nil, nil, fmt.Errorf("unknown backend %s", name)
 	}
 }

@@ -86,7 +86,7 @@ stop request is a POST request without a body.
 A stop request can be send many times and will return the same data again.
 
 ```
-curl -X POST localhost:9013/internal/vote/stop?id=1 -
+curl -X POST localhost:9013/internal/vote/stop?id=1
 ```
 
 
