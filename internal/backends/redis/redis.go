@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
@@ -189,6 +190,50 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	if _, err := conn.Do("DEL", vKey, sKey); err != nil {
 		return fmt.Errorf("removing keys: %w", err)
 	}
+	return nil
+}
+
+// luaClearAll removes all vote related data from redis.
+//
+// ARGV[1] == state key pattern
+// ARGV[2] == vote data pattern
+const luaClearAll = `
+for _, key in ipairs(redis.call("KEYS", ARGV[1])) do
+	redis.call("DEL", key)
+end
+
+for _, key in ipairs(redis.call("KEYS", ARGV[2])) do
+	redis.call("DEL", key)
+end`
+
+// ClearAll removes all data from all polls.
+//
+// It does this in an atomic way so it is save to call this function any time.
+// But this functions makes use of the redis command KEYS, that has a O(N)
+// performance. If there are a lot of polls in the database, this could take
+// some time, stopping the hole redis instance.
+//
+// The redis documentations says:
+//
+// Warning: consider KEYS as a command that should only be used in production
+// environments with extreme care. It may ruin performance when it is executed
+// against large databases. This command is intended for debugging and special
+// operations, such as changing your keyspace layout. Don't use KEYS in your
+// regular application code.
+//
+// Don't use this function regulary.
+func (b *Backend) ClearAll(ctx context.Context) error {
+	conn := b.pool.Get()
+	defer conn.Close()
+
+	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "*")
+	stateKeyPattern := strings.ReplaceAll(keyState, "%d", "*")
+
+	log.Debug("Redis: EVAL '%s' 0 %s %s", luaClearAll, voteKeyPattern, stateKeyPattern)
+	if _, err := conn.Do("EVAL", luaClearAll, 0, voteKeyPattern, stateKeyPattern); err != nil {
+		return fmt.Errorf("removing keys: %w", err)
+	}
+
 	return nil
 }
 

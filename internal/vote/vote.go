@@ -299,6 +299,9 @@ type Backend interface {
 	// non existing poll.
 	Clear(ctx context.Context, pollID int) error
 
+	// ClearAll removes all data from the backend.
+	ClearAll(ctx context.Context) error
+
 	fmt.Stringer
 }
 

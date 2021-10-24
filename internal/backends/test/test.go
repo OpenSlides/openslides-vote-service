@@ -28,7 +28,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 		t.Run("Start started poll", func(t *testing.T) {
 			backend.Start(context.Background(), pollID)
 			if err := backend.Start(context.Background(), pollID); err != nil {
-				t.Errorf("Start an started poll returned error: %v", err)
+				t.Errorf("Start a started poll returned error: %v", err)
 			}
 		})
 
@@ -38,7 +38,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 			}
 
 			if err := backend.Start(context.Background(), pollID); err != nil {
-				t.Errorf("Start an started poll returned error: %v", err)
+				t.Errorf("Start a stopped poll returned error: %v", err)
 			}
 
 			err := backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
@@ -177,8 +177,51 @@ func Backend(t *testing.T, backend vote.Backend) {
 		backend.Start(context.Background(), pollID)
 
 		// Vote on the same poll with the same user id
-		if err := backend.Vote(context.Background(), 6, 5, []byte("my vote")); err != nil {
+		if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clear returned unexpected error: %v", err)
+		}
+	})
+
+	pollID++
+	t.Run("ClearAll removes vote data", func(t *testing.T) {
+		backend.Start(context.Background(), pollID)
+		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+
+		if err := backend.ClearAll(context.Background()); err != nil {
+			t.Fatalf("ClearAll returned unexpected error: %v", err)
+		}
+
+		bs, userIDs, err := backend.Stop(context.Background(), pollID)
+		var errDoesNotExist interface{ DoesNotExist() }
+		if !errors.As(err, &errDoesNotExist) {
+			t.Fatalf("Stop after clearAll has to return an error with a method DoesNotExist(), got: %v", err)
+		}
+
+		if len(bs) != 0 {
+			t.Fatalf("Stop after clearAll returned unexpected data: %v", bs)
+		}
+
+		if len(userIDs) != 0 {
+			t.Errorf("Stop after clearAll returned userIDs: %v", userIDs)
+		}
+	})
+
+	pollID++
+	t.Run("ClearAll removes voted users", func(t *testing.T) {
+		backend.Start(context.Background(), pollID)
+		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+
+		if err := backend.ClearAll(context.Background()); err != nil {
+			t.Fatalf("ClearAll returned unexpected error: %v", err)
+		}
+
+		if err := backend.Start(context.Background(), pollID); err != nil {
+			t.Fatalf("Start after clearAll returned unexpected error: %v", err)
+		}
+
+		// Vote on the same poll with the same user id
+		if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
+			t.Fatalf("Vote after clearAll returned unexpected error: %v", err)
 		}
 	})
 

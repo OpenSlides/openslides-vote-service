@@ -258,7 +258,17 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	sql := "DELETE FROM poll WHERE id = $1"
 	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
-		return fmt.Errorf("setting poll %d to stopped: %v", pollID, err)
+		return fmt.Errorf("deleting data of poll %d: %w", pollID, err)
+	}
+	return nil
+}
+
+// ClearAll removes all vote related data from postgres.
+func (b *Backend) ClearAll(ctx context.Context) error {
+	sql := "DELETE FROM poll"
+	log.Debug("SQL: `%s`", sql)
+	if _, err := b.pool.Exec(ctx, sql); err != nil {
+		return fmt.Errorf("deleting all polls: %w", err)
 	}
 	return nil
 }

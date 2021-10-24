@@ -102,7 +102,18 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	return nil
 }
 
-//AssertUserHasVoted is a method for the tests to check, if a user has voted.
+// ClearAll removes all data for all polls.
+func (b *Backend) ClearAll(ctx context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.voted = make(map[int]map[int]bool)
+	b.objects = make(map[int][][]byte)
+	b.state = make(map[int]int)
+	return nil
+}
+
+// AssertUserHasVoted is a method for the tests to check, if a user has voted.
 func (b *Backend) AssertUserHasVoted(t *testing.T, pollID, userID int) {
 	t.Helper()
 
