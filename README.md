@@ -102,6 +102,17 @@ curl -X POST localhost:9013/internal/vote/clear?id=1
 ```
 
 
+### Clear all polls
+
+Only for development and debugging there is an internal route to clear all polls
+at once. It there are many polls, this url could take a long time fully blocking
+redis. Use this carfully.
+
+```
+curl -X POST localhost:9013/internal/vote/clear_all
+```
+
+
 ## Configuration
 
 ### Environment variables
