@@ -102,6 +102,28 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 	)
 }
 
+type clearAller interface {
+	ClearAll(ctx context.Context) error
+}
+
+func handleClearAll(mux *http.ServeMux, clear clearAller) {
+	mux.HandleFunc(
+		httpPathInternal+"/clear_all",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Receive clear request: %v", r)
+			if r.Method != "POST" {
+				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
+				return
+			}
+
+			if err := clear.ClearAll(r.Context()); err != nil {
+				handleError(w, err, true)
+				return
+			}
+		},
+	)
+}
+
 type voter interface {
 	Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error
 }

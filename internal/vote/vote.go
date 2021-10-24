@@ -126,11 +126,28 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 	}()
 
 	if err := v.fastBackend.Clear(ctx, pollID); err != nil {
-		return fmt.Errorf("clearing the config: %w", err)
+		return fmt.Errorf("clearing fastBackend: %w", err)
 	}
 
 	if err := v.longBackend.Clear(ctx, pollID); err != nil {
-		return fmt.Errorf("clearing the config: %w", err)
+		return fmt.Errorf("clearing longBackend: %w", err)
+	}
+	return nil
+}
+
+// ClearAll removes all knowlage of all polls.
+func (v *Vote) ClearAll(ctx context.Context) (err error) {
+	log.Debug("Receive clearAll event")
+	defer func() {
+		log.Debug("End clearAll event with error: %v", err)
+	}()
+
+	if err := v.fastBackend.ClearAll(ctx); err != nil {
+		return fmt.Errorf("clearing fastBackend: %w", err)
+	}
+
+	if err := v.longBackend.ClearAll(ctx); err != nil {
+		return fmt.Errorf("clearing long Backend: %w", err)
 	}
 	return nil
 }

@@ -276,6 +276,63 @@ func TestHandleClear(t *testing.T) {
 	})
 }
 
+type clearAllerStub struct {
+	expectErr error
+}
+
+func (c *clearAllerStub) ClearAll(ctx context.Context) error {
+	return c.expectErr
+}
+
+func TestHandleClearAll(t *testing.T) {
+	clearAller := &clearAllerStub{}
+
+	url := "/internal/vote/clear_all"
+	mux := http.NewServeMux()
+	handleClearAll(mux, clearAller)
+
+	t.Run("Get request", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
+
+		if resp.Result().StatusCode != 405 {
+			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
+		}
+	})
+
+	t.Run("Valid", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+	})
+
+	t.Run("Not Exist error", func(t *testing.T) {
+		clearAller.expectErr = ErrNotExists
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-exist" {
+			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		}
+	})
+}
+
 type voterStub struct {
 	id        int
 	user      int

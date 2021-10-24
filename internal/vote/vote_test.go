@@ -148,6 +148,15 @@ func TestVoteClear(t *testing.T) {
 	}
 }
 
+func TestVoteClearAll(t *testing.T) {
+	backend := memory.New()
+	v := vote.New(backend, backend, &StubGetter{})
+
+	if err := v.ClearAll(context.Background()); err != nil {
+		t.Fatalf("ClearAll returned unexpected error: %v", err)
+	}
+}
+
 func TestVoteVote(t *testing.T) {
 	backend := memory.New()
 	v := vote.New(backend, backend, &StubGetter{

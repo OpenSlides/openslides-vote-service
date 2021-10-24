@@ -65,6 +65,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	handleCreate(mux, service)
 	handleStop(mux, service)
 	handleClear(mux, service)
+	handleClearAll(mux, service)
 	handleVote(mux, service, auth)
 	handleHealth(mux)
 
