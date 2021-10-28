@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.17
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211020070605-91a117278189
+	github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211026075422-fc899c0fffab
 	github.com/gomodule/redigo v1.8.5
 	github.com/jackc/pgconn v1.10.0
 	github.com/jackc/pgx/v4 v4.13.0
@@ -16,12 +16,12 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.1 // indirect
 	github.com/containerd/continuity v0.2.1 // indirect
-	github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1 // indirect
 	github.com/docker/cli v20.10.9+incompatible // indirect
 	github.com/docker/docker v20.10.9+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v4 v4.1.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
