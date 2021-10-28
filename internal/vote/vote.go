@@ -241,7 +241,13 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		}
 	}
 	if voteWeight == "" {
-		voteWeight = "1.000000"
+		voteWeight = fetcher.Field().User_DefaultVoteWeight(ctx, vote.UserID)
+		if err := fetcher.Err(); err != nil {
+			return fmt.Errorf("getting default vote weight: %w", err)
+		}
+		if voteWeight == "" {
+			voteWeight = "1.000000"
+		}
 	}
 	log.Debug("Using voteWeight %s", voteWeight)
 

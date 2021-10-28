@@ -3,6 +3,7 @@ package vote_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -166,6 +167,8 @@ func TestVoteVote(t *testing.T) {
 			entitled_group_ids: [1]
 			pollmethod: Y
 			global_yes: true
+		
+		meeting/1/id: 1
 
 		user/1:
 			is_present_in_meeting_ids: [1]
@@ -270,6 +273,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
+			meeting/1/id: 1
+
 			user/1:
 				is_present_in_meeting_ids: [1]
 				group_$1_ids: [1]
@@ -287,6 +292,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				entitled_group_ids: [1]
 				pollmethod: Y
 				global_yes: true
+
+			meeting/1/id: 1				
 
 			user/1:
 				is_present_in_meeting_ids: []
@@ -306,6 +313,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
+			meeting/1/id: 1
+
 			user/1:
 				is_present_in_meeting_ids: [1]
 				group_$1_ids: []
@@ -323,6 +332,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				entitled_group_ids: [1]
 				pollmethod: Y
 				global_yes: true
+			
+			meeting/1/id: 1
 
 			user/1:
 				is_present_in_meeting_ids: [1]
@@ -342,6 +353,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
+			meeting/1/id: 1
+
 			user/1/is_present_in_meeting_ids: [1]
 			user/2/group_$1_ids: [1]
 			`,
@@ -358,6 +371,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				entitled_group_ids: [1]
 				pollmethod: Y
 				global_yes: true
+
+			meeting/1/id: 1
 
 			user/1/is_present_in_meeting_ids: [1]
 			user/2:
@@ -377,6 +392,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				entitled_group_ids: [1]
 				pollmethod: Y
 				global_yes: true
+			
+			meeting/1/id: 1
 
 			user/1/is_present_in_meeting_ids: [1]
 			user/2:
@@ -406,6 +423,135 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			if !errors.Is(err, vote.ErrNotAllowed) {
 				t.Fatalf("Expected NotAllowedError, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestVoteWeight(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data string
+
+		expectWeight string
+	}{
+		{
+			"No weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/id: 1
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+			`,
+			"1.000000",
+		},
+		{
+			"Weight enabled, user has no weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+			`,
+			"1.000000",
+		},
+		{
+			"Weight enabled, user has default weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+				default_vote_weight: "2.000000"
+			`,
+			"2.000000",
+		},
+		{
+			"Weight enabled, user has default weight and meeting weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+				default_vote_weight: "2.000000"
+				vote_weight_$: [1]
+				vote_weight_$1: "3.000000"
+			`,
+			"3.000000",
+		},
+		{
+			"Weight enabled, user has default weight and meeting weight in other meeting",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+				default_vote_weight: "2.000000"
+				vote_weight_$: [2]
+				vote_weight_$2: "3.000000"
+			`,
+			"2.000000",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := memory.New()
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)})
+			backend.Start(context.Background(), 1)
+
+			if err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
+				t.Fatalf("vote returned unexpected error: %v", err)
+			}
+
+			data, _, _ := backend.Stop(context.Background(), 1)
+
+			if len(data) != 1 {
+				t.Fatalf("got %d vote objects, expected one", len(data))
+			}
+
+			var decoded struct {
+				Weight string `json:"weight"`
+			}
+			if err := json.Unmarshal(data[0], &decoded); err != nil {
+				t.Fatalf("decoding voteobject returned unexpected error: %v", err)
+			}
+
+			if decoded.Weight != tt.expectWeight {
+				t.Errorf("got weight %q, expected %q", decoded.Weight, tt.expectWeight)
 			}
 		})
 	}
