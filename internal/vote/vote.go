@@ -135,12 +135,20 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 	return nil
 }
 
-// ClearAll removes all knowlage of all polls.
+// ClearAll removes all knowlage of all polls and the datastore-cache.
 func (v *Vote) ClearAll(ctx context.Context) (err error) {
 	log.Debug("Receive clearAll event")
 	defer func() {
 		log.Debug("End clearAll event with error: %v", err)
 	}()
+
+	// Reset the cache if it has the ResetCach() method.
+	type ResetCacher interface {
+		ResetCache()
+	}
+	if r, ok := v.ds.(ResetCacher); ok {
+		r.ResetCache()
+	}
 
 	if err := v.fastBackend.ClearAll(ctx); err != nil {
 		return fmt.Errorf("clearing fastBackend: %w", err)
