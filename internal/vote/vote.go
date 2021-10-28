@@ -187,8 +187,10 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
 		return MessageError{ErrInvalid, fmt.Sprintf("invalid json: %v", err)}
 	}
-	if vote.UserID == 0 {
-		vote.UserID = requestUser
+
+	voteUser, exist := vote.UserID.Value()
+	if !exist {
+		voteUser = requestUser
 	}
 	log.Debug("Ballot: %v", vote)
 
@@ -198,33 +200,33 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 
 	backend := v.backend(poll)
 
-	if vote.UserID != requestUser {
-		delegation := fetcher.Field().User_VoteDelegatedToID(ctx, vote.UserID, poll.meetingID)
+	if voteUser != requestUser {
+		delegation := fetcher.Field().User_VoteDelegatedToID(ctx, voteUser, poll.meetingID)
 		if err := fetcher.Err(); err != nil {
 			// Ignore does not exist errors. In this case, delegation will be 0.
 			var errNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 			}
 		}
 
 		if delegation != requestUser {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", vote.UserID)}
+			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
 		}
-		log.Debug("User %d is voting for user %d", requestUser, vote.UserID)
+		log.Debug("User %d is voting for user %d", requestUser, voteUser)
 	}
 
-	groupIDs := fetcher.Field().User_GroupIDs(ctx, vote.UserID, poll.meetingID)
+	groupIDs := fetcher.Field().User_GroupIDs(ctx, voteUser, poll.meetingID)
 	if err := fetcher.Err(); err != nil {
 		// Ignore does not exist errors. In this case, groupIDs will be an empty slice.
 		var errNotExist datastore.DoesNotExistError
 		if !errors.As(err, &errNotExist) {
-			return fmt.Errorf("fetching groups of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+			return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 		}
 	}
 
 	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", vote.UserID)}
+		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", voteUser)}
 	}
 
 	voteWeightConfig := fetcher.Field().Meeting_UsersEnableVoteWeight(ctx, poll.meetingID)
@@ -239,17 +241,17 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeight string
 	if voteWeightConfig {
-		voteWeight = fetcher.Field().User_VoteWeight(ctx, vote.UserID, poll.meetingID)
+		voteWeight = fetcher.Field().User_VoteWeight(ctx, voteUser, poll.meetingID)
 		if err := fetcher.Err(); err != nil {
 			// Ignore does not exist errors. The default case will be handled below.
 			var errNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 			}
 		}
 	}
 	if voteWeight == "" {
-		voteWeight = fetcher.Field().User_DefaultVoteWeight(ctx, vote.UserID)
+		voteWeight = fetcher.Field().User_DefaultVoteWeight(ctx, voteUser)
 		if err := fetcher.Err(); err != nil {
 			return fmt.Errorf("getting default vote weight: %w", err)
 		}
@@ -266,7 +268,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		Weight      string          `json:"weight"`
 	}{
 		requestUser,
-		vote.UserID,
+		voteUser,
 		vote.Value.original,
 		voteWeight,
 	}
@@ -282,7 +284,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Saving vote date: %s", bs)
 
-	if err := backend.Vote(ctx, pollID, vote.UserID, bs); err != nil {
+	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -390,8 +392,25 @@ func (p pollConfig) preloadUsers(ctx context.Context, fetcher *datastore.Fetcher
 	return nil
 }
 
+type maybeInt struct {
+	unmarshalled bool
+	value        int
+}
+
+func (m *maybeInt) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &m.value); err != nil {
+		return fmt.Errorf("decoding value as int: %w", err)
+	}
+	m.unmarshalled = true
+	return nil
+}
+
+func (m *maybeInt) Value() (int, bool) {
+	return m.value, m.unmarshalled
+}
+
 type ballot struct {
-	UserID int         `json:"user_id"`
+	UserID maybeInt    `json:"user_id"`
 	Value  ballotValue `json:"value"`
 }
 
