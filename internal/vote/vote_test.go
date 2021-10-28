@@ -104,6 +104,7 @@ func TestVoteStop(t *testing.T) {
 	v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(`
 	poll/1/meeting_id: 1
 	poll/2/meeting_id: 1
+	poll/3/meeting_id: 1
 	`)})
 
 	t.Run("Unknown poll", func(t *testing.T) {
@@ -136,6 +137,22 @@ func TestVoteStop(t *testing.T) {
 		var errStopped interface{ Stopped() }
 		if !errors.As(err, &errStopped) {
 			t.Errorf("Stop did not stop the poll in the backend.")
+		}
+	})
+
+	t.Run("Poll without data", func(t *testing.T) {
+		if err := backend.Start(context.Background(), 3); err != nil {
+			t.Fatalf("Start returned an unexpected error: %v", err)
+		}
+
+		buf := new(bytes.Buffer)
+		if err := v.Stop(context.Background(), 3, buf); err != nil {
+			t.Fatalf("Stop returned unexpected error: %v", err)
+		}
+
+		expect := `{"votes":[],"user_ids":[]}`
+		if got := strings.TrimSpace(buf.String()); got != expect {
+			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}
 	})
 }

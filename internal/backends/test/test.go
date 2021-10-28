@@ -58,6 +58,22 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Fatalf("Stop a unknown poll has to return an error with a method DoesNotExist(), got: %v", err)
 			}
 		})
+
+		pollID++
+		t.Run("empty poll", func(t *testing.T) {
+			if err := backend.Start(context.Background(), pollID); err != nil {
+				t.Fatalf("Start returned unexpected error: %v", err)
+			}
+
+			data, users, err := backend.Stop(context.Background(), pollID)
+			if err != nil {
+				t.Fatalf("Stop returned unexpected error: %v", err)
+			}
+
+			if len(data) != 0 || len(users) != 0 {
+				t.Errorf("Stop() returned (%q, %q), expected two empty lists", data, users)
+			}
+		})
 	})
 
 	pollID++

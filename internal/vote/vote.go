@@ -103,6 +103,10 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 		encodableObjects[i] = objects[i]
 	}
 
+	if userIDs == nil {
+		userIDs = []int{}
+	}
+
 	out := struct {
 		Votes []json.RawMessage `json:"votes"`
 		Users []int             `json:"user_ids"`
@@ -185,7 +189,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 
 	var vote ballot
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
-		return MessageError{ErrInvalid, fmt.Sprintf("invalid json: %v", err)}
+		return MessageError{ErrInvalid, fmt.Sprintf("decoding payload: %v", err)}
 	}
 
 	voteUser, exist := vote.UserID.Value()
