@@ -185,7 +185,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 
 	var vote ballot
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
-		return MessageError{ErrInvalid, fmt.Sprintf("invalid json: %v", err)}
+		return MessageError{ErrInvalid, fmt.Sprintf("decoding payload: %v", err)}
 	}
 	if vote.UserID == 0 {
 		vote.UserID = requestUser

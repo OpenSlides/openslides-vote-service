@@ -1,6 +1,9 @@
 package vote
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 const (
 	// ErrInternal should not happen.
@@ -92,7 +95,19 @@ type MessageError struct {
 }
 
 func (err MessageError) Error() string {
-	return fmt.Sprintf(`{"error":"%s","msg":"%s"}`, err.Type(), err.msg)
+	out := struct {
+		Error string `json:"error"`
+		MSG   string `json:"msg"`
+	}{
+		err.Type(),
+		err.msg,
+	}
+
+	decoded, jsonerr := json.Marshal(out)
+	if jsonerr != nil {
+		return fmt.Sprintf(`{"error":"internal", "msg":"someting went wrong encoding the error message"}`)
+	}
+	return string(decoded)
 }
 
 func (err MessageError) Unwrap() error {
