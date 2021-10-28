@@ -198,6 +198,10 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Ballot: %v", vote)
 
+	if voteUser == 0 {
+		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	}
+
 	if err := vote.validate(poll); err != nil {
 		return fmt.Errorf("validating vote: %w", err)
 	}
