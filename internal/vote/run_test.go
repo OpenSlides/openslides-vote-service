@@ -22,45 +22,6 @@ func TestRun(t *testing.T) {
 	logmock := testLog{}
 	log.SetInfoLogger(goLogger.New(&logmock, "", 0))
 
-	t.Run("Start Server with default port", func(t *testing.T) {
-		var runErr error
-		go func() {
-			runErr = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory"}, secret)
-		}()
-
-		_, err := net.DialTimeout("tcp", "localhost:9013", 10*time.Millisecond)
-		if err != nil {
-			t.Fatalf("Server could not be reached: %v", err)
-		}
-
-		if runErr != nil {
-			t.Errorf("Vote.Run retunred unexpected error: %v", err)
-		}
-
-		if got := logmock.LastMSG(); got != "Listen on :9013" {
-			t.Errorf("Expected listen on message, got: `%s`", got)
-		}
-	})
-
-	t.Run("Start Server with given port", func(t *testing.T) {
-		var err error
-		go func() {
-			err = vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5000"}, secret)
-		}()
-
-		if _, err := net.DialTimeout("tcp", "localhost:5000", 10*time.Millisecond); err != nil {
-			t.Errorf("Server could not be reached: %v", err)
-		}
-
-		if err != nil {
-			t.Errorf("Vote.Run retunred unexpected error: %v", err)
-		}
-
-		if got := logmock.LastMSG(); got != "Listen on :5000" {
-			t.Errorf("Expected listen on message, got: %s", got)
-		}
-	})
-
 	t.Run("Cancel Server", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		var runErr error
