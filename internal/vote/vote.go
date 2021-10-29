@@ -57,6 +57,14 @@ func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
 		return fmt.Errorf("loading poll: %w", err)
 	}
 
+	if poll.pollType == "analog" {
+		return MessageError{ErrInvalid, "Analog poll can not be created"}
+	}
+
+	if poll.state != "started" {
+		return MessageError{ErrInternal, fmt.Sprintf("Poll state is %s, only started polls can be created", poll.state)}
+	}
+
 	if err := poll.preloadUsers(ctx, fetcher); err != nil {
 		return fmt.Errorf("loading present users: %w", err)
 	}
@@ -349,6 +357,7 @@ type pollConfig struct {
 	minAmount     int
 	maxAmount     int
 	options       []int
+	state         string
 }
 
 func loadPoll(ctx context.Context, fetcher *datastore.Fetcher, pollID int) (pollConfig, error) {
@@ -364,6 +373,7 @@ func loadPoll(ctx context.Context, fetcher *datastore.Fetcher, pollID int) (poll
 	p.minAmount = fetcher.Field().Poll_MinVotesAmount(ctx, pollID)
 	p.maxAmount = fetcher.Field().Poll_MaxVotesAmount(ctx, pollID)
 	p.options = fetcher.Field().Poll_OptionIDs(ctx, pollID)
+	p.state = fetcher.Field().Poll_State(ctx, pollID)
 
 	if err := fetcher.Err(); err != nil {
 		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
