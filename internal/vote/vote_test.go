@@ -14,22 +14,20 @@ import (
 )
 
 func TestVoteCreate(t *testing.T) {
-	backend := memory.New()
-
-	ds := StubGetter{data: dsmock.YAMLData(`
-	poll:
-		1:
-			meeting_id: 5
-		2:
-			meeting_id: 5
-
-	group/1/user_ids: [1]
-	user/1/is_present_in_meeting_ids: [1]
-	`)}
-
-	v := vote.New(backend, backend, &ds)
-
 	t.Run("Unknown poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				state: started
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+
+		v := vote.New(backend, backend, &ds)
+
 		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
 		}
@@ -42,22 +40,130 @@ func TestVoteCreate(t *testing.T) {
 	})
 
 	t.Run("Create poll a second time", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: started
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+		v.Create(context.Background(), 1)
+
 		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
 		}
 	})
 
 	t.Run("Create a stopped poll", func(t *testing.T) {
-		if err := v.Create(context.Background(), 2); err != nil {
-			t.Errorf("Create returned unexpected error: %v", err)
-		}
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: started
 
-		if _, _, err := backend.Stop(context.Background(), 2); err != nil {
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+		v.Create(context.Background(), 1)
+
+		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		if err := v.Create(context.Background(), 2); err != nil {
+		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
+		}
+	})
+
+	t.Run("Create an anolog poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: analog
+				state: started
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an created poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: created
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an finished poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: finished
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an finished poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: published
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
 }
@@ -69,6 +175,7 @@ func TestVoteCreatePreloadData(t *testing.T) {
 	poll/1:
 		meeting_id: 1
 		entitled_group_ids: [1]
+		state: started
 	
 	group:
 		1:
