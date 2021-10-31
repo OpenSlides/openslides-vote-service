@@ -224,6 +224,9 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 				if err != nil {
 					return fmt.Errorf("parsind row: %w", err)
 				}
+				if len(bs) == 0 {
+					continue
+				}
 				objects = append(objects, bs)
 			}
 
