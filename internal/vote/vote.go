@@ -65,8 +65,8 @@ func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
 		return MessageError{ErrInternal, fmt.Sprintf("Poll state is %s, only started polls can be created", poll.state)}
 	}
 
-	if err := poll.preloadUsers(ctx, ds); err != nil {
-		return fmt.Errorf("loading present users: %w", err)
+	if err := poll.preload(ctx, ds); err != nil {
+		return fmt.Errorf("preloading data: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
@@ -213,8 +213,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	if vote.UserID != requestUser {
 		delegation, err := ds.User_VoteDelegatedToID(vote.UserID, poll.meetingID).Value(ctx)
 		if err != nil {
-			return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
-
+			// If the user from the request body does not exist, then delegation
+			// will be 0. This case is handled below.
+			var errDoesNotExist datastore.DoesNotExistError
+			if !errors.As(err, &errDoesNotExist) {
+				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+			}
 		}
 
 		if delegation != requestUser {
@@ -232,28 +236,22 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", vote.UserID)}
 	}
 
-	voteWeightConfig, err := ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching users_enable_vote_weight of meeting %d: %w", poll.meetingID, err)
-	}
-
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeight string
-	if voteWeightConfig {
-		voteWeight, err = ds.User_VoteWeight(vote.UserID, poll.meetingID).Value(ctx)
-		if err != nil {
-			return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
-		}
-	}
-	if voteWeight == "" {
-		voteWeight, err = ds.User_DefaultVoteWeight(vote.UserID).Value(ctx)
-		if err := ds.Err(); err != nil {
-			return fmt.Errorf("getting default vote weight: %w", err)
-		}
+	if ds.Meeting_UsersEnableVoteWeight(poll.meetingID).ErrorLater(ctx) {
+		voteWeight = ds.User_VoteWeight(vote.UserID, poll.meetingID).ErrorLater(ctx)
 		if voteWeight == "" {
-			voteWeight = "1.000000"
+			voteWeight = ds.User_DefaultVoteWeight(vote.UserID).ErrorLater(ctx)
 		}
 	}
+	if err := ds.Err(); err != nil {
+		return fmt.Errorf("getting vote weight: %w", err)
+	}
+
+	if voteWeight == "" {
+		voteWeight = "1.000000"
+	}
+
 	log.Debug("Using voteWeight %s", voteWeight)
 
 	voteData := struct {
@@ -371,23 +369,28 @@ func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfi
 	return p, nil
 }
 
-// preloadUsers loads the information which user from all relevant groups are
-// present.
-//
-// Fetching this keys makes sure, they are in the cache and gets autoupdated if
-// they change. If they are fetched later, it will only by from cache and
-// therefore fast.
-func (p pollConfig) preloadUsers(ctx context.Context, ds *datastore.Request) error {
-	// TODO: This needs less requests but more fields to check.
+// preload loads all data in the cache, that is needed later for the vote
+// requests.
+func (p pollConfig) preload(ctx context.Context, ds *datastore.Request) error {
+	// TODO: Test that this uses less requests.
 	for _, groupID := range p.groups {
-		groupIDs, err := ds.Group_UserIDs(groupID).Value(ctx)
+		userIDs, err := ds.Group_UserIDs(groupID).Value(ctx)
 		if err != nil {
 			return fmt.Errorf("loading users of group %q: %w", groupID, err)
 		}
-		for _, userID := range groupIDs {
-			ds.User_IsPresentInMeetingIDs(userID)
+		for _, userID := range userIDs {
+			ds.User_GroupIDs(userID, p.meetingID)
+			ds.User_VoteWeight(userID, p.meetingID)
+			ds.User_DefaultVoteWeight(userID)
+			delegatedUserID := ds.User_VoteDelegatedToID(userID, p.meetingID).ErrorLater(ctx)
+			if delegatedUserID == 0 {
+				delegatedUserID = userID
+			}
+			ds.User_IsPresentInMeetingIDs(delegatedUserID)
+
 		}
 	}
+	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
 
 	if err := ds.Execute(ctx); err != nil {
 		return fmt.Errorf("preloading present users: %w", err)
@@ -409,7 +412,6 @@ func (v ballot) String() string {
 }
 
 func (v *ballot) validate(poll pollConfig) error {
-	// TODO: global options
 	if poll.minAmount == 0 {
 		poll.minAmount = 1
 	}
