@@ -14,24 +14,30 @@ import (
 )
 
 func TestVoteCreate(t *testing.T) {
-	backend := memory.New()
+	t.Run("Not started poll", func(t *testing.T) {
+		closed := make(chan struct{})
+		defer close(closed)
 
-	ds := StubGetter{data: dsmock.YAMLData(`
-	poll:
-		1:
-			meeting_id: 5
-		2:
-			meeting_id: 5
+		backend := memory.New()
+		ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				state: started
 
-	group/1/user_ids: [1]
-	user/1/is_present_in_meeting_ids: [1]
-	`)}
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		meeting/5/id: 5
+		`))
 
-	v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, ds)
 
-	t.Run("Unknown poll", func(t *testing.T) {
 		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
+		}
+
+		if c := len(ds.Requests()); c > 2 {
+			t.Errorf("Create used %d requests to the datastore, expected max 2: %v", c, ds.Requests())
 		}
 
 		// After a poll was created, it has to be possible to send votes.
@@ -42,33 +48,146 @@ func TestVoteCreate(t *testing.T) {
 	})
 
 	t.Run("Create poll a second time", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: started
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		meeting/5/id: 5
+		`)}
+		v := vote.New(backend, backend, &ds)
+		v.Create(context.Background(), 1)
+
 		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
 		}
 	})
 
 	t.Run("Create a stopped poll", func(t *testing.T) {
-		if err := v.Create(context.Background(), 2); err != nil {
-			t.Errorf("Create returned unexpected error: %v", err)
-		}
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: started
 
-		if _, _, err := backend.Stop(context.Background(), 2); err != nil {
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		meeting/5/id: 5
+		`)}
+		v := vote.New(backend, backend, &ds)
+		v.Create(context.Background(), 1)
+
+		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		if err := v.Create(context.Background(), 2); err != nil {
+		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
+		}
+	})
+
+	t.Run("Create an anolog poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: analog
+				state: started
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an created poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: created
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an finished poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: finished
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
+		}
+	})
+
+	t.Run("Create an finished poll", func(t *testing.T) {
+		backend := memory.New()
+		ds := StubGetter{data: dsmock.YAMLData(`
+		poll:
+			1:
+				meeting_id: 5
+				type: named
+				state: published
+
+		group/1/user_ids: [1]
+		user/1/is_present_in_meeting_ids: [1]
+		`)}
+		v := vote.New(backend, backend, &ds)
+
+		err := v.Create(context.Background(), 1)
+
+		if err == nil {
+			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
 }
 
 func TestVoteCreatePreloadData(t *testing.T) {
+	closed := make(chan struct{})
+	defer close(closed)
+
 	backend := memory.New()
-	// TODO: add poll config fields
-	ds := StubGetter{data: dsmock.YAMLData(`
+	ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(`
 	poll/1:
-		meeting_id: 1
+		meeting_id: 5
 		entitled_group_ids: [1]
+		state: started
 	
 	group:
 		1:
@@ -78,14 +197,17 @@ func TestVoteCreatePreloadData(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 		2:
 			is_present_in_meeting_ids: [1]
-	`)}
-	v := vote.New(backend, backend, &ds)
+	meeting/5/id: 5
+	`))
+	v := vote.New(backend, backend, ds)
 
 	if err := v.Create(context.Background(), 1); err != nil {
 		t.Errorf("Create returned unexpected error: %v", err)
 	}
 
-	ds.assertKeys(t, "poll/1/meeting_id", "user/1/is_present_in_meeting_ids", "user/2/is_present_in_meeting_ids")
+	if !ds.KeysRequested("poll/1/meeting_id", "user/1/is_present_in_meeting_ids", "user/2/is_present_in_meeting_ids") {
+		t.Fatalf("Not all keys where preloaded.")
+	}
 }
 
 func TestVoteCreateDSError(t *testing.T) {
@@ -271,6 +393,124 @@ func TestVoteVote(t *testing.T) {
 			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrStopped.Type())
 		}
 	})
+}
+
+func TestVoteNoRequests(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data string
+		vote string
+	}{
+		{
+			"normal vote",
+			`---
+			poll/1:
+				meeting_id: 50
+				entitled_group_ids: [5]
+				pollmethod: Y
+				global_yes: true
+				state: started
+			
+			meeting/50/id: 50
+
+			user/1:
+				is_present_in_meeting_ids: [50]
+				group_$50_ids: [5]
+
+			group/5/user_ids: [1]
+			`,
+			`{"value":"Y"}`,
+		},
+		{
+			"delegation vote",
+			`---
+			poll/1:
+				meeting_id: 50
+				entitled_group_ids: [5]
+				pollmethod: Y
+				global_yes: true
+				state: started
+			
+			meeting/50/id: 50
+
+			user:
+				1:
+					is_present_in_meeting_ids: [50]
+				2:
+					group_$50_ids: [5]
+					vote_delegated_$50_to_id: 1
+
+			group/5/user_ids: [2]
+			`,
+			`{"user_id":2,"value":"Y"}`,
+		},
+		{
+			"vote weight enabled",
+			`---
+			poll/1:
+				meeting_id: 50
+				entitled_group_ids: [5]
+				pollmethod: Y
+				global_yes: true
+				state: started
+			
+			meeting/50/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [50]
+				group_$50_ids: [5]
+
+			group/5/user_ids: [1]
+			`,
+			`{"value":"Y"}`,
+		},
+		{
+			"vote weight enabled and delegated",
+			`---
+			poll/1:
+				meeting_id: 50
+				entitled_group_ids: [5]
+				pollmethod: Y
+				global_yes: true
+				state: started
+			
+			meeting/50/users_enable_vote_weight: true
+
+			user:
+				1:
+					is_present_in_meeting_ids: [50]
+				2:
+					group_$50_ids: [5]
+					vote_delegated_$50_to_id: 1
+
+			group/5/user_ids: [2]
+			`,
+			`{"user_id":2,"value":"Y"}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			closed := make(chan struct{})
+			defer close(closed)
+
+			ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(tt.data))
+			backend := memory.New()
+			v := vote.New(backend, backend, ds)
+
+			if err := v.Create(context.Background(), 1); err != nil {
+				t.Fatalf("Can not start poll: %v", err)
+			}
+
+			ds.ResetRequests()
+
+			if err := v.Vote(context.Background(), 1, 1, strings.NewReader(tt.vote)); err != nil {
+				t.Errorf("Vote returned unexpected error: %v", err)
+			}
+
+			if len(ds.Requests()) != 0 {
+				t.Errorf("Vote send %d requests to the datastore: %v", len(ds.Requests()), ds.Requests())
+			}
+		})
+	}
 }
 
 func TestVoteDelegationAndGroup(t *testing.T) {
