@@ -13,6 +13,8 @@ github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5/go.mod h1:lmUJ/7eu/Q8
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211026075422-fc899c0fffab h1:n7/3KOybdRyoy3YCpTHOdpWUFH9JHWUPDtkHtQgR2fs=
 github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211026075422-fc899c0fffab/go.mod h1:rS5dleGyvHQL8hWYYOe5eFfeGYBp9OFt/Ci6e8BipvQ=
+github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211031133623-691f12aad1ba h1:YsPZbJwDA/gnF2ZpSW0qEHPk3enwYVsiA/5CA2z2YtA=
+github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211031133623-691f12aad1ba/go.mod h1:rS5dleGyvHQL8hWYYOe5eFfeGYBp9OFt/Ci6e8BipvQ=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=

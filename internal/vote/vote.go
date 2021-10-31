@@ -50,14 +50,14 @@ func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
 	}()
 
 	recorder := datastore.NewRecorder(v.ds)
-	fetcher := datastore.NewFetcher(recorder)
+	ds := datastore.NewRequest(recorder)
 
-	poll, err := loadPoll(ctx, fetcher, pollID)
+	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	if err := poll.preloadUsers(ctx, fetcher); err != nil {
+	if err := poll.preloadUsers(ctx, ds); err != nil {
 		return fmt.Errorf("loading present users: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
@@ -80,8 +80,8 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 		log.Debug("End stop event with error: %v", err)
 	}()
 
-	fetcher := datastore.NewFetcher(v.ds)
-	poll, err := loadPoll(ctx, fetcher, pollID)
+	ds := datastore.NewRequest(v.ds)
+	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
 	}
@@ -171,15 +171,15 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		log.Debug("End vote event with error: %v", err)
 	}()
 
-	fetcher := datastore.NewFetcher(v.ds)
-	poll, err := loadPoll(ctx, fetcher, pollID)
+	ds := datastore.NewRequest(v.ds)
+	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
 	}
 	log.Debug("Poll config: %v", poll)
 
-	presentMeetings := fetcher.Field().User_IsPresentInMeetingIDs(ctx, requestUser)
-	if err := fetcher.Err(); err != nil {
+	presentMeetings, err := ds.User_IsPresentInMeetingIDs(requestUser).Value(ctx)
+	if err != nil {
 		return fmt.Errorf("fetching is present in meetings: %w", err)
 	}
 
@@ -203,13 +203,10 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	backend := v.backend(poll)
 
 	if vote.UserID != requestUser {
-		delegation := fetcher.Field().User_VoteDelegatedToID(ctx, vote.UserID, poll.meetingID)
-		if err := fetcher.Err(); err != nil {
-			// Ignore does not exist errors. In this case, delegation will be 0.
-			var errNotExist datastore.DoesNotExistError
-			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
-			}
+		delegation, err := ds.User_VoteDelegatedToID(vote.UserID, poll.meetingID).Value(ctx)
+		if err != nil {
+			return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+
 		}
 
 		if delegation != requestUser {
@@ -218,43 +215,31 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		log.Debug("User %d is voting for user %d", requestUser, vote.UserID)
 	}
 
-	groupIDs := fetcher.Field().User_GroupIDs(ctx, vote.UserID, poll.meetingID)
-	if err := fetcher.Err(); err != nil {
-		// Ignore does not exist errors. In this case, groupIDs will be an empty slice.
-		var errNotExist datastore.DoesNotExistError
-		if !errors.As(err, &errNotExist) {
-			return fmt.Errorf("fetching groups of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
-		}
+	groupIDs, err := ds.User_GroupIDs(vote.UserID, poll.meetingID).Value(ctx)
+	if err := ds.Err(); err != nil {
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
 	}
 
 	if !equalElement(groupIDs, poll.groups) {
 		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", vote.UserID)}
 	}
 
-	voteWeightConfig := fetcher.Field().Meeting_UsersEnableVoteWeight(ctx, poll.meetingID)
-	if err := fetcher.Err(); err != nil {
-		// Ignore does not exist errors. In this case, voteWeightConfig will be false.
-		var errNotExist datastore.DoesNotExistError
-		if !errors.As(err, &errNotExist) {
-			return fmt.Errorf("fetching users_enable_vote_weight of meeting %d: %w", poll.meetingID, err)
-		}
+	voteWeightConfig, err := ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching users_enable_vote_weight of meeting %d: %w", poll.meetingID, err)
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeight string
 	if voteWeightConfig {
-		voteWeight = fetcher.Field().User_VoteWeight(ctx, vote.UserID, poll.meetingID)
-		if err := fetcher.Err(); err != nil {
-			// Ignore does not exist errors. The default case will be handled below.
-			var errNotExist datastore.DoesNotExistError
-			if !errors.As(err, &errNotExist) {
-				return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
-			}
+		voteWeight, err = ds.User_VoteWeight(vote.UserID, poll.meetingID).Value(ctx)
+		if err != nil {
+			return fmt.Errorf("fetching vote weight of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
 		}
 	}
 	if voteWeight == "" {
-		voteWeight = fetcher.Field().User_DefaultVoteWeight(ctx, vote.UserID)
-		if err := fetcher.Err(); err != nil {
+		voteWeight, err = ds.User_DefaultVoteWeight(vote.UserID).Value(ctx)
+		if err := ds.Err(); err != nil {
 			return fmt.Errorf("getting default vote weight: %w", err)
 		}
 		if voteWeight == "" {
@@ -355,21 +340,21 @@ type pollConfig struct {
 	options       []int
 }
 
-func loadPoll(ctx context.Context, fetcher *datastore.Fetcher, pollID int) (pollConfig, error) {
+func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfig, error) {
 	p := pollConfig{id: pollID}
-	p.meetingID = fetcher.Field().Poll_MeetingID(ctx, pollID)
-	p.backend = fetcher.Field().Poll_Backend(ctx, pollID)
-	p.pollType = fetcher.Field().Poll_Type(ctx, pollID)
-	p.method = fetcher.Field().Poll_Pollmethod(ctx, pollID)
-	p.groups = fetcher.Field().Poll_EntitledGroupIDs(ctx, pollID)
-	p.globalYes = fetcher.Field().Poll_GlobalYes(ctx, pollID)
-	p.globalNo = fetcher.Field().Poll_GlobalNo(ctx, pollID)
-	p.globalAbstain = fetcher.Field().Poll_GlobalAbstain(ctx, pollID)
-	p.minAmount = fetcher.Field().Poll_MinVotesAmount(ctx, pollID)
-	p.maxAmount = fetcher.Field().Poll_MaxVotesAmount(ctx, pollID)
-	p.options = fetcher.Field().Poll_OptionIDs(ctx, pollID)
+	ds.Poll_MeetingID(pollID).Lazy(&p.meetingID)
+	ds.Poll_Backend(pollID).Lazy(&p.backend)
+	ds.Poll_Type(pollID).Lazy(&p.pollType)
+	ds.Poll_Pollmethod(pollID).Lazy(&p.method)
+	ds.Poll_EntitledGroupIDs(pollID).Lazy(&p.groups)
+	ds.Poll_GlobalYes(pollID).Lazy(&p.globalYes)
+	ds.Poll_GlobalNo(pollID).Lazy(&p.globalNo)
+	ds.Poll_GlobalAbstain(pollID).Lazy(&p.globalAbstain)
+	ds.Poll_MinVotesAmount(pollID).Lazy(&p.minAmount)
+	ds.Poll_MaxVotesAmount(pollID).Lazy(&p.maxAmount)
+	ds.Poll_OptionIDs(pollID).Lazy(&p.options)
 
-	if err := fetcher.Err(); err != nil {
+	if err := ds.Execute(ctx); err != nil {
 		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
 	}
 
@@ -382,13 +367,19 @@ func loadPoll(ctx context.Context, fetcher *datastore.Fetcher, pollID int) (poll
 // Fetching this keys makes sure, they are in the cache and gets autoupdated if
 // they change. If they are fetched later, it will only by from cache and
 // therefore fast.
-func (p pollConfig) preloadUsers(ctx context.Context, fetcher *datastore.Fetcher) error {
+func (p pollConfig) preloadUsers(ctx context.Context, ds *datastore.Request) error {
+	// TODO: This needs less requests but more fields to check.
 	for _, groupID := range p.groups {
-		for _, userID := range fetcher.Field().Group_UserIDs(ctx, groupID) {
-			fetcher.Field().User_IsPresentInMeetingIDs(ctx, userID)
+		groupIDs, err := ds.Group_UserIDs(groupID).Value(ctx)
+		if err != nil {
+			return fmt.Errorf("loading users of group %q: %w", groupID, err)
+		}
+		for _, userID := range groupIDs {
+			ds.User_IsPresentInMeetingIDs(userID)
 		}
 	}
-	if err := fetcher.Err(); err != nil {
+
+	if err := ds.Execute(ctx); err != nil {
 		return fmt.Errorf("preloading present users: %w", err)
 	}
 	return nil
