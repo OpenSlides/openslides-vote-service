@@ -199,10 +199,16 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
 		return MessageError{ErrInvalid, fmt.Sprintf("decoding payload: %v", err)}
 	}
-	if vote.UserID == 0 {
-		vote.UserID = requestUser
+
+	voteUser, exist := vote.UserID.Value()
+	if !exist {
+		voteUser = requestUser
 	}
 	log.Debug("Ballot: %v", vote)
+
+	if voteUser == 0 {
+		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	}
 
 	if err := vote.validate(poll); err != nil {
 		return fmt.Errorf("validating vote: %w", err)
@@ -210,38 +216,38 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 
 	backend := v.backend(poll)
 
-	if vote.UserID != requestUser {
-		delegation, err := ds.User_VoteDelegatedToID(vote.UserID, poll.meetingID).Value(ctx)
+	if voteUser != requestUser {
+		delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
 		if err != nil {
 			// If the user from the request body does not exist, then delegation
 			// will be 0. This case is handled below.
 			var errDoesNotExist datastore.DoesNotExistError
 			if !errors.As(err, &errDoesNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 			}
 		}
 
 		if delegation != requestUser {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", vote.UserID)}
+			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
 		}
-		log.Debug("User %d is voting for user %d", requestUser, vote.UserID)
+		log.Debug("User %d is voting for user %d", requestUser, voteUser)
 	}
 
-	groupIDs, err := ds.User_GroupIDs(vote.UserID, poll.meetingID).Value(ctx)
+	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
 	if err := ds.Err(); err != nil {
-		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", vote.UserID, poll.meetingID, err)
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 	}
 
 	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", vote.UserID)}
+		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", voteUser)}
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeight string
 	if ds.Meeting_UsersEnableVoteWeight(poll.meetingID).ErrorLater(ctx) {
-		voteWeight = ds.User_VoteWeight(vote.UserID, poll.meetingID).ErrorLater(ctx)
+		voteWeight = ds.User_VoteWeight(voteUser, poll.meetingID).ErrorLater(ctx)
 		if voteWeight == "" {
-			voteWeight = ds.User_DefaultVoteWeight(vote.UserID).ErrorLater(ctx)
+			voteWeight = ds.User_DefaultVoteWeight(voteUser).ErrorLater(ctx)
 		}
 	}
 	if err := ds.Err(); err != nil {
@@ -261,7 +267,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		Weight      string          `json:"weight"`
 	}{
 		requestUser,
-		vote.UserID,
+		voteUser,
 		vote.Value.original,
 		voteWeight,
 	}
@@ -277,7 +283,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Saving vote date: %s", bs)
 
-	if err := backend.Vote(ctx, pollID, vote.UserID, bs); err != nil {
+	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -398,8 +404,25 @@ func (p pollConfig) preload(ctx context.Context, ds *datastore.Request) error {
 	return nil
 }
 
+type maybeInt struct {
+	unmarshalled bool
+	value        int
+}
+
+func (m *maybeInt) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &m.value); err != nil {
+		return fmt.Errorf("decoding value as int: %w", err)
+	}
+	m.unmarshalled = true
+	return nil
+}
+
+func (m *maybeInt) Value() (int, bool) {
+	return m.value, m.unmarshalled
+}
+
 type ballot struct {
-	UserID int         `json:"user_id"`
+	UserID maybeInt    `json:"user_id"`
 	Value  ballotValue `json:"value"`
 }
 

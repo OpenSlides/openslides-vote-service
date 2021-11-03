@@ -602,6 +602,26 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		},
 
 		{
+			"Vote for anonymous",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+			
+			meeting/1/id: 1
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+			`,
+			`{"user_id": 0, "value":"Y"}`,
+
+			0,
+		},
+
+		{
 			"Vote for other without delegation",
 			`
 			poll/1:
