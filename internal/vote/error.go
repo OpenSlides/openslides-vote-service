@@ -85,7 +85,7 @@ func (err TypeError) Error() string {
 		msg = "Ups, something went wrong!"
 
 	}
-	return fmt.Sprintf(`{"error":"%s","msg":"%s"}`, err.Type(), msg)
+	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, err.Type(), msg)
 }
 
 // MessageError is a TypeError with an individuel error message.
@@ -97,7 +97,7 @@ type MessageError struct {
 func (err MessageError) Error() string {
 	out := struct {
 		Error string `json:"error"`
-		MSG   string `json:"msg"`
+		MSG   string `json:"message"`
 	}{
 		err.Type(),
 		err.msg,
@@ -105,7 +105,7 @@ func (err MessageError) Error() string {
 
 	decoded, jsonerr := json.Marshal(out)
 	if jsonerr != nil {
-		return fmt.Sprintf(`{"error":"internal", "msg":"someting went wrong encoding the error message"}`)
+		return fmt.Sprintf(`{"error":"internal", "message":"someting went wrong encoding the error message"}`)
 	}
 	return string(decoded)
 }
