@@ -30,6 +30,8 @@ func handleCreate(mux *http.ServeMux, create creater) {
 				return
 			}
 
+			w.Header().Set("Content-Type", "application/json")
+
 			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
@@ -60,6 +62,8 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
+			w.Header().Set("Content-Type", "application/json")
+
 			id, err := pollID(r)
 			if err != nil {
 				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
@@ -87,6 +91,8 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
+
+			w.Header().Set("Content-Type", "application/json")
 
 			id, err := pollID(r)
 			if err != nil {
@@ -116,6 +122,8 @@ func handleClearAll(mux *http.ServeMux, clear clearAller) {
 				return
 			}
 
+			w.Header().Set("Content-Type", "application/json")
+
 			if err := clear.ClearAll(r.Context()); err != nil {
 				handleError(w, err, true)
 				return
@@ -142,6 +150,8 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
+
+			w.Header().Set("Content-Type", "application/json")
 
 			ctx, err := auth.Authenticate(w, r)
 			if err != nil {
@@ -173,6 +183,8 @@ func handleHealth(mux *http.ServeMux) {
 	mux.HandleFunc(
 		httpPathExternal+"/health",
 		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
 			fmt.Fprintf(w, `{"health":true}`)
 		},
 	)
