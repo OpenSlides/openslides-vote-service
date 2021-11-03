@@ -103,7 +103,7 @@ func TestHandleCreate(t *testing.T) {
 
 		var body struct {
 			Error string `json:"error"`
-			MSG   string `json:"msg"`
+			MSG   string `json:"message"`
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -355,7 +355,7 @@ func (v *voterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Read
 type AuthError struct{}
 
 func (AuthError) Error() string {
-	return `{"error":"auth","msg":"auth error"}`
+	return `{"error":"auth","message":"auth error"}`
 }
 
 func (AuthError) Type() string {
