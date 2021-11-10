@@ -450,7 +450,6 @@ func TestHandleVote(t *testing.T) {
 		if body.Error != "auth" {
 			t.Errorf("Got error `%s`, expected `auth`", body.Error)
 		}
-
 	})
 
 	t.Run("Anonymous", func(t *testing.T) {
@@ -475,7 +474,6 @@ func TestHandleVote(t *testing.T) {
 		if body.Error != "not-allowed" {
 			t.Errorf("Got error `%s`, expected `auth`", body.Error)
 		}
-
 	})
 
 	t.Run("Valid", func(t *testing.T) {
@@ -500,6 +498,151 @@ func TestHandleVote(t *testing.T) {
 
 		if voter.body != "request body" {
 			t.Errorf("Voter was called with body `%s` expected `request body`", voter.body)
+		}
+	})
+}
+
+type votedPollserStub struct {
+	pollIDs      []int
+	user         int
+	expectWriter string
+	expectErr    error
+}
+
+func (v *votedPollserStub) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error {
+	v.pollIDs = pollIDs
+	v.user = requestUser
+
+	if v.expectErr != nil {
+		return v.expectErr
+	}
+	_, err := w.Write([]byte(v.expectWriter))
+	return err
+}
+
+func TestHandleVoted(t *testing.T) {
+	voted := &votedPollserStub{}
+	auther := &autherStub{}
+
+	url := "/system/vote/voted"
+	mux := http.NewServeMux()
+	handleVoted(mux, voted, auther)
+
+	t.Run("POST request", func(t *testing.T) {
+		auther.userID = 5
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+
+		if resp.Result().StatusCode != 405 {
+			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
+		}
+	})
+
+	t.Run("No polls given", func(t *testing.T) {
+		auther.userID = 5
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+	})
+
+	t.Run("Wrong polls value", func(t *testing.T) {
+		auther.userID = 5
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=foo", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+	})
+
+	t.Run("Auth error", func(t *testing.T) {
+		auther.authErr = true
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "auth" {
+			t.Errorf("Got error `%s`, expected `auth`", body.Error)
+		}
+	})
+
+	t.Run("Anonymous", func(t *testing.T) {
+		auther.authErr = false
+		auther.userID = 0
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1", nil))
+
+		if resp.Result().StatusCode != 401 {
+			t.Errorf("Got status %s, expected 401", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-allowed" {
+			t.Errorf("Got error `%s`, expected `not-allowed`", body.Error)
+		}
+	})
+
+	t.Run("Correct", func(t *testing.T) {
+		auther.userID = 5
+		auther.authErr = false
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1,2", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200", resp.Result().Status)
+		}
+
+		if len(voted.pollIDs) != 2 || voted.pollIDs[0] != 1 || voted.pollIDs[1] != 2 {
+			t.Errorf("Voted was called with pollIDs %v, expected [1,2]", voted.pollIDs)
+		}
+	})
+
+	t.Run("Voted Error", func(t *testing.T) {
+		auther.userID = 5
+		auther.authErr = false
+		voted.expectErr = ErrNotExists
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1,2", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-exist" {
+			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
 		}
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
@@ -25,12 +26,12 @@ func handleCreate(mux *http.ServeMux, create creater) {
 		httpPathInternal+"/create",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Receive create request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
 
 			id, err := pollID(r)
 			if err != nil {
@@ -57,12 +58,12 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 		httpPathInternal+"/stop",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Receive stop request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
 
 			id, err := pollID(r)
 			if err != nil {
@@ -87,12 +88,12 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 		httpPathInternal+"/clear",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Receive clear request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
 
 			id, err := pollID(r)
 			if err != nil {
@@ -117,12 +118,12 @@ func handleClearAll(mux *http.ServeMux, clear clearAller) {
 		httpPathInternal+"/clear_all",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Receive clear request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
 
 			if err := clear.ClearAll(r.Context()); err != nil {
 				handleError(w, err, true)
@@ -146,12 +147,12 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 		httpPathExternal,
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Receive vote request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
 			}
-
-			w.Header().Set("Content-Type", "application/json")
 
 			ctx, err := auth.Authenticate(w, r)
 			if err != nil {
@@ -172,6 +173,48 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 			}
 
 			if err := vote.Vote(ctx, id, uid, r.Body); err != nil {
+				handleError(w, err, false)
+				return
+			}
+		},
+	)
+}
+
+type votedPollser interface {
+	VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error
+}
+
+func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
+	mux.HandleFunc(
+		httpPathExternal+"/voted",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Receive clear request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
+			if r.Method != "GET" {
+				http.Error(w, MessageError{ErrInvalid, "Only GET requests are allowed"}.Error(), 405)
+				return
+			}
+
+			ctx, err := auth.Authenticate(w, r)
+			if err != nil {
+				handleError(w, err, false)
+				return
+			}
+
+			uid := auth.FromContext(ctx)
+			if uid == 0 {
+				http.Error(w, MessageError{ErrNotAllowed, "Anonymous user can not vote"}.Error(), 401)
+				return
+			}
+
+			pollIDs, err := pollsID(r)
+			if err != nil {
+				http.Error(w, MessageError{ErrInvalid, err.Error()}.Error(), 400)
+				return
+			}
+
+			if err := voted.VotedPolls(ctx, pollIDs, uid, w); err != nil {
 				handleError(w, err, false)
 				return
 			}
@@ -202,6 +245,21 @@ func pollID(r *http.Request) (int, error) {
 	}
 
 	return id, nil
+}
+
+func pollsID(r *http.Request) ([]int, error) {
+	rawIDs := strings.Split(r.URL.Query().Get("ids"), ",")
+
+	ids := make([]int, len(rawIDs))
+	for i, rawID := range rawIDs {
+		id, err := strconv.Atoi(rawID)
+		if err != nil {
+			return nil, fmt.Errorf("%dth id invalid. Expected int, got %s", i, rawID)
+		}
+		ids[i] = id
+	}
+
+	return ids, nil
 }
 
 func handleError(w http.ResponseWriter, err error, internal bool) {

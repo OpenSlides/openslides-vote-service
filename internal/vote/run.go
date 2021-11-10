@@ -67,6 +67,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	handleClear(mux, service)
 	handleClearAll(mux, service)
 	handleVote(mux, service, auth)
+	handleVoted(mux, service, auth)
 	handleHealth(mux)
 
 	listenAddr := ":" + env["VOTE_PORT"]

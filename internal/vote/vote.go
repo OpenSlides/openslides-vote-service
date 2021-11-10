@@ -307,6 +307,11 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	return nil
 }
 
+// VotedPolls tells, on which the requestUser has already voted.
+func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error {
+	return errors.New("TODO")
+}
+
 // Backend is a storage for the poll options.
 type Backend interface {
 	// Start opens the poll for votes. To start a poll that is already started

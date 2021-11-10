@@ -113,6 +113,25 @@ curl -X POST localhost:9013/internal/vote/clear_all
 ```
 
 
+### Have I Voted
+
+A user can find out if he has voted for a list of polls.
+
+```
+curl localhost:9013/system/vote/voted?ids=1,2,3
+```
+
+The responce is a json-object in the form like this:
+
+```
+{
+  "1":true,
+  "2":false,
+  "3":true
+}
+```
+
+
 ## Configuration
 
 ### Environment variables

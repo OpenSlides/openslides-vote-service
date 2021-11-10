@@ -76,6 +76,7 @@ func TestRun(t *testing.T) {
 			"/internal/vote/stop",
 			"/internal/vote/clear",
 			"/system/vote",
+			"/system/vote/voted",
 			"/system/vote/health",
 		} {
 			t.Run(path, func(t *testing.T) {
