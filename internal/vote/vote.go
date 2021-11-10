@@ -308,8 +308,33 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 }
 
 // VotedPolls tells, on which the requestUser has already voted.
-func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error {
-	return errors.New("TODO")
+func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) (err error) {
+	log.Debug("Receive voted event for polls %v from user %d", pollIDs, requestUser)
+	defer func() {
+		log.Debug("End voted event with error: %v", err)
+	}()
+
+	polls, err := v.fastBackend.VotedPolls(ctx, pollIDs, requestUser)
+	if err != nil {
+		return fmt.Errorf("getting polls from fas backend: %w", err)
+	}
+	log.Debug("polls from fast backend: %v", polls)
+
+	longPolls, err := v.longBackend.VotedPolls(ctx, pollIDs, requestUser)
+	if err != nil {
+		return fmt.Errorf("getting polls from long backend: %w", err)
+	}
+	log.Debug("polls from long backend: %v", polls)
+
+	for p, v := range longPolls {
+		polls[p] = polls[p] || v
+	}
+	log.Debug("Combined polls: %v", err)
+
+	if err := json.NewEncoder(w).Encode(polls); err != nil {
+		return fmt.Errorf("encoding polls %v: %w", polls, err)
+	}
+	return nil
 }
 
 // Backend is a storage for the poll options.
@@ -338,6 +363,10 @@ type Backend interface {
 
 	// ClearAll removes all data from the backend.
 	ClearAll(ctx context.Context) error
+
+	// VotedPolls tells for a list of poll IDs if the given userID has already
+	// voted.
+	VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error)
 
 	fmt.Stringer
 }

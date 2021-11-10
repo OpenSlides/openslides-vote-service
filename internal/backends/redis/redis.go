@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -235,6 +236,12 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// VotedPolls tells for a list of poll IDs if the given userID has already
+// voted.
+func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error) {
+	return nil, errors.New("TODO")
 }
 
 type doesNotExistError struct {

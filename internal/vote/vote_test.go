@@ -833,3 +833,21 @@ func TestVoteWeight(t *testing.T) {
 		})
 	}
 }
+
+func TestVotedPolls(t *testing.T) {
+	backend := memory.New()
+	v := vote.New(backend, backend, nil)
+	backend.Start(context.Background(), 1)
+	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
+	buf := new(bytes.Buffer)
+
+	if err := v.VotedPolls(context.Background(), []int{1, 2}, 5, buf); err != nil {
+		t.Fatalf("VotedPolls() returned unexected error: %v", err)
+	}
+
+	expect := `{"1":true,"2":false}` + "\n"
+	if buf.String() != expect {
+		t.Errorf("VotedPolls() wrote %v, expected %s", buf.String(), expect)
+	}
+
+}

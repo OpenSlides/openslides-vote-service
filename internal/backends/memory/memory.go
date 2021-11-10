@@ -113,6 +113,19 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	return nil
 }
 
+// VotedPolls tells for a list of poll IDs if the given userID has already
+// voted.
+func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	out := make(map[int]bool)
+	for _, id := range pollIDs {
+		out[id] = b.voted[id][userID]
+	}
+	return out, nil
+}
+
 // AssertUserHasVoted is a method for the tests to check, if a user has voted.
 func (b *Backend) AssertUserHasVoted(t *testing.T, pollID, userID int) {
 	t.Helper()

@@ -276,6 +276,12 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	return nil
 }
 
+// VotedPolls tells for a list of poll IDs if the given userID has already
+// voted.
+func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error) {
+	return nil, errors.New("TODO")
+}
+
 // ContinueOnTransactionError runs the given many times until is does not return
 // an transaction error. Also stopes, when the given context is canceled.
 func continueOnTransactionError(ctx context.Context, f func() error) error {
