@@ -188,7 +188,7 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 	mux.HandleFunc(
 		httpPathExternal+"/voted",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive clear request: %v", r)
+			log.Debug("Receive voted request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "GET" {
