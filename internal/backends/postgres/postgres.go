@@ -278,8 +278,39 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 
 // VotedPolls tells for a list of poll IDs if the given userID has already
 // voted.
-func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error) {
-	return nil, errors.New("TODO")
+func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (out map[int]bool, err error) {
+	log.Debug("SQL: Begin voted polls")
+	defer func() {
+		log.Debug("SQL: Begin voted polls with error: %v", err)
+	}()
+
+	sql := `
+	SELECT id, user_ids
+	FROM poll
+	WHERE id = ANY ($1);
+	`
+
+	rows, err := b.pool.Query(ctx, sql, pollIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fetching user_ids from poll objects: %w", err)
+	}
+
+	out = make(map[int]bool, len(pollIDs))
+
+	for rows.Next() {
+		var pid int
+		var uIDs userIDs
+		if err := rows.Scan(&pid, &uIDs); err != nil {
+			return nil, fmt.Errorf("parsind row: %w", err)
+		}
+		out[pid] = uIDs.contains(int32(userID))
+	}
+
+	// Add values for non existing polls
+	for _, id := range pollIDs {
+		out[id] = out[id] || false
+	}
+	return out, nil
 }
 
 // ContinueOnTransactionError runs the given many times until is does not return
@@ -322,7 +353,6 @@ func (u *userIDs) Scan(src interface{}) error {
 	}
 	*u = ints
 	return nil
-
 }
 
 func (u userIDs) Value() (driver.Value, error) {
@@ -348,6 +378,13 @@ func (u *userIDs) add(userID int32) error {
 	ints = append(ints[:idx], append([]int32{userID}, ints[idx:]...)...)
 	*u = ints
 	return nil
+}
+
+// contains returns true if the userID is contains the list of userIDs.
+func (u *userIDs) contains(userID int32) bool {
+	ints := []int32(*u)
+	idx := sort.Search(len(ints), func(i int) bool { return ints[i] >= userID })
+	return idx < len(ints) && ints[idx] == userID
 }
 
 type doesNotExistError struct {
