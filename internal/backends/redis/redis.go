@@ -258,6 +258,22 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ma
 	return out, nil
 }
 
+// VoteCount returns the amout of votes for the given poll id.
+func (b *Backend) VoteCount(ctx context.Context, pollID int) (int, error) {
+	conn := b.pool.Get()
+	defer conn.Close()
+
+	key := fmt.Sprintf(keyVote, pollID)
+
+	log.Debug("Redis: HLEN %s", key)
+	voteCount, err := redis.Int(conn.Do("HLEN", key))
+	if err != nil {
+		return 0, fmt.Errorf("removing keys: %w", err)
+	}
+
+	return voteCount, nil
+}
+
 type doesNotExistError struct {
 	error
 }
