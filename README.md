@@ -132,6 +132,31 @@ The responce is a json-object in the form like this:
 ```
 
 
+### Vote Count
+
+With the vote count handler it is possible to find out how many user have voted
+for a poll. The interface of this request is the same as the datastore-reader:
+
+```
+curl localhost:9013/internal/vote/vote_count -d '{"requests":["poll/1/vote_count","poll/2/vote_count]}'
+```
+
+The responce is a json-object like this:
+
+```
+{
+  "poll":{
+    "1":{
+      "vote_count":23,
+    },
+    "2":{
+      "vote_count":42,
+    }
+  }
+}
+```
+
+
 ## Configuration
 
 ### Environment variables
