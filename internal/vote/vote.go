@@ -337,6 +337,41 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	return nil
 }
 
+// VoteCount returns the amout of votes for a poll.
+func (v *Vote) VoteCount(ctx context.Context, pollIDs []int, w io.Writer) (err error) {
+	log.Debug("Receive vote count event for polls %v", pollIDs)
+	defer func() {
+		log.Debug("End vote count with error: %v", err)
+	}()
+
+	data := map[string]map[int]map[string]int{
+		"poll": {},
+	}
+	for _, pollID := range pollIDs {
+		ds := datastore.NewRequest(v.ds)
+		poll, err := loadPoll(ctx, ds, pollID)
+		if err != nil {
+			return fmt.Errorf("loading poll: %w", err)
+		}
+		log.Debug("Poll config: %v", poll)
+
+		backend := v.backend(poll)
+
+		count, err := backend.VoteCount(ctx, pollID)
+		if err != nil {
+			return fmt.Errorf("getting vote count from backend %s: %w", backend, err)
+		}
+
+		data["poll"][pollID] = map[string]int{"vote_count": count}
+	}
+
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		return fmt.Errorf("encoding data: %w", err)
+	}
+
+	return nil
+}
+
 // Backend is a storage for the poll options.
 type Backend interface {
 	// Start opens the poll for votes. To start a poll that is already started

@@ -849,5 +849,29 @@ func TestVotedPolls(t *testing.T) {
 	if buf.String() != expect {
 		t.Errorf("VotedPolls() wrote %v, expected %s", buf.String(), expect)
 	}
+}
 
+func TestVoteCount(t *testing.T) {
+	backend := memory.New()
+	v := vote.New(backend, backend, dsmock.Stub(dsmock.YAMLData(`
+	poll/1:
+		meeting_id: 1
+		entitled_group_ids: [1]
+		pollmethod: Y
+		global_yes: true
+	`)))
+	backend.Start(context.Background(), 1)
+	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
+	backend.Vote(context.Background(), 1, 6, []byte(`"Y"`))
+	backend.Vote(context.Background(), 1, 7, []byte(`"Y"`))
+	buf := new(bytes.Buffer)
+
+	if err := v.VoteCount(context.Background(), []int{1}, buf); err != nil {
+		t.Fatalf("VoteCount() returned unexected error: %v", err)
+	}
+
+	expect := `{"poll":{"1":{"vote_count":3}}}` + "\n"
+	if buf.String() != expect {
+		t.Errorf("VoteCount() wrote %s, expected %s", buf.String(), expect)
+	}
 }

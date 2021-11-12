@@ -2,6 +2,7 @@ package vote
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -222,6 +223,32 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 	)
 }
 
+type voteCounter interface {
+	VoteCount(ctx context.Context, pollIDs []int, w io.Writer) error
+}
+
+func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
+	mux.HandleFunc(
+		httpPathInternal+"/vote_count",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Receive vote count request: %v", r)
+			w.Header().Set("Content-Type", "application/json")
+
+			pollIDs, err := parseVoteCountRequest(r.Body)
+			if err != nil {
+				handleError(w, fmt.Errorf("parse request: %w", err), true)
+				return
+			}
+
+			if err := voteCounter.VoteCount(r.Context(), pollIDs, w); err != nil {
+				handleError(w, err, true)
+				return
+			}
+
+		},
+	)
+}
+
 func handleHealth(mux *http.ServeMux) {
 	mux.HandleFunc(
 		httpPathExternal+"/health",
@@ -257,6 +284,32 @@ func pollsID(r *http.Request) ([]int, error) {
 			return nil, fmt.Errorf("%dth id invalid. Expected int, got %s", i, rawID)
 		}
 		ids[i] = id
+	}
+
+	return ids, nil
+}
+
+func parseVoteCountRequest(r io.Reader) ([]int, error) {
+	var data struct {
+		Keys []string `json:"requests"`
+	}
+	if err := json.NewDecoder(r).Decode(&data); err != nil {
+		return nil, fmt.Errorf("decoding request body from jsin: %w", err)
+	}
+
+	var ids []int
+	for i, key := range data.Keys {
+		keyParts := strings.SplitN(key, "/", 3)
+
+		if keyParts[0] != "poll" || keyParts[2] != "vote_count" {
+			continue
+		}
+
+		id, err := strconv.Atoi(keyParts[1])
+		if err != nil {
+			return nil, fmt.Errorf("parsing %dth key %s is not an int", i, keyParts[1])
+		}
+		ids = append(ids, id)
 	}
 
 	return ids, nil
