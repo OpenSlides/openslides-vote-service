@@ -41,7 +41,7 @@ func TestVoteCreate(t *testing.T) {
 		}
 
 		// After a poll was created, it has to be possible to send votes.
-		err := backend.Vote(context.Background(), 1, 1, []byte("something"))
+		_, err := backend.Vote(context.Background(), 1, 1, []byte("something"))
 		if err != nil {
 			t.Errorf("Vote after create retuen and unexpected error: %v", err)
 		}
@@ -255,7 +255,7 @@ func TestVoteStop(t *testing.T) {
 			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}
 
-		err := backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
+		_, err := backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
 		var errStopped interface{ Stopped() }
 		if !errors.As(err, &errStopped) {
 			t.Errorf("Stop did not stop the poll in the backend.")

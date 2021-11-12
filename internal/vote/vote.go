@@ -283,7 +283,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Saving vote date: %s", bs)
 
-	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
+	if _, err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -385,7 +385,9 @@ type Backend interface {
 	// If the user has already voted, an Error with method `DoupleVote()` has to
 	// be returned. If the poll has not started, an error with the method
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
-	Vote(ctx context.Context, pollID int, userID int, object []byte) error
+	//
+	// The return value is the number of already voted objects.
+	Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error)
 
 	// Stop ends a poll and returns all poll objects and all userIDs from users
 	// that have voted. It is ok to call Stop() on a stopped poll. On a unknown
