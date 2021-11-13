@@ -59,7 +59,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	}
 	defer longClose()
 
-	service := New(fastBackend, longBackend, ds)
+	service := New(fastBackend, longBackend, ds, messageBus)
 
 	mux := http.NewServeMux()
 	handleCreate(mux, service)
@@ -253,6 +253,7 @@ func (a authStub) FromContext(ctx context.Context) int {
 type messageBus interface {
 	datastore.Updater
 	auth.LogoutEventer
+	MessageBus
 }
 
 func buildMessageBus(env map[string]string) (messageBus, error) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
@@ -18,14 +19,16 @@ type Vote struct {
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
+	messageBus  MessageBus
 }
 
 // New creates an initializes vote service.
-func New(fast, long Backend, ds datastore.Getter) *Vote {
+func New(fast, long Backend, ds datastore.Getter, messageBus MessageBus) *Vote {
 	return &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
+		messageBus:  messageBus,
 	}
 }
 
@@ -283,7 +286,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Saving vote date: %s", bs)
 
-	if _, err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
+	count, err := backend.Vote(ctx, pollID, voteUser, bs)
+	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -302,8 +306,20 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	// TODO: Save vote_count
+	if err := v.saveVoteCount(pollID, count); err != nil {
+		// Do not return error. If the vote was saved corrently it is a success,
+		// even when saving the vote count fails.
+		log.Info("Saving vote count %d failed: %v", count, err)
+	}
 
+	return nil
+}
+
+func (v *Vote) saveVoteCount(pollID, count int) error {
+	str := strconv.Itoa(count)
+	if err := v.messageBus.Publish(context.Background(), fmt.Sprintf("poll/%d/vote_count", pollID), []byte(str)); err != nil {
+		return fmt.Errorf("saving vote_count of poll %d to message bus: %w", pollID, err)
+	}
 	return nil
 }
 
@@ -409,6 +425,13 @@ type Backend interface {
 	VoteCount(ctx context.Context, pollID int) (int, error)
 
 	fmt.Stringer
+}
+
+// MessageBus publishes the vote counts.
+type MessageBus interface {
+	// Publish takes a pollID and a voteCount value and saves them in the
+	// message bus.
+	Publish(ctx context.Context, key string, value []byte) error
 }
 
 type pollConfig struct {
