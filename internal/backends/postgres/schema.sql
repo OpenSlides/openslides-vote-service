@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS poll(
+CREATE SCHEMA IF NOT EXISTS vote;
+
+CREATE TABLE IF NOT EXISTS vote.poll(
     id INTEGER UNIQUE NOT NULL,
     stopped BOOLEAN NOT NULL,
 
@@ -8,11 +10,11 @@ CREATE TABLE IF NOT EXISTS poll(
     user_ids BYTEA
 );
 
-CREATE TABLE IF NOT EXISTS objects (
+CREATE TABLE IF NOT EXISTS vote.objects (
     id SERIAL PRIMARY KEY,
 
     -- There are many raws per poll.
-    poll_id INTEGER NOT NULL REFERENCES poll(id) ON DELETE CASCADE,
+    poll_id INTEGER NOT NULL REFERENCES vote.poll(id) ON DELETE CASCADE,
 
     -- The vote object.
     vote BYTEA

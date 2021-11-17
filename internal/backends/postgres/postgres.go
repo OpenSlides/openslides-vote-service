@@ -78,7 +78,7 @@ func (b *Backend) Close() {
 // Start starts a poll.
 func (b *Backend) Start(ctx context.Context, pollID int) error {
 	sql := `
-	INSERT INTO poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
+	INSERT INTO vote.poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
 	`
 	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
@@ -114,7 +114,7 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 		func(tx pgx.Tx) error {
 			sql := `
 			SELECT stopped, user_ids 
-			FROM poll
+			FROM vote.poll
 			WHERE id = $1;
 			`
 			var stopped bool
@@ -135,13 +135,13 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 				return fmt.Errorf("adding userID to voted users: %w", err)
 			}
 
-			sql = "UPDATE poll SET user_ids = $1 WHERE id = $2;"
+			sql = "UPDATE vote.poll SET user_ids = $1 WHERE id = $2;"
 			log.Debug("SQL: `%s` (values: [user_ids], %d", sql, pollID)
 			if _, err := tx.Exec(ctx, sql, uIDs, pollID); err != nil {
 				return fmt.Errorf("writing user ids: %w", err)
 			}
 
-			sql = "INSERT INTO objects (poll_id, vote) VALUES ($1, $2);"
+			sql = "INSERT INTO vote.objects (poll_id, vote) VALUES ($1, $2);"
 			log.Debug("SQL: `%s` (values: %d, %s", sql, pollID, object)
 			if _, err := tx.Exec(ctx, sql, pollID, object); err != nil {
 				return fmt.Errorf("writing vote: %w", err)
@@ -189,7 +189,7 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 			IsoLevel: "REPEATABLE READ",
 		},
 		func(tx pgx.Tx) error {
-			sql := "SELECT EXISTS(SELECT 1 FROM poll WHERE id = $1);"
+			sql := "SELECT EXISTS(SELECT 1 FROM vote.poll WHERE id = $1);"
 			log.Debug("SQL: `%s` (values: %d", sql, pollID)
 
 			var exists bool
@@ -201,15 +201,15 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 				return doesNotExistError{fmt.Errorf("Poll does not exist")}
 			}
 
-			sql = "UPDATE poll SET stopped = true WHERE id = $1;"
+			sql = "UPDATE vote.poll SET stopped = true WHERE id = $1;"
 			if _, err := tx.Exec(ctx, sql, pollID); err != nil {
 				return fmt.Errorf("setting poll %d to stopped: %w", pollID, err)
 			}
 
 			sql = `
 			SELECT Obj.vote
-			FROM poll Poll
-			LEFT JOIN objects Obj ON Obj.poll_id = Poll.id
+			FROM vote.poll Poll
+			LEFT JOIN vote.objects Obj ON Obj.poll_id = Poll.id
 			WHERE Poll.id = $1;
 			`
 			log.Debug("SQL: `%s` (values: %d", sql, pollID)
@@ -236,8 +236,8 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 
 			sql = `
 			SELECT user_ids
-			FROM poll Poll
-			WHERE Poll.id = $1;
+			FROM vote.poll
+			WHERE poll.id = $1;
 			`
 			var uIDs userIDs
 			if err := tx.QueryRow(ctx, sql, pollID).Scan(&uIDs); err != nil {
@@ -258,7 +258,7 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 
 // Clear removes all data about a poll from the database.
 func (b *Backend) Clear(ctx context.Context, pollID int) error {
-	sql := "DELETE FROM poll WHERE id = $1"
+	sql := "DELETE FROM vote.poll WHERE id = $1"
 	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("deleting data of poll %d: %w", pollID, err)
@@ -268,7 +268,7 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 
 // ClearAll removes all vote related data from postgres.
 func (b *Backend) ClearAll(ctx context.Context) error {
-	sql := "DELETE FROM poll"
+	sql := "DELETE FROM vote.poll"
 	log.Debug("SQL: `%s`", sql)
 	if _, err := b.pool.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("deleting all polls: %w", err)
@@ -286,7 +286,7 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 
 	sql := `
 	SELECT id, user_ids
-	FROM poll
+	FROM vote.poll
 	WHERE id = ANY ($1);
 	`
 
