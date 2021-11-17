@@ -647,6 +647,88 @@ func TestHandleVoted(t *testing.T) {
 	})
 }
 
+type voteCounterStub struct {
+	pollIDs      []int
+	expectWriter string
+	expectErr    error
+}
+
+func (v *voteCounterStub) VoteCount(ctx context.Context, pollIDs []int, w io.Writer) error {
+	v.pollIDs = pollIDs
+
+	if v.expectErr != nil {
+		return v.expectErr
+	}
+	_, err := w.Write([]byte(v.expectWriter))
+	return err
+}
+
+func TestHandleVoteCount(t *testing.T) {
+	voteCounter := &voteCounterStub{}
+
+	url := "/internal/vote/vote_count"
+	mux := http.NewServeMux()
+	handleVoteCount(mux, voteCounter)
+
+	t.Run("No body", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+	})
+
+	t.Run("Correct", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":["poll/5/vote_count"]}`)))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200", resp.Result().Status)
+		}
+
+		if voteCounter.pollIDs[0] != 5 {
+			t.Errorf("VoteCount was called with pollID %d, expected 5", voteCounter.pollIDs[0])
+		}
+	})
+
+	t.Run("Many Polls", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":["poll/5/vote_count", "poll/6/vote_count"]}`)))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200", resp.Result().Status)
+		}
+
+		if voteCounter.pollIDs[0] != 5 || voteCounter.pollIDs[1] != 6 {
+			t.Errorf("VoteCount was called with pollID %v, expected [5,6]", voteCounter.pollIDs)
+		}
+	})
+
+	t.Run("VoteCount Error", func(t *testing.T) {
+		voteCounter.expectErr = ErrNotExists
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":[]}`)))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-exist" {
+			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		}
+	})
+}
+
 func TestHandleHealth(t *testing.T) {
 	url := "/system/vote/health"
 	mux := http.NewServeMux()

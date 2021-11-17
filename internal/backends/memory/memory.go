@@ -47,16 +47,16 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 }
 
 // Vote saves a vote.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.state[pollID] == 0 {
-		return doesNotExistError{fmt.Errorf("poll is not open")}
+		return 0, doesNotExistError{fmt.Errorf("poll is not open")}
 	}
 
 	if b.state[pollID] == 2 {
-		return stoppedError{fmt.Errorf("Poll is stopped")}
+		return 0, stoppedError{fmt.Errorf("Poll is stopped")}
 	}
 
 	if b.voted[pollID] == nil {
@@ -64,12 +64,12 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	}
 
 	if _, ok := b.voted[pollID][userID]; ok {
-		return doupleVoteError{fmt.Errorf("user has already voted")}
+		return 0, doupleVoteError{fmt.Errorf("user has already voted")}
 	}
 
 	b.voted[pollID][userID] = true
 	b.objects[pollID] = append(b.objects[pollID], object)
-	return nil
+	return len(b.voted[pollID]), nil
 }
 
 // Stop stopps a poll.
@@ -124,6 +124,14 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ma
 		out[id] = b.voted[id][userID]
 	}
 	return out, nil
+}
+
+// VoteCount returns the amout of votes for the given poll id.
+func (b *Backend) VoteCount(ctx context.Context, pollID int) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return len(b.voted[pollID]), nil
 }
 
 // AssertUserHasVoted is a method for the tests to check, if a user has voted.

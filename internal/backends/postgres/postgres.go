@@ -91,16 +91,19 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 //
 // If an transaction error happens, the vote is saved again. This is done until
 // either the vote is saved or the given context is canceled.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error) {
+	var count int
 	err := continueOnTransactionError(ctx, func() error {
-		return b.voteOnce(ctx, pollID, userID, object)
+		c, err := b.voteOnce(ctx, pollID, userID, object)
+		count = c
+		return err
 	})
 
-	return err
+	return count, err
 }
 
 // voteOnce tries to add the vote once.
-func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object []byte) (err error) {
+func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object []byte) (count int, err error) {
 	log.Debug("SQL: Begin transaction for vote")
 	defer func() {
 		log.Debug("SQL: End transaction for vote with error: %v", err)
@@ -147,13 +150,14 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 				return fmt.Errorf("writing vote: %w", err)
 			}
 
+			count = uIDs.len()
 			return nil
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("running transaction: %w", err)
+		return 0, fmt.Errorf("running transaction: %w", err)
 	}
-	return nil
+	return count, nil
 }
 
 // Stop ends a poll and returns all vote objects and users who have voted.
@@ -281,7 +285,7 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (out map[int]bool, err error) {
 	log.Debug("SQL: Begin voted polls")
 	defer func() {
-		log.Debug("SQL: Begin voted polls with error: %v", err)
+		log.Debug("SQL: voted polls returnes with error: %v", err)
 	}()
 
 	sql := `
@@ -311,6 +315,28 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 		out[id] = out[id] || false
 	}
 	return out, nil
+}
+
+// VoteCount returns the amout of votes for the given poll id.
+func (b *Backend) VoteCount(ctx context.Context, pollID int) (count int, err error) {
+	log.Debug("SQL: Begin vote count")
+	defer func() {
+		log.Debug("SQL: Begin voted polls with error: %v", err)
+	}()
+
+	sql := `
+	SELECT count(id)
+	FROM objects
+	WHERE poll_id = $1;
+	`
+
+	var voteCount int
+
+	if err := b.pool.QueryRow(ctx, sql, pollID).Scan(&voteCount); err != nil {
+		return 0, fmt.Errorf("fetching count of vote objects: %w", err)
+	}
+
+	return voteCount, nil
 }
 
 // ContinueOnTransactionError runs the given many times until is does not return
@@ -385,6 +411,10 @@ func (u *userIDs) contains(userID int32) bool {
 	ints := []int32(*u)
 	idx := sort.Search(len(ints), func(i int) bool { return ints[i] >= userID })
 	return idx < len(ints) && ints[idx] == userID
+}
+
+func (u *userIDs) len() int {
+	return len([]int32(*u))
 }
 
 type doesNotExistError struct {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
@@ -18,14 +19,16 @@ type Vote struct {
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
+	messageBus  MessageBus
 }
 
 // New creates an initializes vote service.
-func New(fast, long Backend, ds datastore.Getter) *Vote {
+func New(fast, long Backend, ds datastore.Getter, messageBus MessageBus) *Vote {
 	return &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
+		messageBus:  messageBus,
 	}
 }
 
@@ -283,7 +286,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Saving vote date: %s", bs)
 
-	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
+	count, err := backend.Vote(ctx, pollID, voteUser, bs)
+	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -302,8 +306,20 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	// TODO: Save vote_count
+	if err := v.saveVoteCount(pollID, count); err != nil {
+		// Do not return error. If the vote was saved corrently it is a success,
+		// even when saving the vote count fails.
+		log.Info("Saving vote count %d failed: %v", count, err)
+	}
 
+	return nil
+}
+
+func (v *Vote) saveVoteCount(pollID, count int) error {
+	str := strconv.Itoa(count)
+	if err := v.messageBus.Publish(context.Background(), fmt.Sprintf("poll/%d/vote_count", pollID), []byte(str)); err != nil {
+		return fmt.Errorf("saving vote_count of poll %d to message bus: %w", pollID, err)
+	}
 	return nil
 }
 
@@ -337,6 +353,41 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	return nil
 }
 
+// VoteCount returns the amout of votes for a poll.
+func (v *Vote) VoteCount(ctx context.Context, pollIDs []int, w io.Writer) (err error) {
+	log.Debug("Receive vote count event for polls %v", pollIDs)
+	defer func() {
+		log.Debug("End vote count with error: %v", err)
+	}()
+
+	data := map[string]map[int]map[string]int{
+		"poll": {},
+	}
+	for _, pollID := range pollIDs {
+		ds := datastore.NewRequest(v.ds)
+		poll, err := loadPoll(ctx, ds, pollID)
+		if err != nil {
+			return fmt.Errorf("loading poll: %w", err)
+		}
+		log.Debug("Poll config: %v", poll)
+
+		backend := v.backend(poll)
+
+		count, err := backend.VoteCount(ctx, pollID)
+		if err != nil {
+			return fmt.Errorf("getting vote count from backend %s: %w", backend, err)
+		}
+
+		data["poll"][pollID] = map[string]int{"vote_count": count}
+	}
+
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		return fmt.Errorf("encoding data: %w", err)
+	}
+
+	return nil
+}
+
 // Backend is a storage for the poll options.
 type Backend interface {
 	// Start opens the poll for votes. To start a poll that is already started
@@ -350,7 +401,9 @@ type Backend interface {
 	// If the user has already voted, an Error with method `DoupleVote()` has to
 	// be returned. If the poll has not started, an error with the method
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
-	Vote(ctx context.Context, pollID int, userID int, object []byte) error
+	//
+	// The return value is the number of already voted objects.
+	Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error)
 
 	// Stop ends a poll and returns all poll objects and all userIDs from users
 	// that have voted. It is ok to call Stop() on a stopped poll. On a unknown
@@ -368,7 +421,17 @@ type Backend interface {
 	// voted.
 	VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error)
 
+	// VoteCount returns the amout of votes for the given poll id.
+	VoteCount(ctx context.Context, pollID int) (int, error)
+
 	fmt.Stringer
+}
+
+// MessageBus publishes the vote counts.
+type MessageBus interface {
+	// Publish takes a pollID and a voteCount value and saves them in the
+	// message bus.
+	Publish(ctx context.Context, key string, value []byte) error
 }
 
 type pollConfig struct {

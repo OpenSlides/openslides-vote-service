@@ -35,3 +35,12 @@ func (g *StubGetter) assertKeys(t *testing.T, keys ...string) {
 		}
 	}
 }
+
+type StubMessageBus struct {
+	messages [][2]string
+}
+
+func (m *StubMessageBus) Publish(ctx context.Context, key string, value []byte) error {
+	m.messages = append(m.messages, [2]string{key, string(value)})
+	return nil
+}
