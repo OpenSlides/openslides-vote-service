@@ -271,11 +271,22 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 }
 
 // ClearAll removes all vote related data from postgres.
+//
+// It does this by dropping vote vote-schema. If other services would write
+// thinks in this schema or hava a relation to this schema, then this would also
+// delete this tables.
+//
+// Since the schema is deleted and afterwards recreated this command can also be
+// used, if the db-schema has changed. It is kind of a migration.
 func (b *Backend) ClearAll(ctx context.Context) error {
-	sql := "DELETE FROM vote.poll"
+	sql := "DROP SCHEMA IF EXISTS vote CASCADE"
 	log.Debug("SQL: `%s`", sql)
 	if _, err := b.pool.Exec(ctx, sql); err != nil {
-		return fmt.Errorf("deleting all polls: %w", err)
+		return fmt.Errorf("deleting vote schema: %w", err)
+	}
+
+	if err := b.Migrate(ctx); err != nil {
+		return fmt.Errorf("recreate schema: %w", err)
 	}
 	return nil
 }
@@ -326,7 +337,7 @@ func (b *Backend) VoteCount(ctx context.Context, pollID int) (count int, err err
 
 	sql := `
 	SELECT count(id)
-	FROM objects
+	FROM vote.objects
 	WHERE poll_id = $1;
 	`
 
