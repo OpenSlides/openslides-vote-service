@@ -49,7 +49,6 @@ func TestImplementBackendInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Creating postgres backend returned: %v", err)
 	}
-	defer p.Close()
 
 	p.Wait(context.Background())
 	if err := p.Migrate(context.Background()); err != nil {
