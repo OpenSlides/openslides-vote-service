@@ -75,6 +75,8 @@ func TestRun(t *testing.T) {
 			"/internal/vote/create",
 			"/internal/vote/stop",
 			"/internal/vote/clear",
+			"/internal/vote/clear_all",
+			"/internal/vote/vote_count",
 			"/system/vote",
 			"/system/vote/voted",
 			"/system/vote/health",
