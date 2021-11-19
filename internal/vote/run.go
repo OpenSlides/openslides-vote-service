@@ -117,12 +117,12 @@ func defaultEnv(environment []string) map[string]string {
 		"MESSAGE_BUS_PORT": "6379",
 		"REDIS_TEST_CONN":  "true",
 
-		// TODO: Add to readme.
 		"VOTE_DATABASE_USER":     "postgres",
 		"VOTE_DATABASE_PASSWORD": "password",
 		"VOTE_DATABASE_HOST":     "localhost",
 		"VOTE_DATABASE_PORT":     "5432",
 		"VOTE_DATABASE_NAME":     "vote",
+		"VOTE_DATABASE_NO_POOL":  "false",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
 		"VOTE_DISABLE_LOG":       "false",
@@ -303,7 +303,7 @@ func buildBackend(ctx context.Context, env map[string]string, name string) (Back
 			env["VOTE_DATABASE_PORT"],
 			env["VOTE_DATABASE_NAME"],
 		)
-		p, err := postgres.New(ctx, addr)
+		p, err := postgres.New(ctx, addr, env["VOTE_DATABASE_NO_POOL"] != "false")
 		if err != nil {
 			return nil, fmt.Errorf("creating postgres connection pool: %w", err)
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 //go:embed schema.sql
@@ -23,29 +24,57 @@ var schema string
 //
 // Has to be initializes with New().
 type Backend struct {
+	pool   *pgxpool.Pool
 	config *pgx.ConnConfig
 }
 
 // New creates a new connection pool.
-func New(ctx context.Context, url string) (*Backend, error) {
+func New(ctx context.Context, url string, usePool bool) (*Backend, error) {
+	if usePool {
+		conf, err := pgxpool.ParseConfig(url)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pool config: %w", err)
+		}
+		conf.LazyConnect = true
+		// @peb-adr Please try to enable pool and use this line
+		//conf.ConnConfig.PreferSimpleProtocol = true
+		pool, err := pgxpool.ConnectConfig(ctx, conf)
+		if err != nil {
+			return nil, fmt.Errorf("creating connection pool: %w", err)
+		}
+		return &Backend{
+			pool: pool,
+		}, nil
+	}
+
 	conf, err := pgx.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parsing postgre config: %w", err)
 	}
+	// @peb-adr If it does not work without pool, try with this line
+	//conf.PreferSimpleProtocol = true
 
-	b := Backend{
+	return &Backend{
 		config: conf,
-	}
+	}, nil
 
-	return &b, nil
 }
 
-func (b *Backend) connect(ctx context.Context) (*pgx.Conn, error) {
+func (b *Backend) connect(ctx context.Context) (*pgx.Conn, func(), error) {
+	if b.pool != nil {
+		conn, err := b.pool.Acquire(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("acquire connection: %w", err)
+		}
+
+		return conn.Conn(), conn.Release, nil
+	}
+
 	conn, err := pgx.ConnectConfig(ctx, b.config)
 	if err != nil {
-		return nil, fmt.Errorf("creating connection: %w", err)
+		return nil, nil, fmt.Errorf("creating connection: %w", err)
 	}
-	return conn, nil
+	return conn, func() { conn.Close(context.Background()) }, nil
 }
 
 func (b *Backend) String() string {
@@ -53,27 +82,27 @@ func (b *Backend) String() string {
 }
 
 // Wait blocks until a connection to postgres can be established.
-func (b *Backend) Wait(ctx context.Context) {
+func (b *Backend) Wait(ctx context.Context) error {
 	for ctx.Err() == nil {
-		conn, err := b.connect(ctx)
-		if err != nil {
-			continue
+		_, close, err := b.connect(ctx)
+		if err == nil {
+			close()
+			return nil
 		}
 
-		if err := conn.Ping(ctx); err == nil {
-			return
-		}
 		log.Info("Waiting for postgres: %v", err)
 		time.Sleep(500 * time.Millisecond)
 	}
+	return ctx.Err()
 }
 
 // Migrate creates the database schema.
 func (b *Backend) Migrate(ctx context.Context) error {
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer close()
 
 	if _, err := conn.Exec(ctx, schema); err != nil {
 		return fmt.Errorf("creating schema: %w", err)
@@ -83,10 +112,11 @@ func (b *Backend) Migrate(ctx context.Context) error {
 
 // Start starts a poll.
 func (b *Backend) Start(ctx context.Context, pollID int) error {
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer close()
 
 	sql := `
 	INSERT INTO vote.poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
@@ -120,10 +150,11 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 		log.Debug("SQL: End transaction for vote with error: %v", err)
 	}()
 
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return 0, err
 	}
+	defer close()
 
 	err = conn.BeginTxFunc(
 		ctx,
@@ -203,10 +234,11 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 		log.Debug("SQL: End transaction for vote with error: %v", err)
 	}()
 
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer close()
 
 	err = conn.BeginTxFunc(
 		ctx,
@@ -283,10 +315,11 @@ func (b *Backend) stopOnce(ctx context.Context, pollID int) (objects [][]byte, u
 
 // Clear removes all data about a poll from the database.
 func (b *Backend) Clear(ctx context.Context, pollID int) error {
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer close()
 
 	sql := "DELETE FROM vote.poll WHERE id = $1"
 	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
@@ -305,10 +338,11 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 // Since the schema is deleted and afterwards recreated this command can also be
 // used, if the db-schema has changed. It is kind of a migration.
 func (b *Backend) ClearAll(ctx context.Context) error {
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return err
 	}
+	defer close()
 
 	sql := "DROP SCHEMA IF EXISTS vote CASCADE"
 	log.Debug("SQL: `%s`", sql)
@@ -330,10 +364,11 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 		log.Debug("SQL: voted polls returnes with error: %v", err)
 	}()
 
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer close()
 
 	sql := `
 	SELECT id, user_ids
@@ -371,10 +406,11 @@ func (b *Backend) VoteCount(ctx context.Context, pollID int) (count int, err err
 		log.Debug("SQL: Begin voted polls with error: %v", err)
 	}()
 
-	conn, err := b.connect(ctx)
+	conn, close, err := b.connect(ctx)
 	if err != nil {
 		return 0, err
 	}
+	defer close()
 
 	sql := `
 	SELECT count(id)

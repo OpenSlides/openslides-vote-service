@@ -187,6 +187,7 @@ The Service uses the following environment variables:
 * `VOTE_DATABASE_HOST`: Host of the postgres database. Default is `localhost`.
 * `VOTE_DATABASE_PORT`: Port of the postgres database. Default is `5432`.
 * `VOTE_DATABASE_NAME`: Name of the postgres database. Default is `vote`.
+* `VOTE_DATABASE_NO_POOL`: Disable connection pool. Default is `false`.
 * `AUTH`: Sets the type of the auth service. `fake` (default) or `ticket`.
 * `AUTH_HOST`: Host of the auth service. The default is `localhost`.
 * `AUTH_PORT`: Port of the auth service. The default is `9004`.

@@ -45,7 +45,7 @@ func TestImplementBackendInterface(t *testing.T) {
 	defer close()
 
 	addr := fmt.Sprintf("postgres://postgres:password@localhost:%s/database", port)
-	p, err := postgres.New(context.Background(), addr)
+	p, err := postgres.New(context.Background(), addr, false)
 	if err != nil {
 		t.Fatalf("Creating postgres backend returned: %v", err)
 	}
