@@ -891,7 +891,10 @@ func TestVoteWeight(t *testing.T) {
 
 func TestVotedPolls(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, nil, &StubMessageBus{})
+	ds := dsmock.Stub(dsmock.YAMLData(`---
+	poll/1/backend: memory
+	`))
+	v := vote.New(backend, backend, ds, &StubMessageBus{})
 	backend.Start(context.Background(), 1)
 	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
 	buf := new(bytes.Buffer)

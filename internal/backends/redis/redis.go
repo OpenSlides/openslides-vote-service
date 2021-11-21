@@ -114,7 +114,7 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
-	log.Debug("Redis: EVAL '%s' 2 %s %s %d %s", luaVoteScript, sKey, vKey, userID, object)
+	log.Debug("Redis: EVAL '%s' 2 %s %s [userID] [vote]", luaVoteScript, sKey, vKey)
 	result, err := redis.Int(conn.Do("EVAL", luaVoteScript, 2, sKey, vKey, userID, object))
 	if err != nil {
 		return 0, fmt.Errorf("executing luaVoteScript: %w", err)

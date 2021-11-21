@@ -207,7 +207,6 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	if !exist {
 		voteUser = requestUser
 	}
-	log.Debug("Ballot: %v", vote)
 
 	if voteUser == 0 {
 		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
@@ -233,7 +232,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		if delegation != requestUser {
 			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
 		}
-		log.Debug("User %d is voting for user %d", requestUser, voteUser)
+		log.Debug("Vote delegation")
 	}
 
 	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
@@ -284,7 +283,6 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	if err != nil {
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
-	log.Debug("Saving vote date: %s", bs)
 
 	count, err := backend.Vote(ctx, pollID, voteUser, bs)
 	if err != nil {
@@ -329,23 +327,32 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	defer func() {
 		log.Debug("End voted event with error: %v", err)
 	}()
+	ds := datastore.NewRequest(v.ds)
+	polls := make(map[int]bool)
 
-	polls, err := v.fastBackend.VotedPolls(ctx, pollIDs, requestUser)
-	if err != nil {
-		return fmt.Errorf("getting polls from fas backend: %w", err)
-	}
-	log.Debug("polls from fast backend: %v", polls)
+	for _, backend := range []Backend{v.fastBackend, v.longBackend} {
+		backendPolls, err := backend.VotedPolls(ctx, pollIDs, requestUser)
+		if err != nil {
+			return fmt.Errorf("getting polls from backend %s: %w", backend, err)
+		}
+		log.Debug("polls from backend %s: %v", backend, backendPolls)
 
-	longPolls, err := v.longBackend.VotedPolls(ctx, pollIDs, requestUser)
-	if err != nil {
-		return fmt.Errorf("getting polls from long backend: %w", err)
+		for pid, value := range backendPolls {
+			pollBackend, err := ds.Poll_Backend(pid).Value(ctx)
+			if err != nil {
+				var errDoesNotExist datastore.DoesNotExistError
+				if errors.As(err, &errDoesNotExist) {
+					polls[pid] = false
+					continue
+				}
+				return fmt.Errorf("getting poll backend for poll %d: %w", pid, err)
+			}
+			if pollBackend == backend.String() {
+				polls[pid] = polls[pid] || value
+			}
+		}
 	}
-	log.Debug("polls from long backend: %v", polls)
-
-	for p, v := range longPolls {
-		polls[p] = polls[p] || v
-	}
-	log.Debug("Combined polls: %v", err)
+	log.Debug("Combined polls: %v", polls)
 
 	if err := json.NewEncoder(w).Encode(polls); err != nil {
 		return fmt.Errorf("encoding polls %v: %w", polls, err)

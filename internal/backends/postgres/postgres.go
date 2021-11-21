@@ -139,13 +139,13 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 			}
 
 			sql = "UPDATE vote.poll SET user_ids = $1 WHERE id = $2;"
-			log.Debug("SQL: `%s` (values: [user_ids], %d", sql, pollID)
+			log.Debug("SQL: `%s` (values: [user_ids]), %d", sql, pollID)
 			if _, err := tx.Exec(ctx, sql, uIDs, pollID); err != nil {
 				return fmt.Errorf("writing user ids: %w", err)
 			}
 
 			sql = "INSERT INTO vote.objects (poll_id, vote) VALUES ($1, $2);"
-			log.Debug("SQL: `%s` (values: %d, %s", sql, pollID, object)
+			log.Debug("SQL: `%s` (values: %d, [vote]", sql, pollID)
 			if _, err := tx.Exec(ctx, sql, pollID, object); err != nil {
 				return fmt.Errorf("writing vote: %w", err)
 			}

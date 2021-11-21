@@ -147,7 +147,7 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 	mux.HandleFunc(
 		httpPathExternal,
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive vote request: %v", r)
+			log.Debug("Receive vote request")
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
