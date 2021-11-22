@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211121132306-5a924999cdbd
 	github.com/gomodule/redigo v1.8.5
-	github.com/jackc/pgconn v1.10.0
+	github.com/jackc/pgconn v1.10.1
 	github.com/jackc/pgx/v4 v4.13.0
 	github.com/ory/dockertest/v3 v3.8.0
 )
