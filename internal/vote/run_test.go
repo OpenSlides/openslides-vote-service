@@ -63,7 +63,7 @@ func TestRun(t *testing.T) {
 		}()
 
 		// Wait for the server to start.
-		conn, err := net.DialTimeout("tcp", "localhost:5002", 50*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", "localhost:5002", time.Second)
 		if err != nil {
 			t.Fatalf("Server could not be reached: %v", err)
 		}
