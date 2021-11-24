@@ -34,6 +34,14 @@ func New(ctx context.Context, url string) (*Backend, error) {
 		return nil, fmt.Errorf("invalid connection url: %w", err)
 	}
 	conf.LazyConnect = true
+
+	// Fix issue with gbBouncer. The documentation says, that this make the
+	// connection slower. We have to test the performance. Maybe it is better to
+	// remove the connection pool here or not use bgBouncer at all.
+	//
+	// See https://github.com/OpenSlides/openslides-vote-service/pull/66
+	conf.ConnConfig.PreferSimpleProtocol = true
+
 	pool, err := pgxpool.ConnectConfig(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("creating connection pool: %w", err)
