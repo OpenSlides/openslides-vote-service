@@ -166,6 +166,9 @@ The Service uses the following environment variables:
 * `VOTE_HOST`: The device where the service starts. The default is am empty
   string which starts the service on any device.
 * `VOTE_PORT`: The port the vote service listens on. The default is `9013`. 
+* `VOTE_BACKEND_FAST`: The backend used for fast polls. Possible backends are
+  redis, postgres or memory. Default is `redis`.
+* `VOTE_BACKEND_LONG`: The backend used for long polls. Default is `postgres`.
 * `DATASTORE_READER_HOST`: Host of the datastore reader. The default is
   `localhost`.
 * `DATASTORE_READER_PORT`: Port of the datastore reader. The default is `9010`.
@@ -193,6 +196,8 @@ The Service uses the following environment variables:
 * `AUTH_PROTOCOL`: Protocol of the auth servicer. The default is `http`.
 * `OPENSLIDES_DEVELOPMENT`: If set, the service starts, even when secrets (see
   below) are not given. The default is `false`. It also enables debug output.
+* `VOTE_DISABLE_LOG`: Disables the debug log. Only relevant if `OPENSLIDES_DEVELOPMENT`
+  is also set. In other case the debug log is disabled anyway. Default is `false`.
 
 
 ### Secrets

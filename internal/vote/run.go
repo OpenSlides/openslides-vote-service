@@ -120,7 +120,6 @@ func defaultEnv(environment []string) map[string]string {
 		"MESSAGE_BUS_PORT": "6379",
 		"REDIS_TEST_CONN":  "true",
 
-		// TODO: Add to readme.
 		"VOTE_DATABASE_USER":     "postgres",
 		"VOTE_DATABASE_PASSWORD": "password",
 		"VOTE_DATABASE_HOST":     "localhost",
