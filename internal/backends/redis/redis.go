@@ -28,6 +28,9 @@ const (
 // Has to be created with redis.New().
 type Backend struct {
 	pool *redis.Pool
+
+	luaScriptVote     *redis.Script
+	luaScriptClearAll *redis.Script
 }
 
 // New creates an initializes Redis instance.
@@ -39,8 +42,12 @@ func New(addr string) *Backend {
 		IdleTimeout: 240 * time.Second,
 		Dial:        func() (redis.Conn, error) { return redis.Dial("tcp", addr) },
 	}
+
 	return &Backend{
 		pool: &pool,
+
+		luaScriptVote:     redis.NewScript(2, luaVoteScript),
+		luaScriptClearAll: redis.NewScript(0, luaClearAll),
 	}
 }
 
@@ -114,8 +121,8 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	vKey := fmt.Sprintf(keyVote, pollID)
 	sKey := fmt.Sprintf(keyState, pollID)
 
-	log.Debug("Redis: EVAL '%s' 2 %s %s [userID] [vote]", luaVoteScript, sKey, vKey)
-	result, err := redis.Int(conn.Do("EVAL", luaVoteScript, 2, sKey, vKey, userID, object))
+	log.Debug("Redis: lua script vote: '%s' 2 %s %s [userID] [vote]", luaVoteScript, sKey, vKey)
+	result, err := redis.Int(b.luaScriptVote.Do(conn, sKey, vKey, userID, object))
 	if err != nil {
 		return 0, fmt.Errorf("executing luaVoteScript: %w", err)
 	}
@@ -231,8 +238,8 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "*")
 	stateKeyPattern := strings.ReplaceAll(keyState, "%d", "*")
 
-	log.Debug("Redis: EVAL '%s' 0 %s %s", luaClearAll, voteKeyPattern, stateKeyPattern)
-	if _, err := conn.Do("EVAL", luaClearAll, 0, voteKeyPattern, stateKeyPattern); err != nil {
+	log.Debug("Redis: lua script clear all: '%s' 0 %s %s", luaClearAll, voteKeyPattern, stateKeyPattern)
+	if _, err := b.luaScriptClearAll.Do(conn, voteKeyPattern, stateKeyPattern); err != nil {
 		return fmt.Errorf("removing keys: %w", err)
 	}
 
