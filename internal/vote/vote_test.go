@@ -905,7 +905,7 @@ func TestVotedPolls(t *testing.T) {
 
 	expect := `{"1":true,"2":false}` + "\n"
 	if buf.String() != expect {
-		t.Errorf("VotedPolls() wrote %v, expected %s", buf.String(), expect)
+		t.Errorf("VotedPolls() wrote `%s`, expected `%s`", strings.TrimSpace(buf.String()), expect)
 	}
 }
 
