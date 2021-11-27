@@ -34,6 +34,21 @@ func TestRun(t *testing.T) {
 	logmock := testLog{}
 	log.SetInfoLogger(goLogger.New(&logmock, "", 0))
 
+	t.Run("Start Server with given port", func(t *testing.T) {
+		go func() {
+			err := vote.Run(ctx, []string{"VOTE_BACKEND_FAST=memory", "VOTE_BACKEND_LONG=memory", "VOTE_PORT=5000"}, secret)
+			if err != nil {
+				t.Errorf("Vote.Run retunred unexpected error: %v", err)
+			}
+		}()
+
+		waitForServer(t, "localhost:5000")
+
+		if got := logmock.LastMSG(); got != "Listen on :5000" {
+			t.Errorf("Expected listen on message, got: %s", got)
+		}
+	})
+
 	t.Run("Cancel Server", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		var runErr error
