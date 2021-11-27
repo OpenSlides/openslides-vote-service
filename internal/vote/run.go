@@ -305,7 +305,7 @@ func buildBackend(ctx context.Context, env map[string]string, getSecret func(nam
 
 	case "postgres":
 		password := "openslides"
-		if env["OPENSLIDES_DEVELOPMENT"] != "false" {
+		if env["OPENSLIDES_DEVELOPMENT"] == "false" {
 			filePassword, err := getSecret(env["VOTE_DATABASE_PASSWORD_FILE"])
 			if err != nil {
 				return nil, nil, fmt.Errorf("reading postgres password: %w", err)
