@@ -44,15 +44,15 @@ func interruptContext() (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
-func secret(name string) (string, error) {
-	f, err := os.Open("/run/secrets/" + name)
+func secret(file string) (string, error) {
+	f, err := os.Open(file)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open secret file %s: %w", file, err)
 	}
 
 	secret, err := io.ReadAll(f)
 	if err != nil {
-		return "", fmt.Errorf("reading `/run/secrets/%s`: %w", name, err)
+		return "", fmt.Errorf("reading %q: %w", file, err)
 	}
 
 	return string(secret), nil

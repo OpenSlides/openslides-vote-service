@@ -185,26 +185,21 @@ The Service uses the following environment variables:
 * `VOTE_REDIS_PORT`: Port of the redis host. Default is `6379`.
 * `VOTE_DATABASE_USER`: Username of the postgres database for the long running
   backend. Default is `postgres`.
-* `VOTE_DATABASE_PASSWORD`: Password for the postgres database. Default is
-  `password`.
+* `VOTE_DATABASE_PASSWORD_FILE`: File that contains the password for the postgres 
+  database. If `OPENSLIDES_DEVELOPMENT` is true, then the string `openslides` is 
+  used as password. Default is `/run/secrets/vote_postgres_password`.
 * `VOTE_DATABASE_HOST`: Host of the postgres database. Default is `localhost`.
 * `VOTE_DATABASE_PORT`: Port of the postgres database. Default is `5432`.
 * `VOTE_DATABASE_NAME`: Name of the postgres database. Default is `vote`.
 * `AUTH`: Sets the type of the auth service. `fake` (default) or `ticket`.
 * `AUTH_HOST`: Host of the auth service. The default is `localhost`.
 * `AUTH_PORT`: Port of the auth service. The default is `9004`.
+* `AUTH_TOKEN_KEY_FILE`: File to read the auth token key. Only used when 
+  `OPENSLIDES_DEVELOPMENT` is not set. Default is `/run/secrets/auth_token_key`.
+* `AUTH_COOKIE_KEY_FILE`: File to read the auth cookie key. Only used when
+  `OPENSLIDES_DEVELOPMENT` is not set. Default is `/run/secrets/auth_cookie_key`.
 * `AUTH_PROTOCOL`: Protocol of the auth servicer. The default is `http`.
 * `OPENSLIDES_DEVELOPMENT`: If set, the service starts, even when secrets (see
   below) are not given. The default is `false`. It also enables debug output.
 * `VOTE_DISABLE_LOG`: Disables the debug log. Only relevant if `OPENSLIDES_DEVELOPMENT`
   is also set. In other case the debug log is disabled anyway. Default is `false`.
-
-
-### Secrets
-
-Secrets are filenames in `/run/secrets/`. The service only starts if it can find
-each secret file and read its content. The default values are only used, if the
-environment variable `OPENSLIDES_DEVELOPMENT` is set.
-
-* `auth_token_key`: Key to sign the JWT auth tocken. Default `auth-dev-key`.
-* `auth_cookie_key`: Key to sign the JWT auth cookie. Default `auth-dev-key`.

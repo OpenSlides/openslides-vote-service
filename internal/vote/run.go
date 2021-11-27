@@ -47,13 +47,13 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 		return fmt.Errorf("building auth: %w", err)
 	}
 
-	fastBackend, fastClose, err := buildBackend(ctx, env, env["VOTE_BACKEND_FAST"])
+	fastBackend, fastClose, err := buildBackend(ctx, env, getSecret, env["VOTE_BACKEND_FAST"])
 	if err != nil {
 		return fmt.Errorf("building fast backend: %w", err)
 	}
 	defer fastClose()
 
-	longBackend, longClose, err := buildBackend(ctx, env, env["VOTE_BACKEND_LONG"])
+	longBackend, longClose, err := buildBackend(ctx, env, getSecret, env["VOTE_BACKEND_LONG"])
 	if err != nil {
 		return fmt.Errorf("building long backend: %w", err)
 	}
@@ -110,21 +110,23 @@ func defaultEnv(environment []string) map[string]string {
 		"DATASTORE_READER_PORT":     "9010",
 		"DATASTORE_READER_PROTOCOL": "http",
 
-		"AUTH":          "fake",
-		"AUTH_PROTOCOL": "http",
-		"AUTH_HOST":     "localhost",
-		"AUTH_PORT":     "9004",
+		"AUTH":                 "fake",
+		"AUTH_PROTOCOL":        "http",
+		"AUTH_HOST":            "localhost",
+		"AUTH_PORT":            "9004",
+		"AUTH_TOKEN_KEY_FILE":  "/run/secrets/auth_token_key",
+		"AUTH_COOKIE_KEY_FILE": "/run/secrets/auth_cookie_key",
 
 		"MESSAGING":        "fake",
 		"MESSAGE_BUS_HOST": "localhost",
 		"MESSAGE_BUS_PORT": "6379",
 		"REDIS_TEST_CONN":  "true",
 
-		"VOTE_DATABASE_USER":     "postgres",
-		"VOTE_DATABASE_PASSWORD": "password",
-		"VOTE_DATABASE_HOST":     "localhost",
-		"VOTE_DATABASE_PORT":     "5432",
-		"VOTE_DATABASE_NAME":     "vote",
+		"VOTE_DATABASE_USER":          "postgres",
+		"VOTE_DATABASE_PASSWORD_FILE": "/run/secrets/vote_postgres_password",
+		"VOTE_DATABASE_HOST":          "localhost",
+		"VOTE_DATABASE_PORT":          "5432",
+		"VOTE_DATABASE_NAME":          "vote",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
 		"VOTE_DISABLE_LOG":       "false",
@@ -141,7 +143,7 @@ func defaultEnv(environment []string) map[string]string {
 	return env
 }
 
-func secret(name string, getSecret func(name string) (string, error), dev bool) (string, error) {
+func secret(name string, env map[string]string, getSecret func(name string) (string, error), dev bool) (string, error) {
 	defaultSecrets := map[string]string{
 		"auth_token_key":  auth.DebugTokenKey,
 		"auth_cookie_key": auth.DebugCookieKey,
@@ -152,7 +154,12 @@ func secret(name string, getSecret func(name string) (string, error), dev bool) 
 		return "", fmt.Errorf("unknown secret %s", name)
 	}
 
-	s, err := getSecret(name)
+	secretFiles := map[string]string{
+		"auth_token_key":  env["AUTH_TOKEN_KEY_FILE"],
+		"auth_cookie_key": env["AUTH_COOKIE_KEY_FILE"],
+	}
+
+	s, err := getSecret(secretFiles[name])
 	if err != nil {
 		if !dev {
 			return "", fmt.Errorf("can not read secret %s: %w", s, err)
@@ -198,12 +205,12 @@ func buildAuth(
 	switch method {
 	case "ticket":
 		fmt.Println("Auth Method: ticket")
-		tokenKey, err := secret("auth_token_key", getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
+		tokenKey, err := secret("auth_token_key", env, getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
 		if err != nil {
 			return nil, fmt.Errorf("getting token secret: %w", err)
 		}
 
-		cookieKey, err := secret("auth_cookie_key", getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
+		cookieKey, err := secret("auth_cookie_key", env, getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
 		if err != nil {
 			return nil, fmt.Errorf("getting cookie secret: %w", err)
 		}
@@ -282,7 +289,7 @@ func buildMessageBus(env map[string]string) (messageBus, error) {
 	return &messageBusRedis.Redis{Conn: conn}, nil
 }
 
-func buildBackend(ctx context.Context, env map[string]string, name string) (Backend, func(), error) {
+func buildBackend(ctx context.Context, env map[string]string, getSecret func(name string) (string, error), name string) (Backend, func(), error) {
 	switch name {
 	case "memory":
 		return memory.New(), func() {}, nil
@@ -297,10 +304,19 @@ func buildBackend(ctx context.Context, env map[string]string, name string) (Back
 		return r, func() {}, nil
 
 	case "postgres":
+		password := "openslides"
+		if env["OPENSLIDES_DEVELOPMENT"] != "false" {
+			filePassword, err := getSecret(env["VOTE_DATABASE_PASSWORD_FILE"])
+			if err != nil {
+				return nil, nil, fmt.Errorf("reading postgres password: %w", err)
+			}
+			password = filePassword
+		}
+
 		addr := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s",
 			env["VOTE_DATABASE_USER"],
-			env["VOTE_DATABASE_PASSWORD"],
+			password,
 			env["VOTE_DATABASE_HOST"],
 			env["VOTE_DATABASE_PORT"],
 			env["VOTE_DATABASE_NAME"],
