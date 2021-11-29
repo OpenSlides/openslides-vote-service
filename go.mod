@@ -6,7 +6,7 @@ require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.3.1-0.20211121132306-5a924999cdbd
 	github.com/gomodule/redigo v1.8.5
 	github.com/jackc/pgconn v1.10.1
-	github.com/jackc/pgx/v4 v4.14.0
+	github.com/jackc/pgx/v4 v4.14.1
 	github.com/ory/dockertest/v3 v3.8.0
 )
 
@@ -29,7 +29,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgproto3/v2 v2.2.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
-	github.com/jackc/pgtype v1.9.0 // indirect
+	github.com/jackc/pgtype v1.9.1 // indirect
 	github.com/jackc/puddle v1.2.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
