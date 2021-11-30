@@ -314,14 +314,13 @@ func buildBackend(ctx context.Context, env map[string]string, getSecret func(nam
 		}
 
 		addr := fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s",
+			"postgres://%s@%s:%s/%s",
 			env["VOTE_DATABASE_USER"],
-			password,
 			env["VOTE_DATABASE_HOST"],
 			env["VOTE_DATABASE_PORT"],
 			env["VOTE_DATABASE_NAME"],
 		)
-		p, err := postgres.New(ctx, addr)
+		p, err := postgres.New(ctx, addr, password)
 		if err != nil {
 			return nil, nil, fmt.Errorf("creating postgres connection pool: %w", err)
 		}

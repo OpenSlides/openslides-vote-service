@@ -28,12 +28,15 @@ type Backend struct {
 }
 
 // New creates a new connection pool.
-func New(ctx context.Context, url string) (*Backend, error) {
+func New(ctx context.Context, url string, password string) (*Backend, error) {
 	conf, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid connection url: %w", err)
 	}
 	conf.LazyConnect = true
+
+	// Set the password. It could contains letters that are not supported by ParseConfig
+	conf.ConnConfig.Password = password
 
 	// Fix issue with gbBouncer. The documentation says, that this make the
 	// connection slower. We have to test the performance. Maybe it is better to
