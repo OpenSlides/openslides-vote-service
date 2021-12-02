@@ -338,16 +338,17 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 		log.Debug("polls from backend %s: %v", backend, backendPolls)
 
 		for pid, value := range backendPolls {
-			pollBackend, err := ds.Poll_Backend(pid).Value(ctx)
+			poll, err := loadPoll(ctx, ds, pid)
 			if err != nil {
 				var errDoesNotExist datastore.DoesNotExistError
 				if errors.As(err, &errDoesNotExist) {
 					polls[pid] = false
 					continue
 				}
-				return fmt.Errorf("getting poll backend for poll %d: %w", pid, err)
+				return fmt.Errorf("loading poll: %w", err)
 			}
-			if pollBackend == backend.String() {
+
+			if v.backend(poll) == backend {
 				polls[pid] = polls[pid] || value
 			}
 		}
