@@ -304,11 +304,15 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	if err := v.saveVoteCount(pollID, count); err != nil {
-		// Do not return error. If the vote was saved corrently it is a success,
-		// even when saving the vote count fails.
-		log.Info("Saving vote count %d failed: %v", count, err)
-	}
+	// Save the vote count in the background. The user does not have to wait for
+	// it.
+	go func() {
+		if err := v.saveVoteCount(pollID, count); err != nil {
+			// Do not return error. If the vote was saved corrently it is a success,
+			// even when saving the vote count fails.
+			log.Info("Saving vote count %d failed: %v", count, err)
+		}
+	}()
 
 	return nil
 }
