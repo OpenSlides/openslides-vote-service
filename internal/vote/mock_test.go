@@ -2,6 +2,7 @@ package vote_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 )
 
@@ -37,10 +38,21 @@ func (g *StubGetter) assertKeys(t *testing.T, keys ...string) {
 }
 
 type StubMessageBus struct {
+	mu       sync.Mutex
 	messages [][2]string
 }
 
 func (m *StubMessageBus) Publish(ctx context.Context, key string, value []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	m.messages = append(m.messages, [2]string{key, string(value)})
 	return nil
+}
+
+func (m *StubMessageBus) Count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return len(m.messages)
 }

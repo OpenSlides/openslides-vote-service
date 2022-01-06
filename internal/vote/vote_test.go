@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
@@ -438,7 +439,9 @@ func TestVoteMessageBus(t *testing.T) {
 	v.Vote(context.Background(), 1, 2, strings.NewReader(`{"value":"Y"}`))
 	v.Vote(context.Background(), 1, 3, strings.NewReader(`{"value":"Y"}`))
 
-	if len(messageBus.messages) != 3 {
+	time.Sleep(10 * time.Millisecond)
+
+	if messageBus.Count() != 3 {
 		t.Fatalf("Got %d messages, expected 3", len(messageBus.messages))
 	}
 
