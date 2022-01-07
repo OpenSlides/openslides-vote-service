@@ -1,5 +1,4 @@
-FROM golang:1.17-alpine3.13 as basis
-LABEL maintainer="OpenSlides Team <info@openslides.com>"
+FROM golang:1.17-alpine3.13 as base
 WORKDIR /root/
 
 RUN apk add git
@@ -11,12 +10,12 @@ COPY cmd cmd
 COPY internal internal
 
 # Build service in seperate stage.
-FROM basis as builder
+FROM base as builder
 RUN CGO_ENABLED=0 go build ./cmd/vote
 
 
 # Test build.
-FROM basis as testing
+FROM base as testing
 
 RUN apk add build-base
 
@@ -24,7 +23,7 @@ CMD go vet ./... && go test ./...
 
 
 # Development build.
-FROM basis as development
+FROM base as development
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
@@ -36,6 +35,11 @@ CMD CompileDaemon -log-prefix=false -build="go build ./cmd/vote" -command="./vot
 
 # Productive build
 FROM scratch
+
+LABEL org.opencontainers.image.title="OpenSlides Vote Service"
+LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles the votes for electonic polls."
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
 COPY --from=builder /root/vote .
 EXPOSE 9013
