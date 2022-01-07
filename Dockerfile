@@ -37,7 +37,7 @@ CMD CompileDaemon -log-prefix=false -build="go build ./cmd/vote" -command="./vot
 FROM scratch
 
 LABEL org.opencontainers.image.title="OpenSlides Vote Service"
-LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles the votes for electonic polls."
+LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles the votes for electronic polls."
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
