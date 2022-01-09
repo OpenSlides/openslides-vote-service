@@ -487,28 +487,55 @@ func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfi
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
 func (p pollConfig) preload(ctx context.Context, ds *datastore.Request) error {
-	// TODO: Test that this uses less requests.
-	for _, groupID := range p.groups {
-		userIDs, err := ds.Group_UserIDs(groupID).Value(ctx)
-		if err != nil {
-			return fmt.Errorf("loading users of group %q: %w", groupID, err)
-		}
+	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
+
+	userIDsList := make([][]int, len(p.groups))
+	for i, groupID := range p.groups {
+		ds.Group_UserIDs(groupID).Lazy(&userIDsList[i])
+	}
+
+	// First database requesst to get meeting/enable_vote_weight and all users
+	// from all entitled groups.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("fetching users: %w", err)
+	}
+
+	for _, userIDs := range userIDsList {
 		for _, userID := range userIDs {
 			ds.User_GroupIDs(userID, p.meetingID)
 			ds.User_VoteWeight(userID, p.meetingID)
 			ds.User_DefaultVoteWeight(userID)
-			delegatedUserID := ds.User_VoteDelegatedToID(userID, p.meetingID).ErrorLater(ctx)
-			if delegatedUserID == 0 {
-				delegatedUserID = userID
-			}
-			ds.User_IsPresentInMeetingIDs(delegatedUserID)
-
+			ds.User_IsPresentInMeetingIDs(userID)
+			ds.User_VoteDelegatedToID(userID, p.meetingID)
 		}
 	}
-	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
 
+	// Second database request to get all users fetched above.
 	if err := ds.Execute(ctx); err != nil {
 		return fmt.Errorf("preloading present users: %w", err)
+	}
+
+	var delegatedUserIDs []int
+	for _, userIDs := range userIDsList {
+		for _, userID := range userIDs {
+			// This does not send a db request, since the value was fetched in
+			// the block above.
+			delegatedUserID := ds.User_VoteDelegatedToID(userID, p.meetingID).ErrorLater(ctx)
+			if delegatedUserID != 0 {
+				delegatedUserIDs = append(delegatedUserIDs, delegatedUserID)
+			}
+		}
+	}
+
+	for _, userID := range delegatedUserIDs {
+		ds.User_IsPresentInMeetingIDs(userID)
+	}
+
+	// Third database request to get the present state of delegated users that
+	// are not in an entitled group. If there are equivalent users, no request
+	// is send.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("preloading delegated users: %w", err)
 	}
 	return nil
 }
