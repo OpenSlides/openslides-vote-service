@@ -400,7 +400,7 @@ func TestVoteVote(t *testing.T) {
 
 func TestVoteMessageBus(t *testing.T) {
 	backend := memory.New()
-	messageBus := new(StubMessageBus)
+	messageBus := NewStubMessageBus()
 
 	v := vote.New(backend, backend, &StubGetter{
 		data: dsmock.YAMLData(`
@@ -439,7 +439,17 @@ func TestVoteMessageBus(t *testing.T) {
 	v.Vote(context.Background(), 1, 2, strings.NewReader(`{"value":"Y"}`))
 	v.Vote(context.Background(), 1, 3, strings.NewReader(`{"value":"Y"}`))
 
-	time.Sleep(10 * time.Millisecond)
+	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
+		t.Fatalf("first message was not send in time")
+	}
+
+	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
+		t.Fatalf("second message was not send in time")
+	}
+
+	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
+		t.Fatalf("third message was not send in time")
+	}
 
 	if messageBus.Count() != 3 {
 		t.Fatalf("Got %d messages, expected 3", len(messageBus.messages))

@@ -2,8 +2,10 @@ package vote_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 type StubGetter struct {
@@ -40,13 +42,23 @@ func (g *StubGetter) assertKeys(t *testing.T, keys ...string) {
 type StubMessageBus struct {
 	mu       sync.Mutex
 	messages [][2]string
+	ch       chan [2]string
+}
+
+func NewStubMessageBus() *StubMessageBus {
+	return &StubMessageBus{
+		ch: make(chan [2]string, 100),
+	}
 }
 
 func (m *StubMessageBus) Publish(ctx context.Context, key string, value []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.messages = append(m.messages, [2]string{key, string(value)})
+	msg := [2]string{key, string(value)}
+
+	m.messages = append(m.messages, msg)
+	m.ch <- msg
 	return nil
 }
 
@@ -55,4 +67,23 @@ func (m *StubMessageBus) Count() int {
 	defer m.mu.Unlock()
 
 	return len(m.messages)
+}
+
+// Read reads the next message from the bus. Blogs until the message is ready.
+//
+// Only one subscriber is supported.
+func (m *StubMessageBus) Read(timeout time.Duration) ([2]string, error) {
+	if timeout == 0 {
+		return <-m.ch, nil
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case msg := <-m.ch:
+		return msg, nil
+	case <-timer.C:
+		return [2]string{}, errors.New("timeout")
+	}
 }
