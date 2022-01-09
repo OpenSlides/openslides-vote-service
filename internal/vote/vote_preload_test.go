@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
@@ -149,8 +148,8 @@ func TestPreload(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			dsCount := NewRequestCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
-			ds := NewRequestCache(dsCount)
+			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
+			ds := dsmock.NewCache(dsCount)
 
 			poll, err := loadPoll(context.Background(), datastore.NewRequest(ds), 1)
 			if err != nil {
@@ -173,91 +172,4 @@ func TestPreload(t *testing.T) {
 			}
 		})
 	}
-}
-
-type RequestCounter struct {
-	mu sync.Mutex
-
-	ds       datastore.Getter
-	requests [][]string
-}
-
-func NewRequestCounter(ds datastore.Getter) *RequestCounter {
-	return &RequestCounter{ds: ds}
-}
-
-func (ds *RequestCounter) Get(ctx context.Context, keys ...string) (map[string][]byte, error) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
-	ds.requests = append(ds.requests, keys)
-	return ds.ds.Get(ctx, keys...)
-}
-
-func (ds *RequestCounter) Reset() {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
-	ds.requests = nil
-}
-
-func (ds *RequestCounter) Value() int {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
-	return len(ds.requests)
-}
-
-func (ds *RequestCounter) Requests() [][]string {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
-	return ds.requests
-}
-
-type RequestCache struct {
-	mu sync.Mutex
-
-	ds    datastore.Getter
-	cache map[string][]byte
-}
-
-func NewRequestCache(ds datastore.Getter) *RequestCache {
-	return &RequestCache{ds: ds, cache: make(map[string][]byte)}
-}
-
-func (ds *RequestCache) Get(ctx context.Context, keys ...string) (map[string][]byte, error) {
-	if len(keys) == 0 {
-		// TODO: This has to be fixed in datastore.Request
-		return nil, nil
-	}
-
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
-	out := make(map[string][]byte, len(keys))
-	var needKeys []string
-	for _, key := range keys {
-		v, ok := ds.cache[key]
-		if !ok {
-			needKeys = append(needKeys, key)
-			continue
-		}
-		out[key] = v
-	}
-
-	if len(needKeys) == 0 {
-		return out, nil
-	}
-
-	upstream, err := ds.ds.Get(ctx, needKeys...)
-	if err != nil {
-		return nil, fmt.Errorf("upstream: %w", err)
-	}
-
-	for k, v := range upstream {
-		out[k] = v
-		ds.cache[k] = v
-	}
-	return out, nil
 }
