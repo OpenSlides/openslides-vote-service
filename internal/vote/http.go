@@ -26,7 +26,7 @@ func handleCreate(mux *http.ServeMux, create creater) {
 	mux.HandleFunc(
 		httpPathInternal+"/create",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive create request: %v", r)
+			log.Info("Receive create request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -58,7 +58,7 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 	mux.HandleFunc(
 		httpPathInternal+"/stop",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive stop request: %v", r)
+			log.Info("Receive stop request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -88,7 +88,7 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 	mux.HandleFunc(
 		httpPathInternal+"/clear",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive clear request: %v", r)
+			log.Info("Receive clear request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -118,7 +118,7 @@ func handleClearAll(mux *http.ServeMux, clear clearAller) {
 	mux.HandleFunc(
 		httpPathInternal+"/clear_all",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive clear request: %v", r)
+			log.Info("Receive clear request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -147,7 +147,7 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 	mux.HandleFunc(
 		httpPathExternal,
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive vote request")
+			log.Info("Receive vote request")
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -189,7 +189,7 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 	mux.HandleFunc(
 		httpPathExternal+"/voted",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive voted request: %v", r)
+			log.Info("Receive voted request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "GET" {
@@ -231,7 +231,7 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
 	mux.HandleFunc(
 		httpPathInternal+"/vote_count",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Receive vote count request: %v", r)
+			log.Info("Receive vote count request: %v", r)
 			w.Header().Set("Content-Type", "application/json")
 
 			pollIDs, err := parseVoteCountRequest(r.Body)
