@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
@@ -129,7 +130,6 @@ func defaultEnv(environment []string) map[string]string {
 		"VOTE_DATABASE_NAME":          "vote",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
-		"VOTE_DISABLE_LOG":       "false",
 	}
 
 	for _, value := range environment {
@@ -205,12 +205,14 @@ func buildAuth(
 	switch method {
 	case "ticket":
 		fmt.Println("Auth Method: ticket")
-		tokenKey, err := secret("auth_token_key", env, getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
+		dev, _ := strconv.ParseBool(env["OPENSLIDES_DEVELOPMENT"])
+
+		tokenKey, err := secret("auth_token_key", env, getSecret, dev)
 		if err != nil {
 			return nil, fmt.Errorf("getting token secret: %w", err)
 		}
 
-		cookieKey, err := secret("auth_cookie_key", env, getSecret, env["OPENSLIDES_DEVELOPMENT"] != "false")
+		cookieKey, err := secret("auth_cookie_key", env, getSecret, dev)
 		if err != nil {
 			return nil, fmt.Errorf("getting cookie secret: %w", err)
 		}

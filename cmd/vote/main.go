@@ -7,6 +7,7 @@ import (
 	golog "log"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
@@ -16,7 +17,7 @@ func main() {
 	ctx, cancel := interruptContext()
 	defer cancel()
 
-	if os.Getenv("OPENSLIDES_DEVELOPMENT") != "" && os.Getenv("VOTE_DISABLE_LOG") == "" {
+	if dev, _ := strconv.ParseBool(os.Getenv("OPENSLIDES_DEVELOPMENT")); dev {
 		log.SetDebugLogger(golog.New(os.Stderr, "DEBUG ", golog.LstdFlags))
 	}
 

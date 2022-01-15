@@ -201,5 +201,3 @@ The Service uses the following environment variables:
 * `AUTH_PROTOCOL`: Protocol of the auth servicer. The default is `http`.
 * `OPENSLIDES_DEVELOPMENT`: If set, the service starts, even when secrets (see
   below) are not given. The default is `false`. It also enables debug output.
-* `VOTE_DISABLE_LOG`: Disables the debug log. Only relevant if `OPENSLIDES_DEVELOPMENT`
-  is also set. In other case the debug log is disabled anyway. Default is `false`.
