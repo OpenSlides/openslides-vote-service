@@ -398,13 +398,18 @@ func (b *Backend) countersID(ctx context.Context, id uint64) (uint64, map[int]in
 
 	var rawValues []uint64
 
-	for len(rawValues) == 0 && ctx.Err() == nil {
+	for ctx.Err() == nil {
 		v, err := redis.Uint64s(conn.Do("ZRANGE", keyCounterChanges, fmt.Sprintf("(%d", id), "+inf", "BYSCORE", "WITHSCORES"))
 		if err != nil {
 			return 0, nil, fmt.Errorf("getting changed keys: %w", err)
 		}
 
-		rawValues = v
+		if len(v) > 0 {
+			rawValues = v
+			break
+		}
+
+		time.Sleep(time.Second)
 	}
 
 	if ctx.Err() != nil {
