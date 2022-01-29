@@ -172,6 +172,24 @@ func TestCounterInterface(t *testing.T) {
 			}
 		})
 
-		// TODO: Test after clear
+		t.Run("after clear", func(t *testing.T) {
+			defer r.ClearAll(context.Background())
+
+			r.CountAdd(context.Background(), 1)
+			r.CountClear(context.Background(), 1)
+
+			newID, counter, err := r.Counters(context.Background(), 1)
+			if err != nil {
+				t.Fatalf("reading counter: %v", err)
+			}
+
+			if newID != 2 {
+				t.Errorf("counters returned new id %d, expected 2", newID)
+			}
+
+			if len(counter) != 1 || counter[1] != 0 {
+				t.Errorf("counters returned %v, expected map[1:0]", counter)
+			}
+		})
 	})
 }

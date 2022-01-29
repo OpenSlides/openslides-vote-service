@@ -326,6 +326,20 @@ func (b *Backend) CountClear(ctx context.Context, pollID int) error {
 		return fmt.Errorf("delete counter: %w", err)
 	}
 
+	rawMaxScore, err := redis.Uint64s(conn.Do("ZRANGE", keyCounterChanges, 0, 0, "REV", "WITHSCORES"))
+	if err != nil {
+		return fmt.Errorf("getting max score: %w", err)
+	}
+
+	var maxScore uint64
+	if len(rawMaxScore) > 1 {
+		maxScore = rawMaxScore[1]
+	}
+
+	if _, err := conn.Do("ZADD", keyCounterChanges, "GT", maxScore+1, pollID); err != nil {
+		return fmt.Errorf("add poll id to changed keys: %w", err)
+	}
+
 	return nil
 }
 
