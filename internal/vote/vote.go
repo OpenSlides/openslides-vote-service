@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
@@ -19,16 +18,16 @@ type Vote struct {
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
-	messageBus  MessageBus
+	counter     Counter
 }
 
 // New creates an initializes vote service.
-func New(fast, long Backend, ds datastore.Getter, messageBus MessageBus) *Vote {
+func New(fast, long Backend, ds datastore.Getter, counter Counter) *Vote {
 	return &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
-		messageBus:  messageBus,
+		counter:     counter,
 	}
 }
 
@@ -147,6 +146,10 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 	if err := v.longBackend.Clear(ctx, pollID); err != nil {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
+
+	if err := v.counter.CountClear(ctx, pollID); err != nil {
+		return fmt.Errorf("clearing counter: %w", err)
+	}
 	return nil
 }
 
@@ -171,6 +174,10 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 
 	if err := v.longBackend.ClearAll(ctx); err != nil {
 		return fmt.Errorf("clearing long Backend: %w", err)
+	}
+
+	if err := v.counter.ClearAll(ctx); err != nil {
+		return fmt.Errorf("clearing counter: %w", err)
 	}
 	return nil
 }
@@ -236,7 +243,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 
 	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
-	if err := ds.Err(); err != nil {
+	if err != nil {
 		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 	}
 
@@ -307,7 +314,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	// Save the vote count in the background. The user does not have to wait for
 	// it.
 	go func() {
-		if err := v.saveVoteCount(pollID, count); err != nil {
+		if err := v.saveVoteCount(pollID); err != nil {
 			// Do not return error. If the vote was saved corrently it is a success,
 			// even when saving the vote count fails.
 			log.Info("Saving vote count %d failed: %v", count, err)
@@ -317,10 +324,9 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	return nil
 }
 
-func (v *Vote) saveVoteCount(pollID, count int) error {
-	str := strconv.Itoa(count)
-	if err := v.messageBus.Publish(context.Background(), fmt.Sprintf("poll/%d/vote_count", pollID), []byte(str)); err != nil {
-		return fmt.Errorf("saving vote_count of poll %d to message bus: %w", pollID, err)
+func (v *Vote) saveVoteCount(pollID int) error {
+	if err := v.counter.CountAdd(context.Background(), pollID); err != nil {
+		return fmt.Errorf("saving cote count of poll %d: %w", pollID, err)
 	}
 	return nil
 }
@@ -365,36 +371,35 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	return nil
 }
 
-// VoteCount returns the amout of votes for a poll.
-func (v *Vote) VoteCount(ctx context.Context, pollIDs []int, w io.Writer) (err error) {
-	log.Debug("Receive vote count event for polls %v", pollIDs)
+// VoteCount returns the amount votes for every acitve poll since the given
+// change id.
+//
+// With change id 0, it returns the amout of every poll.
+//
+// If the id is equal or higher then the last change, it blocks until there are
+// changes with a higher id.
+func (v *Vote) VoteCount(ctx context.Context, id uint64, w io.Writer) (err error) {
+	log.Debug("Receive vote count event with id %d", id)
 	defer func() {
 		log.Debug("End vote count with error: %v", err)
 	}()
 
-	data := map[string]map[int]map[string]int{
-		"poll": {},
-	}
-	for _, pollID := range pollIDs {
-		ds := datastore.NewRequest(v.ds)
-		poll, err := loadPoll(ctx, ds, pollID)
-		if err != nil {
-			return fmt.Errorf("loading poll: %w", err)
-		}
-		log.Debug("Poll config: %v", poll)
-
-		backend := v.backend(poll)
-
-		count, err := backend.VoteCount(ctx, pollID)
-		if err != nil {
-			return fmt.Errorf("getting vote count from backend %s: %w", backend, err)
-		}
-
-		data["poll"][pollID] = map[string]int{"vote_count": count}
+	// This blocks until there is new data or the context is done.
+	newID, counts, err := v.counter.Counters(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting counters: %w", err)
 	}
 
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		return fmt.Errorf("encoding data: %w", err)
+	content := struct {
+		ID    uint64      `json:"id"`
+		Polls map[int]int `json:"polls"`
+	}{
+		newID,
+		counts,
+	}
+
+	if err := json.NewEncoder(w).Encode(content); err != nil {
+		return fmt.Errorf("encoding vote counts: %w", err)
 	}
 
 	return nil
@@ -439,11 +444,24 @@ type Backend interface {
 	fmt.Stringer
 }
 
-// MessageBus publishes the vote counts.
-type MessageBus interface {
-	// Publish takes a pollID and a voteCount value and saves them in the
-	// message bus.
-	Publish(ctx context.Context, key string, value []byte) error
+// Counter keeps track of howmany votes are counted per poll.
+type Counter interface {
+	// CountAdd adds one vote for the pollID to the counter.
+	CountAdd(ctx context.Context, pollID int) error
+
+	// CountClear deletes all counts for a poll.
+	CountClear(ctx context.Context, pollID int) error
+
+	// ClearAll deleted all counts from all polls.
+	ClearAll(ctx context.Context) error
+
+	// Counters returns all counts of all polls since the given id.
+	//
+	// Returns a new ID that can be used the next time. Returns all counts for
+	// all polls if the id 0 is given.
+	//
+	// Blocks until there is new data.
+	Counters(ctx context.Context, id uint64) (newid uint64, counts map[int]int, err error)
 }
 
 type pollConfig struct {

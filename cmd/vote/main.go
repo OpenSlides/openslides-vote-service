@@ -17,6 +17,7 @@ func main() {
 	ctx, cancel := interruptContext()
 	defer cancel()
 
+	log.SetInfoLogger(golog.Default())
 	if dev, _ := strconv.ParseBool(os.Getenv("OPENSLIDES_DEVELOPMENT")); dev {
 		log.SetDebugLogger(golog.New(os.Stderr, "DEBUG ", golog.LstdFlags))
 	}

@@ -648,13 +648,13 @@ func TestHandleVoted(t *testing.T) {
 }
 
 type voteCounterStub struct {
-	pollIDs      []int
+	id           uint64
 	expectWriter string
 	expectErr    error
 }
 
-func (v *voteCounterStub) VoteCount(ctx context.Context, pollIDs []int, w io.Writer) error {
-	v.pollIDs = pollIDs
+func (v *voteCounterStub) VoteCount(ctx context.Context, id uint64, w io.Writer) error {
+	v.id = id
 
 	if v.expectErr != nil {
 		return v.expectErr
@@ -666,11 +666,21 @@ func (v *voteCounterStub) VoteCount(ctx context.Context, pollIDs []int, w io.Wri
 func TestHandleVoteCount(t *testing.T) {
 	voteCounter := &voteCounterStub{}
 
-	url := "/internal/vote/vote_count"
 	mux := http.NewServeMux()
 	handleVoteCount(mux, voteCounter)
 
-	t.Run("No body", func(t *testing.T) {
+	t.Run("No id", func(t *testing.T) {
+		url := "/internal/vote/vote_count"
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+	})
+
+	t.Run("id not an int", func(t *testing.T) {
+		url := "/internal/vote/vote_count?id=hello"
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
 
@@ -680,36 +690,25 @@ func TestHandleVoteCount(t *testing.T) {
 	})
 
 	t.Run("Correct", func(t *testing.T) {
+		url := "/internal/vote/vote_count?id=27"
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":["poll/5/vote_count"]}`)))
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200", resp.Result().Status)
 		}
 
-		if voteCounter.pollIDs[0] != 5 {
-			t.Errorf("VoteCount was called with pollID %d, expected 5", voteCounter.pollIDs[0])
-		}
-	})
-
-	t.Run("Many Polls", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":["poll/5/vote_count", "poll/6/vote_count"]}`)))
-
-		if resp.Result().StatusCode != 200 {
-			t.Errorf("Got status %s, expected 200", resp.Result().Status)
-		}
-
-		if voteCounter.pollIDs[0] != 5 || voteCounter.pollIDs[1] != 6 {
-			t.Errorf("VoteCount was called with pollID %v, expected [5,6]", voteCounter.pollIDs)
+		if voteCounter.id != 27 {
+			t.Errorf("VoteCount was called with id %d, expected 27", voteCounter.id)
 		}
 	})
 
 	t.Run("VoteCount Error", func(t *testing.T) {
+		url := "/internal/vote/vote_count?id=27"
 		voteCounter.expectErr = ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, strings.NewReader(`{"requests":[]}`)))
+		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)

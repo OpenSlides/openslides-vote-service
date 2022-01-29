@@ -26,7 +26,7 @@ func SetInfoLogger(l *log.Logger) {
 // Info prints output that is important for the user.
 func Info(format string, a ...interface{}) {
 	if infoLogger == nil {
-		infoLogger = log.Default()
+		return
 	}
 	infoLogger.Printf(format, a...)
 }

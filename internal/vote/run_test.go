@@ -33,6 +33,7 @@ func TestRun(t *testing.T) {
 
 	logmock := testLog{}
 	log.SetInfoLogger(goLogger.New(&logmock, "", 0))
+	defer log.SetInfoLogger(nil)
 
 	t.Run("Start Server with given port", func(t *testing.T) {
 		go func() {
