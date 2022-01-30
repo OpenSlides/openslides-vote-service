@@ -31,7 +31,7 @@ func TestVoteCreate(t *testing.T) {
 		meeting/5/id: 5
 		`))
 
-		v := vote.New(backend, backend, ds, NewMockCounter())
+		v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
 		if err := v.Create(context.Background(), 1); err != nil {
 			t.Errorf("Create returned unexpected error: %v", err)
@@ -61,7 +61,7 @@ func TestVoteCreate(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 		v.Create(context.Background(), 1)
 
 		if err := v.Create(context.Background(), 1); err != nil {
@@ -82,7 +82,7 @@ func TestVoteCreate(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 		v.Create(context.Background(), 1)
 
 		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
@@ -106,7 +106,7 @@ func TestVoteCreate(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
 		err := v.Create(context.Background(), 1)
 
@@ -127,7 +127,7 @@ func TestVoteCreate(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
 		err := v.Create(context.Background(), 1)
 
@@ -148,7 +148,7 @@ func TestVoteCreate(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
 		err := v.Create(context.Background(), 1)
 
@@ -169,7 +169,7 @@ func TestVoteCreate(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, NewMockCounter())
+		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
 		err := v.Create(context.Background(), 1)
 
@@ -200,7 +200,7 @@ func TestVoteCreatePreloadData(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 	meeting/5/id: 5
 	`))
-	v := vote.New(backend, backend, ds, NewMockCounter())
+	v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
 	if err := v.Create(context.Background(), 1); err != nil {
 		t.Errorf("Create returned unexpected error: %v", err)
@@ -214,7 +214,7 @@ func TestVoteCreatePreloadData(t *testing.T) {
 func TestVoteCreateDSError(t *testing.T) {
 	backend := memory.New()
 	ds := StubGetter{err: errors.New("Some error")}
-	v := vote.New(backend, backend, &ds, NewMockCounter())
+	v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 	err := v.Create(context.Background(), 1)
 
 	if err == nil {
@@ -228,7 +228,7 @@ func TestVoteStop(t *testing.T) {
 	poll/1/meeting_id: 1
 	poll/2/meeting_id: 1
 	poll/3/meeting_id: 1
-	`)}, NewMockCounter())
+	`)}, vote.NewMockCounter())
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		buf := new(bytes.Buffer)
@@ -282,7 +282,7 @@ func TestVoteStop(t *testing.T) {
 
 func TestVoteClear(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{}, NewMockCounter())
+	v := vote.New(backend, backend, &StubGetter{}, vote.NewMockCounter())
 
 	if err := v.Clear(context.Background(), 1); err != nil {
 		t.Fatalf("Clear returned unexpected error: %v", err)
@@ -291,7 +291,7 @@ func TestVoteClear(t *testing.T) {
 
 func TestVoteClearAll(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{}, NewMockCounter())
+	v := vote.New(backend, backend, &StubGetter{}, vote.NewMockCounter())
 
 	if err := v.ClearAll(context.Background()); err != nil {
 		t.Fatalf("ClearAll returned unexpected error: %v", err)
@@ -314,7 +314,7 @@ func TestVoteVote(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 			group_$1_ids: [1]
 		`),
-	}, NewMockCounter())
+	}, vote.NewMockCounter())
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`))
@@ -563,7 +563,7 @@ func TestVoteNoRequests(t *testing.T) {
 
 			ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(tt.data))
 			backend := memory.New()
-			v := vote.New(backend, backend, ds, NewMockCounter())
+			v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
 			if err := v.Create(context.Background(), 1); err != nil {
 				t.Fatalf("Can not start poll: %v", err)
@@ -753,7 +753,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, NewMockCounter())
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, vote.NewMockCounter())
 			backend.Start(context.Background(), 1)
 
 			err := v.Vote(context.Background(), 1, 1, strings.NewReader(tt.vote))
@@ -876,7 +876,7 @@ func TestVoteWeight(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, NewMockCounter())
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, vote.NewMockCounter())
 			backend.Start(context.Background(), 1)
 
 			if err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
@@ -908,7 +908,7 @@ func TestVotedPolls(t *testing.T) {
 	ds := dsmock.Stub(dsmock.YAMLData(`---
 	poll/1/backend: memory
 	`))
-	v := vote.New(backend, backend, ds, NewMockCounter())
+	v := vote.New(backend, backend, ds, vote.NewMockCounter())
 	backend.Start(context.Background(), 1)
 	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
 	buf := new(bytes.Buffer)
@@ -925,7 +925,7 @@ func TestVotedPolls(t *testing.T) {
 
 func TestVoteCount(t *testing.T) {
 	backend := memory.New()
-	counter := NewMockCounter()
+	counter := vote.NewMockCounter()
 	v := vote.New(backend, backend, dsmock.Stub(dsmock.YAMLData(`
 	meeting/1/users_enable_vote_weight: false
 

@@ -48,28 +48,12 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 		return fmt.Errorf("building auth: %w", err)
 	}
 
-	redisBackend, err := buildRedisBackend(ctx, env)
-	if err != nil {
-		return fmt.Errorf("building redis backend: %w", err)
-	}
-
-	postgresBackend, err := buildPostgresBackend(ctx, env, getSecret)
-	if err != nil {
-		return fmt.Errorf("building postgres backend: %w", err)
-	}
-	defer postgresBackend.Close()
-
-	fastBackend, err := buildBackend(ctx, env["VOTE_BACKEND_FAST"], env, redisBackend, postgresBackend)
+	fastBackend, longBackend, counter, err := buildBackends(ctx, env, getSecret)
 	if err != nil {
 		return fmt.Errorf("building fast backend: %w", err)
 	}
 
-	longBackend, err := buildBackend(ctx, env["VOTE_BACKEND_LONG"], env, redisBackend, postgresBackend)
-	if err != nil {
-		return fmt.Errorf("building long backend: %w", err)
-	}
-
-	service := New(fastBackend, longBackend, ds, redisBackend)
+	service := New(fastBackend, longBackend, ds, counter)
 
 	mux := http.NewServeMux()
 	handleCreate(mux, service)
@@ -339,18 +323,48 @@ func buildPostgresBackend(ctx context.Context, env map[string]string, getSecret 
 	return p, nil
 }
 
-func buildBackend(ctx context.Context, name string, env map[string]string, redis, postgres Backend) (Backend, error) {
-	switch name {
-	case "memory":
-		return memory.New(), nil
+func buildBackends(ctx context.Context, env map[string]string, getSecret func(name string) (string, error)) (fast Backend, long Backend, counter Counter, err error) {
+	var rb *redis.Backend
+	var pb *postgres.Backend
 
-	case "redis":
-		return redis, nil
+	setBackend := func(name string) (Backend, error) {
+		switch name {
+		case "memory":
+			return memory.New(), nil
 
-	case "postgres":
-		return postgres, nil
+		case "redis":
+			if rb == nil {
+				rb, err = buildRedisBackend(ctx, env)
+				if err != nil {
+					return nil, fmt.Errorf("build redis backend: %w", err)
+				}
+			}
+			return rb, nil
 
-	default:
-		return nil, fmt.Errorf("unknown backend %s", name)
+		case "postgres":
+			if pb == nil {
+				pb, err = buildPostgresBackend(ctx, env, getSecret)
+			}
+			return pb, nil
+
+		default:
+			return nil, fmt.Errorf("unknown backend %s", name)
+		}
 	}
+
+	fast, err = setBackend(env["VOTE_BACKEND_FAST"])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("setting fast backend: %w", err)
+	}
+
+	long, err = setBackend(env["VOTE_BACKEND_LONG"])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("setting long backend: %w", err)
+	}
+
+	counter = rb
+	if counter == nil {
+		counter = NewMockCounter()
+	}
+	return fast, long, counter, nil
 }
