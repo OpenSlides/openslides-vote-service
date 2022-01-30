@@ -1,8 +1,12 @@
 package log
 
-import "log"
+import (
+	"log"
+	"sync"
+)
 
 var (
+	loggerMu    sync.RWMutex
 	debugLogger *log.Logger
 	infoLogger  *log.Logger
 )
@@ -12,6 +16,8 @@ var (
 // This function should only be started at the beginnen of the program before
 // the Debug was called for the frist time.
 func SetDebugLogger(l *log.Logger) {
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
 	debugLogger = l
 }
 
@@ -20,11 +26,16 @@ func SetDebugLogger(l *log.Logger) {
 // This function should only be started at the beginnen of the program before
 // the Debug was called for the frist time.
 func SetInfoLogger(l *log.Logger) {
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
 	infoLogger = l
 }
 
 // Info prints output that is important for the user.
 func Info(format string, a ...interface{}) {
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+
 	if infoLogger == nil {
 		return
 	}
@@ -35,6 +46,9 @@ func Info(format string, a ...interface{}) {
 //
 // If EnableDebug() was not called, this function is a noop.
 func Debug(format string, a ...interface{}) {
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+
 	if debugLogger == nil {
 		return
 	}
