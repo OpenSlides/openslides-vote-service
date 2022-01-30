@@ -1010,4 +1010,22 @@ func TestVoteCount(t *testing.T) {
 		}
 	})
 
+	t.Run("after clear", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+
+		if err := v.Clear(context.Background(), 1); err != nil {
+			t.Fatalf("clearing poll: %v", err)
+		}
+
+		buf := new(bytes.Buffer)
+		if err := v.VoteCount(ctx, 3, buf); err != nil {
+			t.Fatalf("VoteCount() returned unexected error: %v", err)
+		}
+
+		expect := `{"id":4,"polls":{"1":0}}` + "\n"
+		if buf.String() != expect {
+			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
+		}
+	})
 }

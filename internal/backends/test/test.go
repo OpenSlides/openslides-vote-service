@@ -276,23 +276,6 @@ func Backend(t *testing.T, backend vote.Backend) {
 	})
 
 	pollID++
-	t.Run("VoteCount", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
-		backend.Vote(context.Background(), pollID, 6, []byte("my vote"))
-		backend.Vote(context.Background(), pollID, 7, []byte("my vote"))
-
-		voteCount, err := backend.VoteCount(context.Background(), pollID)
-		if err != nil {
-			t.Fatalf("VoteCount returned unexpected error: %v", err)
-		}
-
-		if voteCount != 3 {
-			t.Errorf("VoteCount returned %d, expected %d", voteCount, 3)
-		}
-	})
-
-	pollID++
 	t.Run("Concurrency", func(t *testing.T) {
 		t.Run("Many Votes", func(t *testing.T) {
 			count := 100

@@ -339,28 +339,6 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 	return out, nil
 }
 
-// VoteCount returns the amout of votes for the given poll id.
-func (b *Backend) VoteCount(ctx context.Context, pollID int) (count int, err error) {
-	log.Debug("SQL: Begin vote count")
-	defer func() {
-		log.Debug("SQL: Begin voted polls with error: %v", err)
-	}()
-
-	sql := `
-	SELECT count(id)
-	FROM vote.objects
-	WHERE poll_id = $1;
-	`
-
-	var voteCount int
-
-	if err := b.pool.QueryRow(ctx, sql, pollID).Scan(&voteCount); err != nil {
-		return 0, fmt.Errorf("fetching count of vote objects: %w", err)
-	}
-
-	return voteCount, nil
-}
-
 // ContinueOnTransactionError runs the given many times until is does not return
 // an transaction error. Also stopes, when the given context is canceled.
 func continueOnTransactionError(ctx context.Context, f func() error) error {

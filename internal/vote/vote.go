@@ -438,9 +438,6 @@ type Backend interface {
 	// voted.
 	VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error)
 
-	// VoteCount returns the amout of votes for the given poll id.
-	VoteCount(ctx context.Context, pollID int) (int, error)
-
 	fmt.Stringer
 }
 

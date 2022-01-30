@@ -126,14 +126,6 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ma
 	return out, nil
 }
 
-// VoteCount returns the amout of votes for the given poll id.
-func (b *Backend) VoteCount(ctx context.Context, pollID int) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	return len(b.voted[pollID]), nil
-}
-
 // AssertUserHasVoted is a method for the tests to check, if a user has voted.
 func (b *Backend) AssertUserHasVoted(t *testing.T, pollID, userID int) {
 	t.Helper()
