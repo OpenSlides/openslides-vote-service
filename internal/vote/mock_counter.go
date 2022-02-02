@@ -68,12 +68,12 @@ func (c *MockCounter) ClearAll(ctx context.Context) error {
 // all polls if the id 0 is given.
 //
 // Blocks until there is new data.
-func (c *MockCounter) Counters(ctx context.Context, id uint64) (newid uint64, counts map[int]int, err error) {
+func (c *MockCounter) Counters(ctx context.Context, id uint64, blocking bool) (newid uint64, counts map[int]int, err error) {
 	c.mu.Lock()
 
-	if id == 0 {
+	if id == 0 && !blocking {
 		defer c.mu.Unlock()
-		return c.id, c.counts, nil
+		return c.id, nil, nil
 	}
 
 	if id < c.id {
@@ -88,6 +88,11 @@ func (c *MockCounter) Counters(ctx context.Context, id uint64) (newid uint64, co
 		return c.id, votes, err
 	}
 
+	if !blocking {
+		defer c.mu.Unlock()
+		return c.id, nil, nil
+	}
+
 	ch := c.wait
 
 	c.mu.Unlock()
@@ -95,7 +100,7 @@ func (c *MockCounter) Counters(ctx context.Context, id uint64) (newid uint64, co
 	case <-ch:
 		// Try again. This should not be used in production. If id is a very
 		// high number, this will run in a stack overflow.
-		return c.Counters(ctx, id)
+		return c.Counters(ctx, id, blocking)
 
 	case <-ctx.Done():
 		return 0, nil, ctx.Err()

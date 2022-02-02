@@ -57,7 +57,7 @@ func TestCounterInterface(t *testing.T) {
 			t.Fatalf("adding returned unexpected error: %v", err)
 		}
 
-		_, counter, err := r.Counters(context.Background(), 0)
+		_, counter, err := r.Counters(context.Background(), 0, false)
 		if err != nil {
 			t.Fatalf("reading counter: %v", err)
 		}
@@ -78,13 +78,13 @@ func TestCounterInterface(t *testing.T) {
 			t.Fatalf("clearing returned unexpected error: %v", err)
 		}
 
-		_, counter, err := r.Counters(context.Background(), 0)
+		_, counter, err := r.Counters(context.Background(), 0, false)
 		if err != nil {
 			t.Fatalf("reading counter: %v", err)
 		}
 
-		if len(counter) != 0 {
-			t.Errorf("got %v, expected map[]", counter)
+		if len(counter) != 1 || counter[5] != 0 {
+			t.Errorf("got %v, expected map[5:0]", counter)
 		}
 	})
 
@@ -96,7 +96,7 @@ func TestCounterInterface(t *testing.T) {
 			r.CountAdd(context.Background(), 1)
 			r.CountAdd(context.Background(), 2)
 
-			newID, counter, err := r.Counters(context.Background(), 0)
+			newID, counter, err := r.Counters(context.Background(), 0, false)
 			if err != nil {
 				t.Fatalf("reading counter: %v", err)
 			}
@@ -113,7 +113,7 @@ func TestCounterInterface(t *testing.T) {
 		t.Run("On empty db", func(t *testing.T) {
 			defer r.ClearAll(context.Background())
 
-			newID, counter, err := r.Counters(context.Background(), 0)
+			newID, counter, err := r.Counters(context.Background(), 0, false)
 			if err != nil {
 				t.Fatalf("reading counter: %v", err)
 			}
@@ -134,7 +134,7 @@ func TestCounterInterface(t *testing.T) {
 			r.CountAdd(context.Background(), 1)
 			r.CountAdd(context.Background(), 2)
 
-			newID, counter, err := r.Counters(context.Background(), 2)
+			newID, counter, err := r.Counters(context.Background(), 2, false)
 			if err != nil {
 				t.Fatalf("reading counter: %v", err)
 			}
@@ -158,7 +158,7 @@ func TestCounterInterface(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 			defer cancel()
 
-			newID, counter, err := r.Counters(ctx, 3)
+			newID, counter, err := r.Counters(ctx, 3, true)
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("expect deadline exceeded error, got: %v", err)
 			}
@@ -178,7 +178,7 @@ func TestCounterInterface(t *testing.T) {
 			r.CountAdd(context.Background(), 1)
 			r.CountClear(context.Background(), 1)
 
-			newID, counter, err := r.Counters(context.Background(), 1)
+			newID, counter, err := r.Counters(context.Background(), 1, false)
 			if err != nil {
 				t.Fatalf("reading counter: %v", err)
 			}

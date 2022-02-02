@@ -223,7 +223,7 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 }
 
 type voteCounter interface {
-	VoteCount(ctx context.Context, id uint64, w io.Writer) error
+	VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) error
 }
 
 func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
@@ -234,18 +234,20 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
 			w.Header().Set("Content-Type", "application/json")
 
 			rawID := r.URL.Query().Get("id")
-			if rawID == "" {
-				handleError(w, fmt.Errorf("no change id provided"), true)
-				return
+			var id uint64
+			blocking := false
+			if rawID != "" {
+				blocking = true
+				var err error
+				id, err = strconv.ParseUint(rawID, 10, 64)
+				if err != nil {
+					handleError(w, fmt.Errorf("parsing id: %w", err), true)
+					return
+				}
+
 			}
 
-			id, err := strconv.ParseUint(rawID, 10, 64)
-			if err != nil {
-				handleError(w, fmt.Errorf("parsing id: %w", err), true)
-				return
-			}
-
-			if err := voteCounter.VoteCount(r.Context(), id, w); err != nil {
+			if err := voteCounter.VoteCount(r.Context(), id, blocking, w); err != nil {
 				handleError(w, err, true)
 				return
 			}

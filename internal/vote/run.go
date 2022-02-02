@@ -50,7 +50,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 
 	fastBackend, longBackend, counter, err := buildBackends(ctx, env, getSecret)
 	if err != nil {
-		return fmt.Errorf("building fast backend: %w", err)
+		return fmt.Errorf("building backends: %w", err)
 	}
 
 	service := New(fastBackend, longBackend, ds, counter)
@@ -323,7 +323,11 @@ func buildPostgresBackend(ctx context.Context, env map[string]string, getSecret 
 	return p, nil
 }
 
-func buildBackends(ctx context.Context, env map[string]string, getSecret func(name string) (string, error)) (fast Backend, long Backend, counter Counter, err error) {
+func buildBackends(
+	ctx context.Context,
+	env map[string]string,
+	getSecret func(name string) (string, error),
+) (fast Backend, long Backend, counter Counter, err error) {
 	var rb *redis.Backend
 	var pb *postgres.Backend
 
@@ -363,7 +367,7 @@ func buildBackends(ctx context.Context, env map[string]string, getSecret func(na
 	}
 
 	counter = rb
-	if counter == nil {
+	if rb == nil {
 		counter = NewMockCounter()
 	}
 	return fast, long, counter, nil

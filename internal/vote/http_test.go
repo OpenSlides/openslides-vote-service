@@ -649,12 +649,14 @@ func TestHandleVoted(t *testing.T) {
 
 type voteCounterStub struct {
 	id           uint64
+	blocking     bool
 	expectWriter string
 	expectErr    error
 }
 
-func (v *voteCounterStub) VoteCount(ctx context.Context, id uint64, w io.Writer) error {
+func (v *voteCounterStub) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) error {
 	v.id = id
+	v.blocking = blocking
 
 	if v.expectErr != nil {
 		return v.expectErr
@@ -674,8 +676,16 @@ func TestHandleVoteCount(t *testing.T) {
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
 
-		if resp.Result().StatusCode != 500 {
-			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200", resp.Result().Status)
+		}
+
+		if voteCounter.id != 0 {
+			t.Errorf("VoteCount was called with id %d, expected 0", voteCounter.id)
+		}
+
+		if voteCounter.blocking {
+			t.Errorf("VoteCount was called with blocking, expected false")
 		}
 	})
 

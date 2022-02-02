@@ -969,7 +969,7 @@ func TestVoteCount(t *testing.T) {
 		defer cancel()
 
 		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 0, buf); err != nil {
+		if err := v.VoteCount(ctx, 0, true, buf); err != nil {
 			t.Fatalf("VoteCount() returned unexected error: %v", err)
 		}
 
@@ -984,7 +984,7 @@ func TestVoteCount(t *testing.T) {
 		defer cancel()
 
 		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 2, buf); err != nil {
+		if err := v.VoteCount(ctx, 2, true, buf); err != nil {
 			t.Fatalf("VoteCount() returned unexected error: %v", err)
 		}
 
@@ -999,7 +999,7 @@ func TestVoteCount(t *testing.T) {
 		defer cancel()
 
 		buf := new(bytes.Buffer)
-		err := v.VoteCount(ctx, 3, buf)
+		err := v.VoteCount(ctx, 3, true, buf)
 
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("VoteCount() did not return with context.DeadlineExeeded, got: %v", err)
@@ -1019,11 +1019,70 @@ func TestVoteCount(t *testing.T) {
 		}
 
 		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 3, buf); err != nil {
+		if err := v.VoteCount(ctx, 3, true, buf); err != nil {
 			t.Fatalf("VoteCount() returned unexected error: %v", err)
 		}
 
 		expect := `{"id":4,"polls":{"1":0}}` + "\n"
+		if buf.String() != expect {
+			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
+		}
+	})
+}
+
+func TestVoteCountEmptyData(t *testing.T) {
+	backend := memory.New()
+	counter := vote.NewMockCounter()
+	v := vote.New(backend, backend, dsmock.Stub(dsmock.YAMLData(`
+	meeting/1/users_enable_vote_weight: false
+
+	poll:
+		1:
+			meeting_id: 1
+			entitled_group_ids: [1]
+			pollmethod: Y
+			global_yes: true
+		
+		2:
+			meeting_id: 1
+			entitled_group_ids: [1]
+			pollmethod: Y
+			global_yes: true
+	user:
+		5:
+			is_present_in_meeting_ids: [1]
+			group_$1_ids: [1]
+		6:
+			is_present_in_meeting_ids: [1]
+			group_$1_ids: [1]
+	`)), counter)
+
+	t.Run("Blocking", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+
+		buf := new(bytes.Buffer)
+		err := v.VoteCount(ctx, 0, true, buf)
+
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("VoteCount() did not return with context.DeadlineExeeded, got: %v", err)
+		}
+
+		if got := buf.String(); got != "" {
+			t.Errorf("VoteCount() wrote `%s`, expected nothing", got)
+		}
+	})
+
+	t.Run("Non Blocking", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		defer cancel()
+
+		buf := new(bytes.Buffer)
+		if err := v.VoteCount(ctx, 0, false, buf); err != nil {
+			t.Fatalf("VoteCount() returned unexected error: %v", err)
+		}
+
+		expect := `{"id":0,"polls":null}` + "\n"
 		if buf.String() != expect {
 			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
 		}

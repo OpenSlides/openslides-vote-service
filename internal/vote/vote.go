@@ -177,7 +177,7 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 	}
 
 	if err := v.counter.ClearAll(ctx); err != nil {
-		return fmt.Errorf("clearing counter: %w", err)
+		return fmt.Errorf("clearing all counter: %w", err)
 	}
 	return nil
 }
@@ -376,16 +376,16 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 //
 // With change id 0, it returns the amout of every poll.
 //
-// If the id is equal or higher then the last change, it blocks until there are
-// changes with a higher id.
-func (v *Vote) VoteCount(ctx context.Context, id uint64, w io.Writer) (err error) {
+// When blocking is true, and there is no data, then the function blocks until
+// new data is available.
+func (v *Vote) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) (err error) {
 	log.Debug("Receive vote count event with id %d", id)
 	defer func() {
 		log.Debug("End vote count with error: %v", err)
 	}()
 
 	// This blocks until there is new data or the context is done.
-	newID, counts, err := v.counter.Counters(ctx, id)
+	newID, counts, err := v.counter.Counters(ctx, id, blocking)
 	if err != nil {
 		return fmt.Errorf("getting counters: %w", err)
 	}
@@ -458,7 +458,7 @@ type Counter interface {
 	// all polls if the id 0 is given.
 	//
 	// Blocks until there is new data.
-	Counters(ctx context.Context, id uint64) (newid uint64, counts map[int]int, err error)
+	Counters(ctx context.Context, id uint64, blocking bool) (newid uint64, counts map[int]int, err error)
 }
 
 type pollConfig struct {
