@@ -311,6 +311,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
+	log.Debug("voteData:: %b", bs)// requestUser: %d, voteUser: %d, value: %s, weight: %s", )
+
 	// Save the vote count in the background. The user does not have to wait for
 	// it.
 	go func() {
@@ -473,6 +475,7 @@ type pollConfig struct {
 	globalAbstain bool
 	minAmount     int
 	maxAmount     int
+	maxVotesPerPerson int
 	options       []int
 	state         string
 }
@@ -489,6 +492,7 @@ func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfi
 	ds.Poll_GlobalAbstain(pollID).Lazy(&p.globalAbstain)
 	ds.Poll_MinVotesAmount(pollID).Lazy(&p.minAmount)
 	ds.Poll_MaxVotesAmount(pollID).Lazy(&p.maxAmount)
+	ds.Poll_MaxVotesPerPerson(pollID).Lazy(&p.maxVotesPerPerson)
 	ds.Poll_OptionIDs(pollID).Lazy(&p.options)
 	ds.Poll_State(pollID).Lazy(&p.state)
 
@@ -625,6 +629,10 @@ func (v *ballot) validate(poll pollConfig) error {
 					return InvalidVote("Your vote for option %d has to be >= 0", optionID)
 				}
 
+				if amount > poll.maxVotesPerPerson {
+					return InvalidVote("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerPerson)
+				}
+
 				if !allowedOptions[optionID] {
 					return InvalidVote("Option_id %d does not belong to the poll", optionID)
 				}
@@ -639,7 +647,7 @@ func (v *ballot) validate(poll pollConfig) error {
 			return voteIsValid
 
 		default:
-			return MessageError{ErrInvalid, "Your vote has a wrong format"}
+			return MessageError{ErrInvalid, "Your vote has a wrong format 01"}
 		}
 
 	case "YN", "YNA":
