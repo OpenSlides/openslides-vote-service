@@ -311,7 +311,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	log.Debug("voteData:: %b", bs)// requestUser: %d, voteUser: %d, value: %s, weight: %s", )
+	log.Debug("voteData:: %b", bs) // requestUser: %d, voteUser: %d, value: %s, weight: %s", )
 
 	// Save the vote count in the background. The user does not have to wait for
 	// it.
@@ -464,20 +464,20 @@ type Counter interface {
 }
 
 type pollConfig struct {
-	id            int
-	meetingID     int
-	backend       string
-	pollType      string
-	method        string
-	groups        []int
-	globalYes     bool
-	globalNo      bool
-	globalAbstain bool
-	minAmount     int
-	maxAmount     int
+	id                int
+	meetingID         int
+	backend           string
+	pollType          string
+	method            string
+	groups            []int
+	globalYes         bool
+	globalNo          bool
+	globalAbstain     bool
+	minAmount         int
+	maxAmount         int
 	maxVotesPerPerson int
-	options       []int
-	state         string
+	options           []int
+	state             string
 }
 
 func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfig, error) {
