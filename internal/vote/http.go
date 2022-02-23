@@ -117,7 +117,7 @@ func handleClearAll(mux *http.ServeMux, clear clearAller) {
 	mux.HandleFunc(
 		httpPathInternal+"/clear_all",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Info("Receiving clear all")
+			log.Info("Receiving clear all request")
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
