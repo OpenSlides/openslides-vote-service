@@ -28,6 +28,10 @@ func handleCreate(mux *http.ServeMux, create creater) {
 			log.Info("Receiving create request")
 			w.Header().Set("Content-Type", "application/json")
 
+			if debugError(w, r) {
+				return
+			}
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
@@ -60,6 +64,10 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 			log.Info("Receiving stop request")
 			w.Header().Set("Content-Type", "application/json")
 
+			if debugError(w, r) {
+				return
+			}
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
@@ -89,6 +97,10 @@ func handleClear(mux *http.ServeMux, clear clearer) {
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Info("Receiving clear request")
 			w.Header().Set("Content-Type", "application/json")
+
+			if debugError(w, r) {
+				return
+			}
 
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
@@ -120,6 +132,10 @@ func handleClearAll(mux *http.ServeMux, clear clearAller) {
 			log.Info("Receiving clear all request")
 			w.Header().Set("Content-Type", "application/json")
 
+			if debugError(w, r) {
+				return
+			}
+
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
 				return
@@ -148,6 +164,10 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Info("Receiving vote request")
 			w.Header().Set("Content-Type", "application/json")
+
+			if debugError(w, r) {
+				return
+			}
 
 			if r.Method != "POST" {
 				http.Error(w, MessageError{ErrInvalid, "Only POST requests are allowed"}.Error(), 405)
@@ -191,6 +211,10 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 			log.Info("Receiving has voted request")
 			w.Header().Set("Content-Type", "application/json")
 
+			if debugError(w, r) {
+				return
+			}
+
 			if r.Method != "GET" {
 				http.Error(w, MessageError{ErrInvalid, "Only GET requests are allowed"}.Error(), 405)
 				return
@@ -233,6 +257,10 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
 			log.Info("Receiving vote count request")
 			w.Header().Set("Content-Type", "application/json")
 
+			if debugError(w, r) {
+				return
+			}
+
 			rawID := r.URL.Query().Get("id")
 			var id uint64
 			blocking := false
@@ -262,6 +290,10 @@ func handleHealth(mux *http.ServeMux) {
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Info("Receiving health request")
 			w.Header().Set("Content-Type", "application/json")
+
+			if debugError(w, r) {
+				return
+			}
 
 			fmt.Fprintf(w, `{"health":true}`)
 		},
@@ -320,4 +352,26 @@ func handleError(w http.ResponseWriter, err error, internal bool) {
 
 	w.WriteHeader(status)
 	fmt.Fprint(w, msg)
+}
+
+func debugError(w http.ResponseWriter, r *http.Request) bool {
+	getError := r.URL.Query().Get("error")
+	getStatus := r.URL.Query().Get("status")
+	if getError == "" && getStatus == "" {
+		return false
+	}
+
+	status := 400
+	converted, _ := strconv.Atoi(getStatus)
+	if converted != 0 {
+		status = converted
+	}
+
+	if getError == "" {
+		getError = "debug error"
+	}
+
+	w.WriteHeader(status)
+	fmt.Fprint(w, getError)
+	return true
 }
