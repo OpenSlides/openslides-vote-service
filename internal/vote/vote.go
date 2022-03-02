@@ -311,8 +311,6 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	log.Debug("voteData:: %b", bs) // requestUser: %d, voteUser: %d, value: %s, weight: %s", )
-
 	// Save the vote count in the background. The user does not have to wait for
 	// it.
 	go func() {
@@ -647,7 +645,7 @@ func (v *ballot) validate(poll pollConfig) error {
 			return voteIsValid
 
 		default:
-			return MessageError{ErrInvalid, "Your vote has a wrong format 01"}
+			return MessageError{ErrInvalid, "Your vote has a wrong format"}
 		}
 
 	case "YN", "YNA":
