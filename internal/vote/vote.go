@@ -473,7 +473,7 @@ type pollConfig struct {
 	globalAbstain     bool
 	minAmount         int
 	maxAmount         int
-	maxVotesPerPerson int
+	maxVotesPerOption int
 	options           []int
 	state             string
 }
@@ -490,7 +490,7 @@ func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfi
 	ds.Poll_GlobalAbstain(pollID).Lazy(&p.globalAbstain)
 	ds.Poll_MinVotesAmount(pollID).Lazy(&p.minAmount)
 	ds.Poll_MaxVotesAmount(pollID).Lazy(&p.maxAmount)
-	ds.Poll_MaxVotesPerPerson(pollID).Lazy(&p.maxVotesPerPerson)
+	ds.Poll_MaxVotesPerOption(pollID).Lazy(&p.maxVotesPerOption)
 	ds.Poll_OptionIDs(pollID).Lazy(&p.options)
 	ds.Poll_State(pollID).Lazy(&p.state)
 
@@ -627,8 +627,8 @@ func (v *ballot) validate(poll pollConfig) error {
 					return InvalidVote("Your vote for option %d has to be >= 0", optionID)
 				}
 
-				if amount > poll.maxVotesPerPerson {
-					return InvalidVote("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerPerson)
+				if amount > poll.maxVotesPerOption {
+					return InvalidVote("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
 				}
 
 				if !allowedOptions[optionID] {

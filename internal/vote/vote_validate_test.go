@@ -90,10 +90,10 @@ func TestVoteValidate(t *testing.T) {
 		{
 			"Method Y, Vote on many option with to high amount",
 			pollConfig{
-				method:    "Y",
-				options:   []int{1, 2},
-				maxAmount: 2,
-				maxVotesPerPerson: 1,
+				method:            "Y",
+				options:           []int{1, 2},
+				maxAmount:         2,
+				maxVotesPerOption: 1,
 			},
 			`{"1":1,"2":2}`,
 			false,
@@ -101,10 +101,10 @@ func TestVoteValidate(t *testing.T) {
 		{
 			"Method Y, Vote on one option with correct amount",
 			pollConfig{
-				method:    "Y",
-				options:   []int{1, 2},
-				maxAmount: 5,
-				maxVotesPerPerson: 1,
+				method:            "Y",
+				options:           []int{1, 2},
+				maxAmount:         5,
+				maxVotesPerOption: 1,
 			},
 			`{"1":5}`,
 			true,
