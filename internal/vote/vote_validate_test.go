@@ -147,6 +147,39 @@ func TestVoteValidate(t *testing.T) {
 			`{"5":1}`,
 			false,
 		},
+		{
+			"Method Y and maxVotesPerOption>1, Correct vote",
+			pollConfig{
+				method:            "Y",
+				options:           []int{1, 2, 3, 4},
+				maxAmount:         6,
+				maxVotesPerOption: 3,
+			},
+			`{"1":2,"2":0,"3":3,"4":1}`,
+			true,
+		},
+		{
+			"Method Y and maxVotesPerOption>1, Too many votes on one option",
+			pollConfig{
+				method:            "Y",
+				options:           []int{1, 2},
+				maxAmount:         4,
+				maxVotesPerOption: 2,
+			},
+			`{"1":3,"2":1}`,
+			false,
+		},
+		{
+			"Method Y and maxVotesPerOption>1, Too many votes in total",
+			pollConfig{
+				method:            "Y",
+				options:           []int{1, 2},
+				maxAmount:         3,
+				maxVotesPerOption: 2,
+			},
+			`{"1":2,"2":2}`,
+			false,
+		},
 
 		// Test Method YN and YNA
 		{
