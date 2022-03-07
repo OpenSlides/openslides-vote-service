@@ -4,8 +4,8 @@ github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78/go.mod h1:LmzpDX
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/MJJojo97/openslides-autoupdate-service v0.4.1-0.20220303102734-0e8d61e83531 h1:oynVR2sjMZVa8NZD02G1jT9dEb7A5yVOv46Z/Mipz0k=
-github.com/MJJojo97/openslides-autoupdate-service v0.4.1-0.20220303102734-0e8d61e83531/go.mod h1:KDYKuLCbQD/RChC650VcHNItD3WLnzThvodxxN6PZIg=
+github.com/MJJojo97/openslides-autoupdate-service v0.4.1-0.20220303130443-4ba426c27c9c h1:3fir7xP2FVtBlxkkUqKlFRxY9DkWdHQc6L/FRQqzLow=
+github.com/MJJojo97/openslides-autoupdate-service v0.4.1-0.20220303130443-4ba426c27c9c/go.mod h1:KDYKuLCbQD/RChC650VcHNItD3WLnzThvodxxN6PZIg=
 github.com/Masterminds/semver/v3 v3.1.1/go.mod h1:VPu/7SZ7ePZ3QOrcuXROw5FAcLl4a0cBrbBpGY/8hQs=
 github.com/Microsoft/go-winio v0.5.1 h1:aPJp2QD7OOrhO5tQXqQoGSJc+DjDtWTGLOmNyAm6FgY=
 github.com/Microsoft/go-winio v0.5.1/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
