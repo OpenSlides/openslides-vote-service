@@ -596,6 +596,10 @@ func (v *ballot) validate(poll pollConfig) error {
 		poll.maxAmount = 1
 	}
 
+	if poll.maxVotesPerOption == 0 {
+		poll.maxVotesPerOption = 1
+	}
+
 	allowedOptions := make(map[int]bool, len(poll.options))
 	for _, o := range poll.options {
 		allowedOptions[o] = true
