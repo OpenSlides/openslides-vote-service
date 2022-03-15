@@ -3,14 +3,12 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.17
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220127132829-32c1dbc480e8
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220315082055-8e22fdc72fdb
 	github.com/gomodule/redigo v1.8.8
 	github.com/jackc/pgconn v1.11.0
 	github.com/jackc/pgx/v4 v4.15.0
 	github.com/ory/dockertest/v3 v3.8.1
 )
-
-replace github.com/OpenSlides/openslides-autoupdate-service => github.com/MJJojo97/openslides-autoupdate-service v0.4.1-0.20220303130443-4ba426c27c9c
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
