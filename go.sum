@@ -11,13 +11,10 @@ github.com/Microsoft/go-winio v0.5.2/go.mod h1:WpS1mjBmmwHBEWmogvA2mj8546UReBk4v
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 h1:TngWCqHvy9oXAN6lEVMRuU21PR1EtLVZJmdB18Gu3Rw=
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5/go.mod h1:lmUJ/7eu/Q8D7ML55dXQrVaamCz2vxCfdQBasLZfHKk=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
-<<<<<<< HEAD
-=======
 github.com/OpenSlides/openslides-autoupdate-service v0.4.0 h1:EfUSiu/99kngYGkBdWFyNeQSHvVSEPLhQUMmCwrnc6E=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.0/go.mod h1:KDYKuLCbQD/RChC650VcHNItD3WLnzThvodxxN6PZIg=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220127132829-32c1dbc480e8 h1:OerlUpyAwZr3+NEOsEnD/ejiK/jlNpZXryUg3YO4d2U=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220127132829-32c1dbc480e8/go.mod h1:KDYKuLCbQD/RChC650VcHNItD3WLnzThvodxxN6PZIg=
->>>>>>> upstream/main
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220315082055-8e22fdc72fdb h1:MKuHi6pCh+a2Rk4NPnpWS0OeLiIFCR8dH86VD0aXhVs=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220315082055-8e22fdc72fdb/go.mod h1:IgKy44c8MpS7dC5Apz1YdP3wF5Qf7SUh4XNrLvaJUs0=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
@@ -88,10 +85,7 @@ github.com/gogo/protobuf v1.1.1/go.mod h1:r8qH/GZQm5c6nD/R0oafs1akxWv10x8SbQlK7a
 github.com/gogo/protobuf v1.2.1/go.mod h1:hp+jE20tsWTFYpLwKvXlhS1hjn+gTNwPg2I6zVXpSg4=
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=
 github.com/gogo/protobuf v1.3.2/go.mod h1:P1XiOD3dCwIKUDQYPy72D8LYyHL2YPYrpS2s69NZV8Q=
-<<<<<<< HEAD
-=======
 github.com/golang-jwt/jwt/v4 v4.2.0/go.mod h1:/xlHOz8bRuivTWchD4jCa+NbatV+wEUSzwAxVc6locg=
->>>>>>> upstream/main
 github.com/golang-jwt/jwt/v4 v4.3.0 h1:kHL1vqdqWNfATmA0FNMdmZNMyZI1U6O31X4rlIPoBog=
 github.com/golang-jwt/jwt/v4 v4.3.0/go.mod h1:/xlHOz8bRuivTWchD4jCa+NbatV+wEUSzwAxVc6locg=
 github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
