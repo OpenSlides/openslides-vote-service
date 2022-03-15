@@ -156,16 +156,16 @@ func TestPreload(t *testing.T) {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
 
-			dsCount.Reset()
+			dsCount.(*dsmock.Counter).Reset()
 			poll.preload(context.Background(), datastore.NewRequest(ds))
 
 			if err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 
-			if got := dsCount.Value(); got != tt.expectCount {
+			if got := dsCount.(*dsmock.Counter).Value(); got != tt.expectCount {
 				buf := new(bytes.Buffer)
-				for _, req := range dsCount.Requests() {
+				for _, req := range dsCount.(*dsmock.Counter).Requests() {
 					fmt.Fprintln(buf, req)
 				}
 				t.Errorf("preload send %d requests, expected %d:\n%s", got, tt.expectCount, buf)
