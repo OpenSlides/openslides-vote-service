@@ -14,7 +14,7 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
 )
 
-func TestVoteCreate(t *testing.T) {
+func TestVoteStart(t *testing.T) {
 	t.Run("Not started poll", func(t *testing.T) {
 		closed := make(chan struct{})
 		defer close(closed)
@@ -33,22 +33,22 @@ func TestVoteCreate(t *testing.T) {
 
 		v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
-		if err := v.Create(context.Background(), 1); err != nil {
-			t.Errorf("Create returned unexpected error: %v", err)
+		if err := v.Start(context.Background(), 1); err != nil {
+			t.Errorf("Start returned unexpected error: %v", err)
 		}
 
 		if c := len(ds.Requests()); c > 2 {
-			t.Errorf("Create used %d requests to the datastore, expected max 2: %v", c, ds.Requests())
+			t.Errorf("Start used %d requests to the datastore, expected max 2: %v", c, ds.Requests())
 		}
 
-		// After a poll was created, it has to be possible to send votes.
+		// After a poll was started, it has to be possible to send votes.
 		_, err := backend.Vote(context.Background(), 1, 1, []byte("something"))
 		if err != nil {
-			t.Errorf("Vote after create retuen and unexpected error: %v", err)
+			t.Errorf("Vote after start retuen and unexpected error: %v", err)
 		}
 	})
 
-	t.Run("Create poll a second time", func(t *testing.T) {
+	t.Run("Start poll a second time", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -62,14 +62,14 @@ func TestVoteCreate(t *testing.T) {
 		meeting/5/id: 5
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
-		v.Create(context.Background(), 1)
+		v.Start(context.Background(), 1)
 
-		if err := v.Create(context.Background(), 1); err != nil {
-			t.Errorf("Create returned unexpected error: %v", err)
+		if err := v.Start(context.Background(), 1); err != nil {
+			t.Errorf("Start returned unexpected error: %v", err)
 		}
 	})
 
-	t.Run("Create a stopped poll", func(t *testing.T) {
+	t.Run("Start a stopped poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -83,18 +83,18 @@ func TestVoteCreate(t *testing.T) {
 		meeting/5/id: 5
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
-		v.Create(context.Background(), 1)
+		v.Start(context.Background(), 1)
 
 		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		if err := v.Create(context.Background(), 1); err != nil {
-			t.Errorf("Create returned unexpected error: %v", err)
+		if err := v.Start(context.Background(), 1); err != nil {
+			t.Errorf("Start returned unexpected error: %v", err)
 		}
 	})
 
-	t.Run("Create an anolog poll", func(t *testing.T) {
+	t.Run("Start an anolog poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -108,14 +108,14 @@ func TestVoteCreate(t *testing.T) {
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
-		err := v.Create(context.Background(), 1)
+		err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
 
-	t.Run("Create an created poll", func(t *testing.T) {
+	t.Run("Start an created poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -129,14 +129,14 @@ func TestVoteCreate(t *testing.T) {
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
-		err := v.Create(context.Background(), 1)
+		err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
 
-	t.Run("Create an finished poll", func(t *testing.T) {
+	t.Run("Start an finished poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -150,14 +150,14 @@ func TestVoteCreate(t *testing.T) {
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
-		err := v.Create(context.Background(), 1)
+		err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
 
-	t.Run("Create an finished poll", func(t *testing.T) {
+	t.Run("Start an finished poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -171,7 +171,7 @@ func TestVoteCreate(t *testing.T) {
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
-		err := v.Create(context.Background(), 1)
+		err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
@@ -179,7 +179,7 @@ func TestVoteCreate(t *testing.T) {
 	})
 }
 
-func TestVoteCreatePreloadData(t *testing.T) {
+func TestVoteStartPreloadData(t *testing.T) {
 	closed := make(chan struct{})
 	defer close(closed)
 
@@ -202,8 +202,8 @@ func TestVoteCreatePreloadData(t *testing.T) {
 	`))
 	v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
-	if err := v.Create(context.Background(), 1); err != nil {
-		t.Errorf("Create returned unexpected error: %v", err)
+	if err := v.Start(context.Background(), 1); err != nil {
+		t.Errorf("Start returned unexpected error: %v", err)
 	}
 
 	if !ds.KeysRequested("poll/1/meeting_id", "user/1/is_present_in_meeting_ids", "user/2/is_present_in_meeting_ids") {
@@ -211,11 +211,11 @@ func TestVoteCreatePreloadData(t *testing.T) {
 	}
 }
 
-func TestVoteCreateDSError(t *testing.T) {
+func TestVoteStartDSError(t *testing.T) {
 	backend := memory.New()
 	ds := StubGetter{err: errors.New("Some error")}
 	v := vote.New(backend, backend, &ds, vote.NewMockCounter())
-	err := v.Create(context.Background(), 1)
+	err := v.Start(context.Background(), 1)
 
 	if err == nil {
 		t.Errorf("Got no error, expected `Some error`")
@@ -397,71 +397,6 @@ func TestVoteVote(t *testing.T) {
 	})
 }
 
-// func TestVoteMessageBus(t *testing.T) {
-// 	backend := memory.New()
-// 	messageBus := NewStubMessageBus()
-
-// 	v := vote.New(backend, backend, &StubGetter{
-// 		data: dsmock.YAMLData(`
-// 		poll/1:
-// 			meeting_id: 1
-// 			entitled_group_ids: [1]
-// 			pollmethod: Y
-// 			global_yes: true
-// 			state: started
-
-// 		meeting/1/id: 1
-
-// 		group/1/id: 1
-
-// 		user:
-// 			1:
-// 				is_present_in_meeting_ids: [1]
-// 				group_$1_ids: [1]
-// 			2:
-// 				is_present_in_meeting_ids: [1]
-// 				group_$1_ids: [1]
-// 			3:
-// 				is_present_in_meeting_ids: [1]
-// 				group_$1_ids: [1]
-
-// 		`),
-// 	}, messageBus)
-
-// 	if err := v.Create(context.Background(), 1); err != nil {
-// 		t.Fatalf("Startig poll: %v", err)
-// 	}
-// 	err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`))
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	v.Vote(context.Background(), 1, 2, strings.NewReader(`{"value":"Y"}`))
-// 	v.Vote(context.Background(), 1, 3, strings.NewReader(`{"value":"Y"}`))
-
-// 	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
-// 		t.Fatalf("first message was not send in time")
-// 	}
-
-// 	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
-// 		t.Fatalf("second message was not send in time")
-// 	}
-
-// 	if _, err := messageBus.Read(10 * time.Millisecond); err != nil {
-// 		t.Fatalf("third message was not send in time")
-// 	}
-
-// 	if messageBus.Count() != 3 {
-// 		t.Fatalf("Got %d messages, expected 3", len(messageBus.messages))
-// 	}
-
-// 	for i := 0; i < 3; i++ {
-// 		if messageBus.messages[i] != [2]string{"poll/1/vote_count", fmt.Sprintf("%d", i+1)} {
-// 			t.Errorf("Message %d is %v, expected [poll/1/vote_count %d", i+1, messageBus.messages[i], i+1)
-// 		}
-// 	}
-
-// }
-
 func TestVoteNoRequests(t *testing.T) {
 	// Makes sure, that a a vote does not do any database requests.
 
@@ -565,7 +500,7 @@ func TestVoteNoRequests(t *testing.T) {
 			backend := memory.New()
 			v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
-			if err := v.Create(context.Background(), 1); err != nil {
+			if err := v.Start(context.Background(), 1); err != nil {
 				t.Fatalf("Can not start poll: %v", err)
 			}
 

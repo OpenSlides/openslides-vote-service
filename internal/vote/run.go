@@ -56,7 +56,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	service := New(fastBackend, longBackend, ds, counter)
 
 	mux := http.NewServeMux()
-	handleCreate(mux, service)
+	handleStart(mux, service)
 	handleStop(mux, service)
 	handleClear(mux, service)
 	handleClearAll(mux, service)

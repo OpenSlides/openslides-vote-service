@@ -11,22 +11,22 @@ import (
 	"testing"
 )
 
-type createrStub struct {
+type starterStub struct {
 	id        int
 	expectErr error
 }
 
-func (c *createrStub) Create(ctx context.Context, pollID int) error {
+func (c *starterStub) Start(ctx context.Context, pollID int) error {
 	c.id = pollID
 	return c.expectErr
 }
 
-func TestHandleCreate(t *testing.T) {
-	creater := &createrStub{}
+func TestHandleStart(t *testing.T) {
+	starter := &starterStub{}
 
-	url := "/internal/vote/create"
+	url := "/internal/vote/start"
 	mux := http.NewServeMux()
-	handleCreate(mux, creater)
+	handleStart(mux, starter)
 
 	t.Run("Get request", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -63,13 +63,13 @@ func TestHandleCreate(t *testing.T) {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if creater.id != 1 {
-			t.Errorf("Creater was called with id %d, expected 1", creater.id)
+		if starter.id != 1 {
+			t.Errorf("Start was called with id %d, expected 1", starter.id)
 		}
 	})
 
 	t.Run("Exist error", func(t *testing.T) {
-		creater.expectErr = ErrExists
+		starter.expectErr = ErrExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
@@ -92,7 +92,7 @@ func TestHandleCreate(t *testing.T) {
 	})
 
 	t.Run("Internal error", func(t *testing.T) {
-		creater.expectErr = errors.New("TEST_Error")
+		starter.expectErr = errors.New("TEST_Error")
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))

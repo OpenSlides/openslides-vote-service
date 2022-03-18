@@ -17,15 +17,15 @@ const (
 	httpPathExternal = "/system/vote"
 )
 
-type creater interface {
-	Create(ctx context.Context, pollID int) error
+type starter interface {
+	Start(ctx context.Context, pollID int) error
 }
 
-func handleCreate(mux *http.ServeMux, create creater) {
+func handleStart(mux *http.ServeMux, start starter) {
 	mux.HandleFunc(
-		httpPathInternal+"/create",
+		httpPathInternal+"/start",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Info("Receiving create request")
+			log.Info("Receiving start request")
 			w.Header().Set("Content-Type", "application/json")
 
 			if r.Method != "POST" {
@@ -39,7 +39,7 @@ func handleCreate(mux *http.ServeMux, create creater) {
 				return
 			}
 
-			if err := create.Create(r.Context(), id); err != nil {
+			if err := start.Start(r.Context(), id); err != nil {
 				handleError(w, err, true)
 				return
 			}

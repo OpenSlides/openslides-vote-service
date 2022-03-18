@@ -40,15 +40,15 @@ func (v *Vote) backend(p pollConfig) Backend {
 	return backend
 }
 
-// Create an electronic vote.
+// Start an electronic vote.
 //
 // This function is idempotence. If you call it with the same input, you will
-// get the same output. This means, that when a poll is stopped, Create() will
+// get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
-func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
-	log.Debug("Receive create event for poll %d", pollID)
+func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
+	log.Debug("Receive start event for poll %d", pollID)
 	defer func() {
-		log.Debug("End create event with error: %v", err)
+		log.Debug("End start event with error: %v", err)
 	}()
 
 	recorder := datastore.NewRecorder(v.ds)
@@ -60,11 +60,11 @@ func (v *Vote) Create(ctx context.Context, pollID int) (err error) {
 	}
 
 	if poll.pollType == "analog" {
-		return MessageError{ErrInvalid, "Analog poll can not be created"}
+		return MessageError{ErrInvalid, "Analog poll can not be started"}
 	}
 
 	if poll.state != "started" {
-		return MessageError{ErrInternal, fmt.Sprintf("Poll state is %s, only started polls can be created", poll.state)}
+		return MessageError{ErrInternal, fmt.Sprintf("Poll state is %s, only started polls can be started", poll.state)}
 	}
 
 	if err := poll.preload(ctx, ds); err != nil {
