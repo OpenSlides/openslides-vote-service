@@ -63,10 +63,6 @@ func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
 		return MessageError{ErrInvalid, "Analog poll can not be started"}
 	}
 
-	if poll.state != "started" {
-		return MessageError{ErrInternal, fmt.Sprintf("Poll state is %s, only started polls can be started", poll.state)}
-	}
-
 	if err := poll.preload(ctx, ds); err != nil {
 		return fmt.Errorf("preloading data: %w", err)
 	}

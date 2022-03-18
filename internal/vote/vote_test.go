@@ -115,7 +115,7 @@ func TestVoteStart(t *testing.T) {
 		}
 	})
 
-	t.Run("Start an created poll", func(t *testing.T) {
+	t.Run("Start an poll in `wrong` state", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
 		poll:
@@ -126,13 +126,14 @@ func TestVoteStart(t *testing.T) {
 
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
+		meeting/5/id: 5
 		`)}
 		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
 
 		err := v.Start(context.Background(), 1)
 
-		if err == nil {
-			t.Errorf("Got no error, expected `Some error`")
+		if err != nil {
+			t.Errorf("Start returned: %v", err)
 		}
 	})
 
