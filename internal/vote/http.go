@@ -263,7 +263,7 @@ func handleHealth(mux *http.ServeMux) {
 			log.Info("Receiving health request")
 			w.Header().Set("Content-Type", "application/json")
 
-			fmt.Fprintf(w, `{"health":true}`)
+			fmt.Fprintf(w, `{"healthy":true}`)
 		},
 	)
 }

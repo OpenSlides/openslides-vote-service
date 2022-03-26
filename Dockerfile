@@ -12,6 +12,7 @@ COPY internal internal
 # Build service in seperate stage.
 FROM base as builder
 RUN CGO_ENABLED=0 go build ./cmd/vote
+RUN CGO_ENABLED=0 go build ./cmd/healthcheck
 
 
 # Test build.
@@ -42,8 +43,10 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
 COPY --from=builder /root/vote .
+COPY --from=builder /root/healthcheck .
 EXPOSE 9013
 ENV MESSAGING redis
 ENV AUTH ticket
 
 ENTRYPOINT ["/vote"]
+HEALTHCHECK CMD ["/healthcheck"]
