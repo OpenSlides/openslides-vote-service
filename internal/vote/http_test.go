@@ -750,7 +750,7 @@ func TestHandleHealth(t *testing.T) {
 		t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 	}
 
-	expect := `{"health":true}`
+	expect := `{"healthy":true}`
 	if got := resp.Body.String(); got != expect {
 		t.Errorf("Got body `%s`, expected `%s`", got, expect)
 	}
