@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.18
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220315082055-8e22fdc72fdb
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220413134533-ef848f16f059
 	github.com/gomodule/redigo v1.8.8
 	github.com/jackc/pgconn v1.11.0
 	github.com/jackc/pgx/v4 v4.15.0
