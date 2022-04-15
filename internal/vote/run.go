@@ -179,7 +179,7 @@ func buildDatastore(ctx context.Context, env map[string]string, receiver datasto
 	port := env["DATASTORE_READER_PORT"]
 	url := protocol + "://" + host + ":" + port
 	source := datastore.NewSourceDatastore(url, receiver)
-	ds := datastore.New(source, nil)
+	ds := datastore.New(source, nil, nil)
 	go ds.ListenOnUpdates(ctx, errHandler)
 	return ds
 }
