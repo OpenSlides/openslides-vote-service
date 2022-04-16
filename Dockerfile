@@ -28,7 +28,6 @@ FROM base as development
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
-ENV MESSAGING redis
 ENV AUTH ticket
 
 CMD CompileDaemon -log-prefix=false -build="go build ./cmd/vote" -command="./vote"
@@ -45,7 +44,6 @@ LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-
 COPY --from=builder /root/vote .
 COPY --from=builder /root/healthcheck .
 EXPOSE 9013
-ENV MESSAGING redis
 ENV AUTH ticket
 
 ENTRYPOINT ["/vote"]

@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.18
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220413134533-ef848f16f059
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220416070241-9a94afdf8891
 	github.com/gomodule/redigo v1.8.8
 	github.com/jackc/pgconn v1.11.0
 	github.com/jackc/pgx/v4 v4.15.0
@@ -39,7 +39,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/opencontainers/runc v1.1.1 // indirect
-	github.com/ostcar/topic v0.4.0 // indirect
+	github.com/ostcar/topic v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect

@@ -2,8 +2,8 @@ package vote
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,7 +28,9 @@ const authDebugKey = "auth-dev-key"
 func Run(ctx context.Context, environment []string, getSecret func(name string) (string, error)) error {
 	env := defaultEnv(environment)
 
-	errHandler := buildErrHandler()
+	errHandler := func(err error) {
+		log.Info("Error: %v", err)
+	}
 
 	messageBus, err := buildMessageBus(env)
 	if err != nil {
@@ -66,7 +68,11 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	handleHealth(mux)
 
 	listenAddr := ":" + env["VOTE_PORT"]
-	srv := &http.Server{Addr: listenAddr, Handler: mux}
+	srv := &http.Server{
+		Addr:        listenAddr,
+		Handler:     mux,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
 
 	// Shutdown logic in separate goroutine.
 	wait := make(chan error)
@@ -111,7 +117,6 @@ func defaultEnv(environment []string) map[string]string {
 		"AUTH_TOKEN_KEY_FILE":  "/run/secrets/auth_token_key",
 		"AUTH_COOKIE_KEY_FILE": "/run/secrets/auth_cookie_key",
 
-		"MESSAGING":        "fake",
 		"MESSAGE_BUS_HOST": "localhost",
 		"MESSAGE_BUS_PORT": "6379",
 		"REDIS_TEST_CONN":  "true",
@@ -162,17 +167,6 @@ func secret(name string, env map[string]string, getSecret func(name string) (str
 	return s, nil
 }
 
-func buildErrHandler() func(err error) {
-	return func(err error) {
-		var closing interface {
-			Closing()
-		}
-		if !errors.As(err, &closing) {
-			log.Info("Error: %v", err)
-		}
-	}
-}
-
 func buildDatastore(ctx context.Context, env map[string]string, receiver datastore.Updater, errHandler func(error)) *datastore.Datastore {
 	protocol := env["DATASTORE_READER_PROTOCOL"]
 	host := env["DATASTORE_READER_HOST"]
@@ -221,7 +215,7 @@ func buildAuth(
 		url := protocol + "://" + host + ":" + port
 
 		fmt.Printf("Auth Service: %s\n", url)
-		a, err := auth.New(url, ctx.Done(), []byte(tokenKey), []byte(cookieKey))
+		a, err := auth.New(url, []byte(tokenKey), []byte(cookieKey))
 		if err != nil {
 			return nil, fmt.Errorf("creating auth service: %w", err)
 		}
@@ -259,26 +253,12 @@ type messageBus interface {
 }
 
 func buildMessageBus(env map[string]string) (messageBus, error) {
-	serviceName := env["MESSAGING"]
-	log.Info("Messaging Service: %s", serviceName)
-
-	var conn messageBusRedis.Connection
-	switch serviceName {
-	case "redis":
-		redisAddress := env["MESSAGE_BUS_HOST"] + ":" + env["MESSAGE_BUS_PORT"]
-		c := messageBusRedis.NewConnection(redisAddress)
-		if env["REDIS_TEST_CONN"] == "true" {
-			if err := c.TestConn(); err != nil {
-				return nil, fmt.Errorf("connect to redis: %w", err)
-			}
+	redisAddress := env["MESSAGE_BUS_HOST"] + ":" + env["MESSAGE_BUS_PORT"]
+	conn := messageBusRedis.NewConnection(redisAddress)
+	if env["REDIS_TEST_CONN"] == "true" {
+		if err := conn.TestConn(); err != nil {
+			return nil, fmt.Errorf("connect to redis: %w", err)
 		}
-
-		conn = c
-
-	case "fake":
-		conn = messageBusRedis.BlockingConn{}
-	default:
-		return nil, fmt.Errorf("unknown messagin service %s", serviceName)
 	}
 
 	return &messageBusRedis.Redis{Conn: conn}, nil

@@ -301,6 +301,10 @@ func handleError(w http.ResponseWriter, err error, internal bool) {
 	status := 400
 	var msg string
 
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+
 	var errTyped interface {
 		error
 		Type() string
