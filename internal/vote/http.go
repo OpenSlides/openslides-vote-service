@@ -263,7 +263,7 @@ func handleHealth(mux *http.ServeMux) {
 			log.Info("Receiving health request")
 			w.Header().Set("Content-Type", "application/json")
 
-			fmt.Fprintf(w, `{"health":true}`)
+			fmt.Fprintf(w, `{"healthy":true}`)
 		},
 	)
 }
@@ -300,6 +300,10 @@ func pollsID(r *http.Request) ([]int, error) {
 func handleError(w http.ResponseWriter, err error, internal bool) {
 	status := 400
 	var msg string
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
 
 	var errTyped interface {
 		error

@@ -1,4 +1,4 @@
-FROM golang:1.18-alpine as base
+FROM golang:1.18.1-alpine as base
 WORKDIR /root/
 
 RUN apk add git
@@ -12,6 +12,7 @@ COPY internal internal
 # Build service in seperate stage.
 FROM base as builder
 RUN CGO_ENABLED=0 go build ./cmd/vote
+RUN CGO_ENABLED=0 go build ./cmd/healthcheck
 
 
 # Test build.
@@ -27,7 +28,6 @@ FROM base as development
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
-ENV MESSAGING redis
 ENV AUTH ticket
 
 CMD CompileDaemon -log-prefix=false -build="go build ./cmd/vote" -command="./vote"
@@ -42,8 +42,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
 COPY --from=builder /root/vote .
+COPY --from=builder /root/healthcheck .
 EXPOSE 9013
-ENV MESSAGING redis
 ENV AUTH ticket
 
 ENTRYPOINT ["/vote"]
+HEALTHCHECK CMD ["/healthcheck"]

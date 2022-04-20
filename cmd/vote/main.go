@@ -11,6 +11,7 @@ import (
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func interruptContext() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt)
+		signal.Notify(sigint, os.Interrupt, unix.SIGTERM)
 		<-sigint
 		cancel()
 

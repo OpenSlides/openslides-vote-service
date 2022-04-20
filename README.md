@@ -174,8 +174,6 @@ The Service uses the following environment variables:
 * `DATASTORE_READER_PORT`: Port of the datastore reader. The default is `9010`.
 * `DATASTORE_READER_PROTOCOL`: Protocol of the datastore reader. The default is
   `http`.
-* `MESSAGING`: Sets the type of messaging service. `fake`(default) or
-  `redis`.
 * `MESSAGE_BUS_HOST`: Host of the redis server. The default is `localhost`.
 * `MESSAGE_BUS_PORT`: Port of the redis server. The default is `6379`.
 * `REDIS_TEST_CONN`: Test the redis connection on startup. Disable on the cloud
