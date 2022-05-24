@@ -7,7 +7,7 @@ require (
 	github.com/gomodule/redigo v1.8.8
 	github.com/jackc/pgconn v1.12.1
 	github.com/jackc/pgx/v4 v4.16.1
-	github.com/ory/dockertest/v3 v3.8.1
+	github.com/ory/dockertest/v3 v3.9.0
 	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad
 )
 
