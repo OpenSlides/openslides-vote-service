@@ -7,7 +7,7 @@ require (
 	github.com/gomodule/redigo v1.8.8
 	github.com/jackc/pgconn v1.12.1
 	github.com/jackc/pgx/v4 v4.16.1
-	github.com/ory/dockertest/v3 v3.9.0
+	github.com/ory/dockertest/v3 v3.9.1
 	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad
 )
 
@@ -38,7 +38,7 @@ require (
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
-	github.com/opencontainers/runc v1.1.1 // indirect
+	github.com/opencontainers/runc v1.1.2 // indirect
 	github.com/ostcar/topic v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
