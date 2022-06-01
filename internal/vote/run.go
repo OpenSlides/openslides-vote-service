@@ -37,7 +37,10 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 		return fmt.Errorf("building message bus: %w", err)
 	}
 
-	ds := buildDatastore(ctx, env, messageBus, errHandler)
+	ds, err := buildDatastore(ctx, env, messageBus, errHandler)
+	if err != nil {
+		return fmt.Errorf("building datastore: %w", err)
+	}
 
 	auth, err := buildAuth(
 		ctx,
@@ -128,6 +131,7 @@ func defaultEnv(environment []string) map[string]string {
 		"VOTE_DATABASE_NAME":          "vote",
 
 		"OPENSLIDES_DEVELOPMENT": "false",
+		"MAX_PARALLEL_KEYS":      "1000",
 	}
 
 	for _, value := range environment {
@@ -167,15 +171,21 @@ func secret(name string, env map[string]string, getSecret func(name string) (str
 	return s, nil
 }
 
-func buildDatastore(ctx context.Context, env map[string]string, receiver datastore.Updater, errHandler func(error)) *datastore.Datastore {
+func buildDatastore(ctx context.Context, env map[string]string, receiver datastore.Updater, errHandler func(error)) (*datastore.Datastore, error) {
 	protocol := env["DATASTORE_READER_PROTOCOL"]
 	host := env["DATASTORE_READER_HOST"]
 	port := env["DATASTORE_READER_PORT"]
 	url := protocol + "://" + host + ":" + port
-	source := datastore.NewSourceDatastore(url, receiver)
+
+	maxParallel, err := strconv.Atoi(env["MAX_PARALLEL_KEYS"])
+	if err != nil {
+		return nil, fmt.Errorf("environmentvariable MAX_PARALLEL_KEYS has to be a number, not %s", env["MAX_PARALLEL_KEYS"])
+	}
+
+	source := datastore.NewSourceDatastore(url, receiver, maxParallel)
 	ds := datastore.New(source, nil, nil)
 	go ds.ListenOnUpdates(ctx, errHandler)
-	return ds
+	return ds, nil
 }
 
 // buildAuth returns the auth service needed by the http server.

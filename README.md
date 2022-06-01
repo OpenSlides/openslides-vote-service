@@ -199,3 +199,5 @@ The Service uses the following environment variables:
 * `AUTH_PROTOCOL`: Protocol of the auth servicer. The default is `http`.
 * `OPENSLIDES_DEVELOPMENT`: If set, the service starts, even when secrets (see
   below) are not given. The default is `false`. It also enables debug output.
+* `MAX_PARALLEL_KEYS`: Max keys that are send in one request to the datastore.
+  The default is `1000`.

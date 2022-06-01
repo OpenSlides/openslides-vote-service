@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
 
@@ -52,7 +53,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
 	}()
 
 	recorder := datastore.NewRecorder(v.ds)
-	ds := datastore.NewRequest(recorder)
+	ds := dsfetch.New(recorder)
 
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
@@ -86,7 +87,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 		log.Debug("End stop event with error: %v", err)
 	}()
 
-	ds := datastore.NewRequest(v.ds)
+	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
@@ -185,7 +186,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		log.Debug("End vote event with error: %v", err)
 	}()
 
-	ds := datastore.NewRequest(v.ds)
+	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
@@ -226,7 +227,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		if err != nil {
 			// If the user from the request body does not exist, then delegation
 			// will be 0. This case is handled below.
-			var errDoesNotExist datastore.DoesNotExistError
+			var errDoesNotExist dsfetch.DoesNotExistError
 			if !errors.As(err, &errDoesNotExist) {
 				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
 			}
@@ -333,7 +334,7 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	defer func() {
 		log.Debug("End voted event with error: %v", err)
 	}()
-	ds := datastore.NewRequest(v.ds)
+	ds := dsfetch.New(v.ds)
 	polls := make(map[int]bool)
 
 	for _, backend := range []Backend{v.fastBackend, v.longBackend} {
@@ -346,7 +347,7 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 		for pid, value := range backendPolls {
 			poll, err := loadPoll(ctx, ds, pid)
 			if err != nil {
-				var errDoesNotExist datastore.DoesNotExistError
+				var errDoesNotExist dsfetch.DoesNotExistError
 				if errors.As(err, &errDoesNotExist) {
 					polls[pid] = false
 					continue
@@ -474,7 +475,7 @@ type pollConfig struct {
 	state             string
 }
 
-func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfig, error) {
+func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, error) {
 	p := pollConfig{id: pollID}
 	ds.Poll_MeetingID(pollID).Lazy(&p.meetingID)
 	ds.Poll_Backend(pollID).Lazy(&p.backend)
@@ -499,7 +500,7 @@ func loadPoll(ctx context.Context, ds *datastore.Request, pollID int) (pollConfi
 
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
-func (p pollConfig) preload(ctx context.Context, ds *datastore.Request) error {
+func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
 
 	userIDsList := make([][]int, len(p.groups))

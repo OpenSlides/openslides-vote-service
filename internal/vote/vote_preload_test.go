@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/dsmock"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
 )
 
 func TestPreload(t *testing.T) {
@@ -151,13 +151,13 @@ func TestPreload(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
 
-			poll, err := loadPoll(context.Background(), datastore.NewRequest(ds), 1)
+			poll, err := loadPoll(context.Background(), dsfetch.New(ds), 1)
 			if err != nil {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
 
 			dsCount.(*dsmock.Counter).Reset()
-			poll.preload(context.Background(), datastore.NewRequest(ds))
+			poll.preload(context.Background(), dsfetch.New(ds))
 
 			if err != nil {
 				t.Errorf("preload returned: %v", err)

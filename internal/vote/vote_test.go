@@ -9,18 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/dsmock"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
 	"github.com/OpenSlides/openslides-vote-service/internal/vote"
 )
 
 func TestVoteStart(t *testing.T) {
 	t.Run("Not started poll", func(t *testing.T) {
-		closed := make(chan struct{})
-		defer close(closed)
-
 		backend := memory.New()
-		ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(`
+		ds := dsmock.NewMockDatastore(dsmock.YAMLData(`
 		poll:
 			1:
 				meeting_id: 5
@@ -181,11 +178,8 @@ func TestVoteStart(t *testing.T) {
 }
 
 func TestVoteStartPreloadData(t *testing.T) {
-	closed := make(chan struct{})
-	defer close(closed)
-
 	backend := memory.New()
-	ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(`
+	ds := dsmock.NewMockDatastore(dsmock.YAMLData(`
 	poll/1:
 		meeting_id: 5
 		entitled_group_ids: [1]
@@ -207,7 +201,7 @@ func TestVoteStartPreloadData(t *testing.T) {
 		t.Errorf("Start returned unexpected error: %v", err)
 	}
 
-	if !ds.KeysRequested("poll/1/meeting_id", "user/1/is_present_in_meeting_ids", "user/2/is_present_in_meeting_ids") {
+	if !ds.KeysRequested(MustKey("poll/1/meeting_id"), MustKey("user/1/is_present_in_meeting_ids"), MustKey("user/2/is_present_in_meeting_ids")) {
 		t.Fatalf("Not all keys where preloaded.")
 	}
 }
@@ -494,10 +488,7 @@ func TestVoteNoRequests(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			closed := make(chan struct{})
-			defer close(closed)
-
-			ds := dsmock.NewMockDatastore(closed, dsmock.YAMLData(tt.data))
+			ds := dsmock.NewMockDatastore(dsmock.YAMLData(tt.data))
 			backend := memory.New()
 			v := vote.New(backend, backend, ds, vote.NewMockCounter())
 
