@@ -524,7 +524,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		data string
 		vote string
 
-		expectVoted int
+		expectVotedUserID int
 	}{
 		{
 			"Not delegated",
@@ -686,6 +686,30 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			0,
 		},
+
+		{
+			"Vote for other with self not in group",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+			
+			meeting/1/id: 1
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: []
+
+			user/2:
+				vote_delegated_$1_to_id: 1
+				group_$1_ids: [1]
+			`,
+			`{"user_id": 2, "value":"Y"}`,
+
+			2,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
@@ -694,12 +718,12 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			err := v.Vote(context.Background(), 1, 1, strings.NewReader(tt.vote))
 
-			if tt.expectVoted != 0 {
+			if tt.expectVotedUserID != 0 {
 				if err != nil {
 					t.Fatalf("Vote returned unexpected error: %v", err)
 				}
 
-				backend.AssertUserHasVoted(t, 1, tt.expectVoted)
+				backend.AssertUserHasVoted(t, 1, tt.expectVotedUserID)
 				return
 			}
 
