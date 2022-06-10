@@ -111,6 +111,7 @@ func (c *MockCounter) Counters(ctx context.Context, id uint64, blocking bool) (n
 func (c *MockCounter) WaitForID(id uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	for {
 		ch := c.wait
 
@@ -118,13 +119,15 @@ func (c *MockCounter) WaitForID(id uint64) {
 		<-ch
 		c.mu.Lock()
 
-		if id >= c.id {
+		if id <= c.id {
 			break
 		}
 	}
 }
 
 func (c *MockCounter) wakeup() {
+	// Has to be called in a locked state.
+
 	close(c.wait)
 	c.wait = make(chan struct{})
 }

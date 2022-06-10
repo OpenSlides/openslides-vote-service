@@ -882,13 +882,14 @@ func TestVoteCount(t *testing.T) {
 	if err := v.Vote(context.Background(), 1, 5, strings.NewReader(`{"value":"Y"}`)); err != nil {
 		t.Fatalf("vote1: %v", err)
 	}
+	counter.WaitForID(1)
 	if err := v.Vote(context.Background(), 1, 6, strings.NewReader(`{"value":"Y"}`)); err != nil {
 		t.Fatalf("vote2: %v", err)
 	}
+	counter.WaitForID(2)
 	if err := v.Vote(context.Background(), 2, 5, strings.NewReader(`{"value":"Y"}`)); err != nil {
 		t.Fatalf("vote3: %v", err)
 	}
-
 	counter.WaitForID(3)
 
 	t.Run("id with 0", func(t *testing.T) {
