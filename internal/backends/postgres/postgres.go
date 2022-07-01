@@ -318,7 +318,6 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 	}
 
 	out = make(map[int]bool, len(pollIDs))
-
 	for rows.Next() {
 		var pid int
 		var uIDs userIDs
@@ -337,7 +336,24 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ou
 
 // VoteCount returns the amout of votes for each vote in the backend.
 func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
-	return nil, nil
+	sql := `select poll_id, count(poll_id) from vote.objects GROUP BY poll_id;`
+
+	rows, err := b.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, fmt.Errorf("fetching vote count from poll objects: %w", err)
+	}
+
+	count := make(map[int]int)
+	for rows.Next() {
+		var pollID int
+		var amount int
+		if err := rows.Scan(&pollID, &amount); err != nil {
+			return nil, fmt.Errorf("parsind row: %w", err)
+		}
+		count[pollID] = amount
+	}
+
+	return count, nil
 }
 
 // ContinueOnTransactionError runs the given many times until is does not return

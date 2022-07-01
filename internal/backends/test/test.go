@@ -259,16 +259,22 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	backend.ClearAll(context.Background())
 	pollID++
+	pollID1 := pollID
+	pollID++
+	pollID2 := pollID
 	t.Run("VoteCount", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(context.Background(), pollID1)
+		backend.Start(context.Background(), pollID2)
+		backend.Vote(context.Background(), pollID1, 5, []byte("my vote"))
+		backend.Vote(context.Background(), pollID2, 5, []byte("my vote"))
+		backend.Vote(context.Background(), pollID2, 6, []byte("my vote"))
 
 		count, err := backend.VoteCount(context.Background())
 		if err != nil {
 			t.Fatalf("VoteCount: %v", err)
 		}
 
-		expect := map[int]int{pollID: 1}
+		expect := map[int]int{pollID1: 1, pollID2: 2}
 		if !reflect.DeepEqual(count, expect) {
 			t.Errorf("Got %v, expected %v", count, expect)
 		}

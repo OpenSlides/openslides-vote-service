@@ -278,8 +278,12 @@ func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
 	conn := b.pool.Get()
 	defer conn.Close()
 
+	// TODO: This uses the redis `KEY` command, which should not be used on big
+	// instances with lot of pools. Maybe create a new key that contains all id
+	// of all started and stopped polls. This could also be used on clearAll. An
+	// alternative is to introduce a key voteCount as a map from pollID to count
+	// that get increased on successfull votes with HINCR.
 	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "*")
-
 	keys, err := redis.Strings(conn.Do("Keys", voteKeyPattern))
 	if err != nil {
 		return nil, fmt.Errorf("get all vote data keys: %w", err)
