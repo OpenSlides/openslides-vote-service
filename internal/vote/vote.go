@@ -343,8 +343,25 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 }
 
 // VoteCount returns the vote_count for both backends combained
-func (v *Vote) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) (map[int]int, error) {
-	return nil, nil
+func (v *Vote) VoteCount(ctx context.Context) (map[int]int, error) {
+	countFast, err := v.fastBackend.VoteCount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count from fast: %w", err)
+	}
+
+	countLong, err := v.longBackend.VoteCount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count from long: %w", err)
+	}
+
+	count := make(map[int]int, len(countFast)+len(countLong))
+	for k, v := range countFast {
+		count[k] = v
+	}
+	for k, v := range countLong {
+		count[k] = v
+	}
+	return count, nil
 }
 
 // Backend is a storage for the poll options.

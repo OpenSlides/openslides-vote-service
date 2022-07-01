@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
@@ -60,6 +61,11 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 
 	service := New(fastBackend, longBackend, ds)
 
+	ticketProvider := func() (<-chan time.Time, func()) {
+		ticker := time.NewTicker(time.Second)
+		return ticker.C, ticker.Stop
+	}
+
 	mux := http.NewServeMux()
 	handleStart(mux, service)
 	handleStop(mux, service)
@@ -67,7 +73,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	handleClearAll(mux, service)
 	handleVote(mux, service, auth)
 	handleVoted(mux, service, auth)
-	//handleVoteCount(mux, service)
+	handleVoteCount(mux, service, ticketProvider)
 	handleHealth(mux)
 
 	listenAddr := ":" + env["VOTE_PORT"]

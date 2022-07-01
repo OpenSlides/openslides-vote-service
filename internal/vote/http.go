@@ -2,12 +2,14 @@ package vote
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
@@ -223,35 +225,67 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 }
 
 type voteCounter interface {
-	VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) error
+	VoteCount(ctx context.Context) (map[int]int, error)
 }
 
-func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter) {
+func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter, eventer func() (<-chan time.Time, func())) {
 	mux.HandleFunc(
 		httpPathInternal+"/vote_count",
 		func(w http.ResponseWriter, r *http.Request) {
 			log.Info("Receiving vote count request")
 			w.Header().Set("Content-Type", "application/json")
 
-			rawID := r.URL.Query().Get("id")
-			var id uint64
-			blocking := false
-			if rawID != "" {
-				blocking = true
-				var err error
-				id, err = strconv.ParseUint(rawID, 10, 64)
+			encoder := json.NewEncoder(w)
+
+			event, cancel := eventer()
+			cancel()
+
+			var lastCount map[int]int
+			firstData := true
+			for {
+				count, err := voteCounter.VoteCount(r.Context())
 				if err != nil {
-					handleError(w, fmt.Errorf("parsing id: %w", err), true)
+					handleError(w, err, true)
 					return
 				}
 
-			}
+				if lastCount == nil {
+					lastCount = count
+				} else {
+					for k := range lastCount {
+						if _, ok := count[k]; !ok {
+							count[k] = 0
+						}
+						if count[k] == lastCount[k] {
+							delete(count, k)
+							continue
+						}
+						lastCount[k] = count[k]
+					}
+				}
 
-			if err := voteCounter.VoteCount(r.Context(), id, blocking, w); err != nil {
-				handleError(w, err, true)
-				return
-			}
+				if firstData || len(count) > 0 {
+					firstData = false
+					if err := encoder.Encode(count); err != nil {
+						handleError(w, err, true)
+						return
+					}
+				}
 
+				// This could be in the if(count) block, but the Flush is used
+				// in the tests and has to be called, even when there is no data
+				// to sent.
+				w.(http.Flusher).Flush()
+
+				select {
+				case _, ok := <-event:
+					if !ok {
+						return
+					}
+				case <-r.Context().Done():
+					return
+				}
+			}
 		},
 	)
 }

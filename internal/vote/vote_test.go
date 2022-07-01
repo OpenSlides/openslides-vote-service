@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -869,5 +870,28 @@ func TestVotedPolls(t *testing.T) {
 	expect := `{"1":true,"2":false}` + "\n"
 	if buf.String() != expect {
 		t.Errorf("VotedPolls() wrote `%s`, expected `%s`", strings.TrimSpace(buf.String()), expect)
+	}
+}
+
+func TestVoteCount(t *testing.T) {
+	backend1 := memory.New()
+	backend1.Start(context.Background(), 23)
+	backend1.Vote(context.Background(), 23, 1, []byte("vote"))
+	backend2 := memory.New()
+	backend2.Start(context.Background(), 42)
+	backend2.Vote(context.Background(), 42, 1, []byte("vote"))
+	backend2.Vote(context.Background(), 42, 2, []byte("vote"))
+	ds := dsmock.Stub(dsmock.YAMLData(``))
+
+	v := vote.New(backend1, backend2, ds)
+
+	count, err := v.VoteCount(context.Background())
+	if err != nil {
+		t.Fatalf("VoteCount: %v", err)
+	}
+
+	expect := map[int]int{23: 1, 42: 2}
+	if !reflect.DeepEqual(count, expect) {
+		t.Errorf("Got %v, expected %v", count, expect)
 	}
 }

@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type starterStub struct {
@@ -648,94 +650,150 @@ func TestHandleVoted(t *testing.T) {
 }
 
 type voteCounterStub struct {
-	id           uint64
-	blocking     bool
-	expectWriter string
-	expectErr    error
+	expectCount map[int]int
+	expectErr   error
 }
 
-func (v *voteCounterStub) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) error {
-	v.id = id
-	v.blocking = blocking
-
-	if v.expectErr != nil {
-		return v.expectErr
-	}
-	_, err := w.Write([]byte(v.expectWriter))
-	return err
+func (v *voteCounterStub) VoteCount(ctx context.Context) (map[int]int, error) {
+	return v.expectCount, v.expectErr
 }
 
-func TestHandleVoteCount(t *testing.T) {
+func TestHandleVoteCountFirstData(t *testing.T) {
 	voteCounter := &voteCounterStub{}
 
+	eventer := func() (<-chan time.Time, func()) {
+		return make(chan time.Time), func() {}
+	}
+
 	mux := http.NewServeMux()
-	handleVoteCount(mux, voteCounter)
+	handleVoteCount(mux, voteCounter, eventer)
 
-	t.Run("No id", func(t *testing.T) {
-		url := "/internal/vote/vote_count"
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
 
-		if resp.Result().StatusCode != 200 {
-			t.Errorf("Got status %s, expected 200", resp.Result().Status)
+	url := "/internal/vote/vote_count"
+	resp := httptest.NewRecorder()
+	voteCounter.expectCount = map[int]int{1: 10, 2: 20}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	mux.ServeHTTP(resp, req)
+
+	if resp.Result().StatusCode != 200 {
+		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
+	}
+
+	var got map[int]int
+	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, voteCounter.expectCount) {
+		t.Errorf("Got %v, expected %v", got, voteCounter.expectCount)
+	}
+}
+
+func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
+	voteCounter := &voteCounterStub{}
+
+	eventer := func() (<-chan time.Time, func()) {
+		return make(chan time.Time), func() {}
+	}
+
+	mux := http.NewServeMux()
+	handleVoteCount(mux, voteCounter, eventer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	url := "/internal/vote/vote_count"
+	resp := httptest.NewRecorder()
+	voteCounter.expectCount = map[int]int{}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	mux.ServeHTTP(resp, req)
+
+	if resp.Result().StatusCode != 200 {
+		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
+	}
+
+	var got map[int]int
+	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, voteCounter.expectCount) {
+		t.Errorf("Got %v, expected %v", got, voteCounter.expectCount)
+	}
+}
+
+func TestHandleVoteCountSecondData(t *testing.T) {
+	voteCounter := &voteCounterStub{}
+
+	event := make(chan time.Time, 1)
+	eventer := func() (<-chan time.Time, func()) {
+		return event, func() {}
+	}
+
+	mux := http.NewServeMux()
+	handleVoteCount(mux, voteCounter, eventer)
+
+	ctx := context.Background()
+
+	data := []map[int]int{
+		{1: 10, 2: 20},
+		{1: 11, 2: 20}, // Change only 1
+		{1: 11, 2: 20}, // No Change
+		{1: 11},        // Remove 2
+		{1: 11, 3: 30}, // Add 3
+	}
+
+	url := "/internal/vote/vote_count"
+	resp := httptest.NewRecorder()
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	voteCounter.expectCount = data[0]
+	i := 0
+	flushResp := onFlush{resp, func() {
+		i++
+		if i >= len(data) {
+			close(event)
+			return
+		}
+		voteCounter.expectCount = data[i]
+		event <- time.Now()
+	}}
+
+	mux.ServeHTTP(flushResp, req)
+
+	if resp.Result().StatusCode != 200 {
+		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
+	}
+
+	expect := []map[int]int{
+		{1: 10, 2: 20},
+		{1: 11},
+		{2: 0},
+		{3: 30},
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	for i := range expect {
+		var got map[int]int
+		if err := decoder.Decode(&got); err != nil {
+			if err == io.EOF {
+				t.Errorf("Got %d packages, expected %d", i, len(expect))
+				break
+			}
+			t.Fatalf("decoding: %v", err)
 		}
 
-		if voteCounter.id != 0 {
-			t.Errorf("VoteCount was called with id %d, expected 0", voteCounter.id)
+		if !reflect.DeepEqual(got, expect[i]) {
+			t.Errorf("Data %d: Got %v, expected %v", i+1, got, expect[i])
 		}
-
-		if voteCounter.blocking {
-			t.Errorf("VoteCount was called with blocking, expected false")
-		}
-	})
-
-	t.Run("id not an int", func(t *testing.T) {
-		url := "/internal/vote/vote_count?id=hello"
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 500 {
-			t.Errorf("Got status %s, expected 500", resp.Result().Status)
-		}
-	})
-
-	t.Run("Correct", func(t *testing.T) {
-		url := "/internal/vote/vote_count?id=27"
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 200 {
-			t.Errorf("Got status %s, expected 200", resp.Result().Status)
-		}
-
-		if voteCounter.id != 27 {
-			t.Errorf("VoteCount was called with id %d, expected 27", voteCounter.id)
-		}
-	})
-
-	t.Run("VoteCount Error", func(t *testing.T) {
-		url := "/internal/vote/vote_count?id=27"
-		voteCounter.expectErr = ErrNotExists
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 500", resp.Result().Status)
-		}
-
-		var body struct {
-			Error string `json:"error"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decoding resp body: %v", err)
-		}
-
-		if body.Error != "not-exist" {
-			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
-		}
-	})
+	}
 }
 
 func TestHandleHealth(t *testing.T) {
@@ -753,5 +811,17 @@ func TestHandleHealth(t *testing.T) {
 	expect := `{"healthy":true}`
 	if got := resp.Body.String(); got != expect {
 		t.Errorf("Got body `%s`, expected `%s`", got, expect)
+	}
+}
+
+type onFlush struct {
+	http.ResponseWriter
+	f func()
+}
+
+func (f onFlush) Flush() {
+	f.f()
+	if flusher, ok := f.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
