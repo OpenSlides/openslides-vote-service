@@ -238,7 +238,7 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter, eventer func()
 			encoder := json.NewEncoder(w)
 
 			event, cancel := eventer()
-			cancel()
+			defer cancel()
 
 			var lastCount map[int]int
 			firstData := true
