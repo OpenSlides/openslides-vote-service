@@ -134,26 +134,32 @@ The responce is a json-object in the form like this:
 
 ### Vote Count
 
-With the vote count handler it is possible to find out how many user have voted
-for a poll. The interface of this request is the same as the datastore-reader:
+The vote count handler tells how many users have voted. It is an open connection
+that first returns the data for every poll known by the vote service and then
+sends updates when the data changes.
+
+The vote service knows about all started and stopped votes until they are
+cleared. When a poll get cleared, the hander sends `0` as an update.
+
+The data is streamed in the json-line-format. That means, that every update is
+returned with a newline at the end and does not contain any other newline.
+
+Each line is a map from the poll-id (as string) to the number of votes.
+
+
+Example:
 
 ```
-curl localhost:9013/internal/vote/vote_count -d '{"requests":["poll/1/vote_count","poll/2/vote_count]}'
+curl localhost:9013/internal/vote/vote_count
 ```
 
-The responce is a json-object like this:
+Response:
 
 ```
-{
-  "poll":{
-    "1":{
-      "vote_count":23,
-    },
-    "2":{
-      "vote_count":42,
-    }
-  }
-}
+{"5": 1004,"7": 203}
+{"5:0}
+{"7":204}
+{"9:"1}
 ```
 
 

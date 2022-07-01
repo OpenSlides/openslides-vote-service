@@ -92,31 +92,31 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 // ARGV[1] == userID
 // ARGV[2] == Vote object
 //
-// Returns the number of votes on success.
-// Returns -1 if the poll is not started.
-// Returns -2 if the poll was stopped.
-// Returns -3 if the user has already voted.
+// Returns 0 on success
+// Returns 1 if the poll is not started.
+// Returns 2 if the poll was stopped.
+// Returns 3 if the user has already voted.
 const luaVoteScript = `
 local state = redis.call("GET",KEYS[1])
 if state == false then 
-	return -1
+	return 1
 end
 
 if state == "2" then
-	return -2
+	return 2
 end
 
 local saved = redis.call("HSETNX",KEYS[2],ARGV[1],ARGV[2])
 if saved == 0 then
-	return -3
+	return 3
 end
 
-return redis.call("HLEN",KEYS[2])`
+return 0`
 
 // Vote saves a vote in redis.
 //
 // It also checks, that the user did not vote before and that the poll is open.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error) {
+func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
 	conn := b.pool.Get()
 	defer conn.Close()
 
@@ -126,24 +126,24 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	log.Debug("Redis: lua script vote: '%s' 2 %s %s [userID] [vote]", luaVoteScript, sKey, vKey)
 	result, err := redis.Int(b.luaScriptVote.Do(conn, sKey, vKey, userID, object))
 	if err != nil {
-		return 0, fmt.Errorf("executing luaVoteScript: %w", err)
+		return fmt.Errorf("executing luaVoteScript: %w", err)
 	}
 
 	log.Debug("Redis: Returned %d", result)
 	if result < 0 {
 		switch result {
 		case -1:
-			return 0, doesNotExistError{fmt.Errorf("poll is not started")}
+			return doesNotExistError{fmt.Errorf("poll is not started")}
 		case -2:
-			return 0, stoppedError{fmt.Errorf("poll is stopped")}
+			return stoppedError{fmt.Errorf("poll is stopped")}
 		case -3:
-			return 0, doupleVoteError{fmt.Errorf("user has voted")}
+			return doupleVoteError{fmt.Errorf("user has voted")}
 		default:
-			return 0, fmt.Errorf("lua returned with %d", result)
+			return fmt.Errorf("lua returned with %d", result)
 		}
 	}
 
-	return result, nil
+	return nil
 }
 
 // Stop ends a poll.
@@ -274,7 +274,13 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ma
 	return out, nil
 }
 
+// VoteCount returns the amout of votes for each vote in the backend.
+func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
+	return nil, nil
+}
+
 // CountAdd adds one to the count for the poll.
+// TODO: Remove me
 func (b *Backend) CountAdd(ctx context.Context, pollID int) error {
 	conn := b.pool.Get()
 	defer conn.Close()
@@ -297,6 +303,7 @@ func (b *Backend) CountAdd(ctx context.Context, pollID int) error {
 }
 
 // CountClear deletes all counts for a poll.
+// TODO: Remove me
 func (b *Backend) CountClear(ctx context.Context, pollID int) error {
 	conn := b.pool.Get()
 	defer conn.Close()
@@ -336,6 +343,7 @@ func (b *Backend) maxID(conn redis.Conn) (uint64, error) {
 // all polls if the id 0 is given.
 //
 // Blocks until there is new data.
+// TODO: Remove me
 func (b *Backend) Counters(ctx context.Context, id uint64, blocking bool) (newid uint64, counts map[int]int, err error) {
 	// TODO Atomic
 	conn := b.pool.Get()

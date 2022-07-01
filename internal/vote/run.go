@@ -53,12 +53,12 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 		return fmt.Errorf("building auth: %w", err)
 	}
 
-	fastBackend, longBackend, counter, err := buildBackends(ctx, env, getSecret)
+	fastBackend, longBackend, err := buildBackends(ctx, env, getSecret)
 	if err != nil {
 		return fmt.Errorf("building backends: %w", err)
 	}
 
-	service := New(fastBackend, longBackend, ds, counter)
+	service := New(fastBackend, longBackend, ds)
 
 	mux := http.NewServeMux()
 	handleStart(mux, service)
@@ -67,7 +67,7 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 	handleClearAll(mux, service)
 	handleVote(mux, service, auth)
 	handleVoted(mux, service, auth)
-	handleVoteCount(mux, service)
+	//handleVoteCount(mux, service)
 	handleHealth(mux)
 
 	listenAddr := ":" + env["VOTE_PORT"]
@@ -318,7 +318,7 @@ func buildBackends(
 	ctx context.Context,
 	env map[string]string,
 	getSecret func(name string) (string, error),
-) (fast Backend, long Backend, counter Counter, err error) {
+) (fast Backend, long Backend, err error) {
 	var rb *redis.Backend
 	var pb *postgres.Backend
 
@@ -349,17 +349,13 @@ func buildBackends(
 
 	fast, err = setBackend(env["VOTE_BACKEND_FAST"])
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("setting fast backend: %w", err)
+		return nil, nil, fmt.Errorf("setting fast backend: %w", err)
 	}
 
 	long, err = setBackend(env["VOTE_BACKEND_LONG"])
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("setting long backend: %w", err)
+		return nil, nil, fmt.Errorf("setting long backend: %w", err)
 	}
 
-	counter = rb
-	if rb == nil {
-		counter = NewMockCounter()
-	}
-	return fast, long, counter, nil
+	return fast, long, nil
 }

@@ -19,16 +19,14 @@ type Vote struct {
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
-	counter     Counter
 }
 
 // New creates an initializes vote service.
-func New(fast, long Backend, ds datastore.Getter, counter Counter) *Vote {
+func New(fast, long Backend, ds datastore.Getter) *Vote {
 	return &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
-		counter:     counter,
 	}
 }
 
@@ -144,9 +142,6 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
-	if err := v.counter.CountClear(ctx, pollID); err != nil {
-		return fmt.Errorf("clearing counter: %w", err)
-	}
 	return nil
 }
 
@@ -173,9 +168,6 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 		return fmt.Errorf("clearing long Backend: %w", err)
 	}
 
-	if err := v.counter.ClearAll(ctx); err != nil {
-		return fmt.Errorf("clearing all counter: %w", err)
-	}
 	return nil
 }
 
@@ -288,8 +280,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
 
-	count, err := backend.Vote(ctx, pollID, voteUser, bs)
-	if err != nil {
+	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -308,23 +299,6 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	// Save the vote count in the background. The user does not have to wait for
-	// it.
-	go func() {
-		if err := v.saveVoteCount(pollID); err != nil {
-			// Do not return error. If the vote was saved corrently it is a success,
-			// even when saving the vote count fails.
-			log.Info("Saving vote count %d failed: %v", count, err)
-		}
-	}()
-
-	return nil
-}
-
-func (v *Vote) saveVoteCount(pollID int) error {
-	if err := v.counter.CountAdd(context.Background(), pollID); err != nil {
-		return fmt.Errorf("saving cote count of poll %d: %w", pollID, err)
-	}
 	return nil
 }
 
@@ -368,38 +342,9 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w
 	return nil
 }
 
-// VoteCount returns the amount votes for every acitve poll since the given
-// change id.
-//
-// With change id 0, it returns the amout of every poll.
-//
-// When blocking is true, and there is no data, then the function blocks until
-// new data is available.
-func (v *Vote) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) (err error) {
-	log.Debug("Receive vote count event with id %d", id)
-	defer func() {
-		log.Debug("End vote count with error: %v", err)
-	}()
-
-	// This blocks until there is new data or the context is done.
-	newID, counts, err := v.counter.Counters(ctx, id, blocking)
-	if err != nil {
-		return fmt.Errorf("getting counters: %w", err)
-	}
-
-	content := struct {
-		ID    uint64      `json:"id"`
-		Polls map[int]int `json:"polls"`
-	}{
-		newID,
-		counts,
-	}
-
-	if err := json.NewEncoder(w).Encode(content); err != nil {
-		return fmt.Errorf("encoding vote counts: %w", err)
-	}
-
-	return nil
+// VoteCount returns the vote_count for both backends combained
+func (v *Vote) VoteCount(ctx context.Context, id uint64, blocking bool, w io.Writer) (map[int]int, error) {
+	return nil, nil
 }
 
 // Backend is a storage for the poll options.
@@ -417,7 +362,7 @@ type Backend interface {
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
 	//
 	// The return value is the number of already voted objects.
-	Vote(ctx context.Context, pollID int, userID int, object []byte) (int, error)
+	Vote(ctx context.Context, pollID int, userID int, object []byte) error
 
 	// Stop ends a poll and returns all poll objects and all userIDs from users
 	// that have voted. It is ok to call Stop() on a stopped poll. On a unknown
@@ -435,27 +380,10 @@ type Backend interface {
 	// voted.
 	VotedPolls(ctx context.Context, pollIDs []int, userID int) (map[int]bool, error)
 
+	// VoteCount returns the amout of votes for each vote in the backend.
+	VoteCount(ctx context.Context) (map[int]int, error)
+
 	fmt.Stringer
-}
-
-// Counter keeps track of howmany votes are counted per poll.
-type Counter interface {
-	// CountAdd adds one vote for the pollID to the counter.
-	CountAdd(ctx context.Context, pollID int) error
-
-	// CountClear deletes all counts for a poll.
-	CountClear(ctx context.Context, pollID int) error
-
-	// ClearAll deleted all counts from all polls.
-	ClearAll(ctx context.Context) error
-
-	// Counters returns all counts of all polls since the given id.
-	//
-	// Returns a new ID that can be used the next time. Returns all counts for
-	// all polls if the id 0 is given.
-	//
-	// Blocks until there is new data.
-	Counters(ctx context.Context, id uint64, blocking bool) (newid uint64, counts map[int]int, err error)
 }
 
 type pollConfig struct {

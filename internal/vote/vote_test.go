@@ -7,7 +7,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
@@ -28,7 +27,7 @@ func TestVoteStart(t *testing.T) {
 		meeting/5/id: 5
 		`))
 
-		v := vote.New(backend, backend, ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, ds)
 
 		if err := v.Start(context.Background(), 1); err != nil {
 			t.Errorf("Start returned unexpected error: %v", err)
@@ -39,8 +38,7 @@ func TestVoteStart(t *testing.T) {
 		}
 
 		// After a poll was started, it has to be possible to send votes.
-		_, err := backend.Vote(context.Background(), 1, 1, []byte("something"))
-		if err != nil {
+		if err := backend.Vote(context.Background(), 1, 1, []byte("something")); err != nil {
 			t.Errorf("Vote after start retuen and unexpected error: %v", err)
 		}
 	})
@@ -58,7 +56,7 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 		v.Start(context.Background(), 1)
 
 		if err := v.Start(context.Background(), 1); err != nil {
@@ -79,7 +77,7 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 		v.Start(context.Background(), 1)
 
 		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
@@ -103,7 +101,7 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 
 		err := v.Start(context.Background(), 1)
 
@@ -125,7 +123,7 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 
 		err := v.Start(context.Background(), 1)
 
@@ -146,7 +144,7 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 
 		err := v.Start(context.Background(), 1)
 
@@ -167,7 +165,7 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+		v := vote.New(backend, backend, &ds)
 
 		err := v.Start(context.Background(), 1)
 
@@ -195,7 +193,7 @@ func TestVoteStartPreloadData(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 	meeting/5/id: 5
 	`))
-	v := vote.New(backend, backend, ds, vote.NewMockCounter())
+	v := vote.New(backend, backend, ds)
 
 	if err := v.Start(context.Background(), 1); err != nil {
 		t.Errorf("Start returned unexpected error: %v", err)
@@ -209,7 +207,7 @@ func TestVoteStartPreloadData(t *testing.T) {
 func TestVoteStartDSError(t *testing.T) {
 	backend := memory.New()
 	ds := StubGetter{err: errors.New("Some error")}
-	v := vote.New(backend, backend, &ds, vote.NewMockCounter())
+	v := vote.New(backend, backend, &ds)
 	err := v.Start(context.Background(), 1)
 
 	if err == nil {
@@ -223,7 +221,7 @@ func TestVoteStop(t *testing.T) {
 	poll/1/meeting_id: 1
 	poll/2/meeting_id: 1
 	poll/3/meeting_id: 1
-	`)}, vote.NewMockCounter())
+	`)})
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		buf := new(bytes.Buffer)
@@ -251,7 +249,7 @@ func TestVoteStop(t *testing.T) {
 			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}
 
-		_, err := backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
+		err := backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
 		var errStopped interface{ Stopped() }
 		if !errors.As(err, &errStopped) {
 			t.Errorf("Stop did not stop the poll in the backend.")
@@ -277,7 +275,7 @@ func TestVoteStop(t *testing.T) {
 
 func TestVoteClear(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{}, vote.NewMockCounter())
+	v := vote.New(backend, backend, &StubGetter{})
 
 	if err := v.Clear(context.Background(), 1); err != nil {
 		t.Fatalf("Clear returned unexpected error: %v", err)
@@ -286,7 +284,7 @@ func TestVoteClear(t *testing.T) {
 
 func TestVoteClearAll(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{}, vote.NewMockCounter())
+	v := vote.New(backend, backend, &StubGetter{})
 
 	if err := v.ClearAll(context.Background()); err != nil {
 		t.Fatalf("ClearAll returned unexpected error: %v", err)
@@ -309,7 +307,7 @@ func TestVoteVote(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 			group_$1_ids: [1]
 		`),
-	}, vote.NewMockCounter())
+	})
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`))
@@ -490,7 +488,7 @@ func TestVoteNoRequests(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ds := dsmock.NewMockDatastore(dsmock.YAMLData(tt.data))
 			backend := memory.New()
-			v := vote.New(backend, backend, ds, vote.NewMockCounter())
+			v := vote.New(backend, backend, ds)
 
 			if err := v.Start(context.Background(), 1); err != nil {
 				t.Fatalf("Can not start poll: %v", err)
@@ -704,7 +702,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, vote.NewMockCounter())
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)})
 			backend.Start(context.Background(), 1)
 
 			err := v.Vote(context.Background(), 1, 1, strings.NewReader(tt.vote))
@@ -827,7 +825,7 @@ func TestVoteWeight(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, vote.NewMockCounter())
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)})
 			backend.Start(context.Background(), 1)
 
 			if err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
@@ -859,7 +857,7 @@ func TestVotedPolls(t *testing.T) {
 	ds := dsmock.Stub(dsmock.YAMLData(`---
 	poll/1/backend: memory
 	`))
-	v := vote.New(backend, backend, ds, vote.NewMockCounter())
+	v := vote.New(backend, backend, ds)
 	backend.Start(context.Background(), 1)
 	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
 	buf := new(bytes.Buffer)
@@ -872,171 +870,4 @@ func TestVotedPolls(t *testing.T) {
 	if buf.String() != expect {
 		t.Errorf("VotedPolls() wrote `%s`, expected `%s`", strings.TrimSpace(buf.String()), expect)
 	}
-}
-
-func TestVoteCount(t *testing.T) {
-	backend := memory.New()
-	counter := vote.NewMockCounter()
-	v := vote.New(backend, backend, dsmock.Stub(dsmock.YAMLData(`
-	meeting/1/users_enable_vote_weight: false
-
-	poll:
-		1:
-			meeting_id: 1
-			entitled_group_ids: [1]
-			pollmethod: Y
-			global_yes: true
-		
-		2:
-			meeting_id: 1
-			entitled_group_ids: [1]
-			pollmethod: Y
-			global_yes: true
-	user:
-		5:
-			is_present_in_meeting_ids: [1]
-			group_$1_ids: [1]
-		6:
-			is_present_in_meeting_ids: [1]
-			group_$1_ids: [1]
-	`)), counter)
-	backend.Start(context.Background(), 1)
-	backend.Start(context.Background(), 2)
-
-	if err := v.Vote(context.Background(), 1, 5, strings.NewReader(`{"value":"Y"}`)); err != nil {
-		t.Fatalf("vote1: %v", err)
-	}
-	counter.WaitForID(1)
-	if err := v.Vote(context.Background(), 1, 6, strings.NewReader(`{"value":"Y"}`)); err != nil {
-		t.Fatalf("vote2: %v", err)
-	}
-	counter.WaitForID(2)
-	if err := v.Vote(context.Background(), 2, 5, strings.NewReader(`{"value":"Y"}`)); err != nil {
-		t.Fatalf("vote3: %v", err)
-	}
-	counter.WaitForID(3)
-
-	t.Run("id with 0", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 0, true, buf); err != nil {
-			t.Fatalf("VoteCount() returned unexected error: %v", err)
-		}
-
-		expect := `{"id":3,"polls":{"1":2,"2":1}}` + "\n"
-		if buf.String() != expect {
-			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
-		}
-	})
-
-	t.Run("with existing id", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 2, true, buf); err != nil {
-			t.Fatalf("VoteCount() returned unexected error: %v", err)
-		}
-
-		expect := `{"id":3,"polls":{"2":1}}` + "\n"
-		if buf.String() != expect {
-			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
-		}
-	})
-
-	t.Run("with same id should block until context expires", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		buf := new(bytes.Buffer)
-		err := v.VoteCount(ctx, 3, true, buf)
-
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Errorf("VoteCount() did not return with context.DeadlineExeeded, got: %v", err)
-		}
-
-		if got := buf.String(); got != "" {
-			t.Errorf("VoteCount() wrote `%s`, expected nothing", got)
-		}
-	})
-
-	t.Run("after clear", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		if err := v.Clear(context.Background(), 1); err != nil {
-			t.Fatalf("clearing poll: %v", err)
-		}
-
-		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 3, true, buf); err != nil {
-			t.Fatalf("VoteCount() returned unexected error: %v", err)
-		}
-
-		expect := `{"id":4,"polls":{"1":0}}` + "\n"
-		if buf.String() != expect {
-			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
-		}
-	})
-}
-
-func TestVoteCountEmptyData(t *testing.T) {
-	backend := memory.New()
-	counter := vote.NewMockCounter()
-	v := vote.New(backend, backend, dsmock.Stub(dsmock.YAMLData(`
-	meeting/1/users_enable_vote_weight: false
-
-	poll:
-		1:
-			meeting_id: 1
-			entitled_group_ids: [1]
-			pollmethod: Y
-			global_yes: true
-		
-		2:
-			meeting_id: 1
-			entitled_group_ids: [1]
-			pollmethod: Y
-			global_yes: true
-	user:
-		5:
-			is_present_in_meeting_ids: [1]
-			group_$1_ids: [1]
-		6:
-			is_present_in_meeting_ids: [1]
-			group_$1_ids: [1]
-	`)), counter)
-
-	t.Run("Blocking", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		buf := new(bytes.Buffer)
-		err := v.VoteCount(ctx, 0, true, buf)
-
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Errorf("VoteCount() did not return with context.DeadlineExeeded, got: %v", err)
-		}
-
-		if got := buf.String(); got != "" {
-			t.Errorf("VoteCount() wrote `%s`, expected nothing", got)
-		}
-	})
-
-	t.Run("Non Blocking", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-		defer cancel()
-
-		buf := new(bytes.Buffer)
-		if err := v.VoteCount(ctx, 0, false, buf); err != nil {
-			t.Fatalf("VoteCount() returned unexected error: %v", err)
-		}
-
-		expect := `{"id":0,"polls":null}` + "\n"
-		if buf.String() != expect {
-			t.Errorf("VoteCount() wrote `%s`, expected `%s`", buf.String(), expect)
-		}
-	})
 }
