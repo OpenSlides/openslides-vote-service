@@ -5,6 +5,7 @@ package test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"runtime"
 	"sort"
 	"sync"
@@ -253,6 +254,23 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 		if len(voted) != 2 || !voted[pollID] || voted[pollID+1] {
 			t.Errorf("VotedPolls returned %v, expected {%d: true, %d: false}", voted, pollID, pollID+1)
+		}
+	})
+
+	backend.ClearAll(context.Background())
+	pollID++
+	t.Run("VoteCount", func(t *testing.T) {
+		backend.Start(context.Background(), pollID)
+		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+
+		count, err := backend.VoteCount(context.Background())
+		if err != nil {
+			t.Fatalf("VoteCount: %v", err)
+		}
+
+		expect := map[int]int{pollID: 1}
+		if !reflect.DeepEqual(count, expect) {
+			t.Errorf("Got %v, expected %v", count, expect)
 		}
 	})
 

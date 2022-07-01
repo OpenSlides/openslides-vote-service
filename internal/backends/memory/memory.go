@@ -128,7 +128,11 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userID int) (ma
 
 // VoteCount returns the amout of votes for each vote in the backend.
 func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
-	return nil, nil
+	count := make(map[int]int, len(b.objects))
+	for pollID, objects := range b.objects {
+		count[pollID] = len(objects)
+	}
+	return count, nil
 }
 
 // AssertUserHasVoted is a method for the tests to check, if a user has voted.
