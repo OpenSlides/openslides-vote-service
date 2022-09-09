@@ -28,9 +28,9 @@ func TestVoteStart(t *testing.T) {
 		meeting/5/id: 5
 		`))
 
-		v := vote.New(backend, backend, ds)
+		v := vote.New(backend, backend, ds, new(decrypterStub))
 
-		if err := v.Start(context.Background(), 1); err != nil {
+		if _, _, err := v.Start(context.Background(), 1); err != nil {
 			t.Errorf("Start returned unexpected error: %v", err)
 		}
 
@@ -57,10 +57,10 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 		v.Start(context.Background(), 1)
 
-		if err := v.Start(context.Background(), 1); err != nil {
+		if _, _, err := v.Start(context.Background(), 1); err != nil {
 			t.Errorf("Start returned unexpected error: %v", err)
 		}
 	})
@@ -78,14 +78,14 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 		v.Start(context.Background(), 1)
 
 		if _, _, err := backend.Stop(context.Background(), 1); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		if err := v.Start(context.Background(), 1); err != nil {
+		if _, _, err := v.Start(context.Background(), 1); err != nil {
 			t.Errorf("Start returned unexpected error: %v", err)
 		}
 	})
@@ -102,9 +102,9 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 
-		err := v.Start(context.Background(), 1)
+		_, _, err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
@@ -124,9 +124,9 @@ func TestVoteStart(t *testing.T) {
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 
-		err := v.Start(context.Background(), 1)
+		_, _, err := v.Start(context.Background(), 1)
 
 		if err != nil {
 			t.Errorf("Start returned: %v", err)
@@ -145,9 +145,9 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 
-		err := v.Start(context.Background(), 1)
+		_, _, err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
@@ -166,9 +166,9 @@ func TestVoteStart(t *testing.T) {
 		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
-		v := vote.New(backend, backend, &ds)
+		v := vote.New(backend, backend, &ds, new(decrypterStub))
 
-		err := v.Start(context.Background(), 1)
+		_, _, err := v.Start(context.Background(), 1)
 
 		if err == nil {
 			t.Errorf("Got no error, expected `Some error`")
@@ -194,9 +194,9 @@ func TestVoteStartPreloadData(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 	meeting/5/id: 5
 	`))
-	v := vote.New(backend, backend, ds)
+	v := vote.New(backend, backend, ds, new(decrypterStub))
 
-	if err := v.Start(context.Background(), 1); err != nil {
+	if _, _, err := v.Start(context.Background(), 1); err != nil {
 		t.Errorf("Start returned unexpected error: %v", err)
 	}
 
@@ -208,8 +208,8 @@ func TestVoteStartPreloadData(t *testing.T) {
 func TestVoteStartDSError(t *testing.T) {
 	backend := memory.New()
 	ds := StubGetter{err: errors.New("Some error")}
-	v := vote.New(backend, backend, &ds)
-	err := v.Start(context.Background(), 1)
+	v := vote.New(backend, backend, &ds, new(decrypterStub))
+	_, _, err := v.Start(context.Background(), 1)
 
 	if err == nil {
 		t.Errorf("Got no error, expected `Some error`")
@@ -222,7 +222,7 @@ func TestVoteStop(t *testing.T) {
 	poll/1/meeting_id: 1
 	poll/2/meeting_id: 1
 	poll/3/meeting_id: 1
-	`)})
+	`)}, new(decrypterStub))
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		buf := new(bytes.Buffer)
@@ -276,7 +276,7 @@ func TestVoteStop(t *testing.T) {
 
 func TestVoteClear(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{})
+	v := vote.New(backend, backend, &StubGetter{}, new(decrypterStub))
 
 	if err := v.Clear(context.Background(), 1); err != nil {
 		t.Fatalf("Clear returned unexpected error: %v", err)
@@ -285,7 +285,7 @@ func TestVoteClear(t *testing.T) {
 
 func TestVoteClearAll(t *testing.T) {
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{})
+	v := vote.New(backend, backend, &StubGetter{}, new(decrypterStub))
 
 	if err := v.ClearAll(context.Background()); err != nil {
 		t.Fatalf("ClearAll returned unexpected error: %v", err)
@@ -308,7 +308,7 @@ func TestVoteVote(t *testing.T) {
 			is_present_in_meeting_ids: [1]
 			group_$1_ids: [1]
 		`),
-	})
+	}, new(decrypterStub))
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`))
@@ -489,9 +489,9 @@ func TestVoteNoRequests(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ds := dsmock.NewMockDatastore(dsmock.YAMLData(tt.data))
 			backend := memory.New()
-			v := vote.New(backend, backend, ds)
+			v := vote.New(backend, backend, ds, new(decrypterStub))
 
-			if err := v.Start(context.Background(), 1); err != nil {
+			if _, _, err := v.Start(context.Background(), 1); err != nil {
 				t.Fatalf("Can not start poll: %v", err)
 			}
 
@@ -703,7 +703,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)})
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, new(decrypterStub))
 			backend.Start(context.Background(), 1)
 
 			err := v.Vote(context.Background(), 1, 1, strings.NewReader(tt.vote))
@@ -826,7 +826,7 @@ func TestVoteWeight(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend := memory.New()
-			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)})
+			v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(tt.data)}, new(decrypterStub))
 			backend.Start(context.Background(), 1)
 
 			if err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
@@ -858,7 +858,7 @@ func TestVotedPolls(t *testing.T) {
 	ds := dsmock.Stub(dsmock.YAMLData(`---
 	poll/1/backend: memory
 	`))
-	v := vote.New(backend, backend, ds)
+	v := vote.New(backend, backend, ds, new(decrypterStub))
 	backend.Start(context.Background(), 1)
 	backend.Vote(context.Background(), 1, 5, []byte(`"Y"`))
 	buf := new(bytes.Buffer)
@@ -883,7 +883,7 @@ func TestVoteCount(t *testing.T) {
 	backend2.Vote(context.Background(), 42, 2, []byte("vote"))
 	ds := dsmock.Stub(dsmock.YAMLData(``))
 
-	v := vote.New(backend1, backend2, ds)
+	v := vote.New(backend1, backend2, ds, new(decrypterStub))
 
 	count, err := v.VoteCount(context.Background())
 	if err != nil {

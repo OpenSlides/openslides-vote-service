@@ -18,9 +18,9 @@ type starterStub struct {
 	expectErr error
 }
 
-func (c *starterStub) Start(ctx context.Context, pollID int) error {
+func (c *starterStub) Start(ctx context.Context, pollID int) ([]byte, []byte, error) {
 	c.id = pollID
-	return c.expectErr
+	return nil, nil, c.expectErr
 }
 
 func TestHandleStart(t *testing.T) {

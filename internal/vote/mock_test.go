@@ -45,3 +45,16 @@ func MustKey(in string) datastore.Key {
 	}
 	return k
 }
+
+type decrypterStub struct{}
+
+func (d *decrypterStub) Start(ctx context.Context, pollID string) (pubKey []byte, pubKeySig []byte, err error) {
+	return nil, nil, nil
+}
+
+func (d *decrypterStub) Stop(ctx context.Context, pollID string, voteList [][]byte) (decryptedContent, signature []byte, err error) {
+	return nil, nil, nil
+}
+func (d *decrypterStub) Clear(ctx context.Context, pollID string) error {
+	return nil
+}
