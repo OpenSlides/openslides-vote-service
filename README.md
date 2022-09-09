@@ -207,3 +207,5 @@ The Service uses the following environment variables:
   below) are not given. The default is `false`. It also enables debug output.
 * `MAX_PARALLEL_KEYS`: Max keys that are send in one request to the datastore.
   The default is `1000`.
+* `DATASTORE_TIMEOUT`: Time until a request to the datastore times out. The
+  default is `3s`.

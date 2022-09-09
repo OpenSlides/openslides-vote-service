@@ -1,14 +1,14 @@
 module github.com/OpenSlides/openslides-vote-service
 
-go 1.18
+go 1.19
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220610093516-04a35189807c
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220908114317-4651e11b8a45
 	github.com/gomodule/redigo v1.8.9
 	github.com/jackc/pgconn v1.13.0
 	github.com/jackc/pgx/v4 v4.17.2
 	github.com/ory/dockertest/v3 v3.9.1
-	golang.org/x/sys v0.0.0-20220608164250-635b8c9b7f68
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
 )
 
 require (
@@ -22,7 +22,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
@@ -47,7 +47,7 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/net v0.0.0-20220607020251-c690dde0001d // indirect
-	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
