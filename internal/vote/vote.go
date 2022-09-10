@@ -84,15 +84,16 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig 
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
-	// TODO: Only do this for crypto polls.
-	qid, err := v.qualifiedID(ctx, ds, pollID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("building qualified id: %w", err)
-	}
+	if poll.pollType == "crypt" {
+		qid, err := v.qualifiedID(ctx, ds, pollID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("building qualified id: %w", err)
+		}
 
-	pubkey, pubKeySig, err = v.decrypter.Start(ctx, qid)
-	if err != nil {
-		return nil, nil, fmt.Errorf("starting poll in decrypter: %w", err)
+		pubkey, pubKeySig, err = v.decrypter.Start(ctx, qid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("starting poll in decrypter: %w", err)
+		}
 	}
 
 	backend := v.backend(poll)
@@ -107,71 +108,72 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig 
 //
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
-func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
+func (v *Vote) Stop(ctx context.Context, pollID int) (json.RawMessage, []byte, []int, error) {
 	log.Debug("Receive stop event for poll %d", pollID)
-	defer func() {
-		log.Debug("End stop event with error: %v", err)
-	}()
 
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("loading poll: %w", err)
+		return nil, nil, nil, fmt.Errorf("loading poll: %w", err)
 	}
 
 	backend := v.backend(poll)
-	rawBallots, userIDs, err := backend.Stop(ctx, pollID)
+	ballots, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
+			return nil, nil, nil, MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
 		}
 
-		return fmt.Errorf("fetching vote objects: %w", err)
+		return nil, nil, nil, fmt.Errorf("fetching vote objects: %w", err)
 	}
 
-	votes := make([][]byte, len(rawBallots))
-	for i := range rawBallots {
+	if poll.pollType != "crypt" {
+		votes, err := ballotsToJSONList(ballots)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("encode ballots: %w", err)
+		}
+
+		return votes, nil, userIDs, nil
+	}
+
+	votes := make([][]byte, len(ballots))
+	for i := range ballots {
 		var vote struct {
 			Value json.RawMessage `json:"value"`
 		}
-		if err := json.Unmarshal(rawBallots[i], &vote); err != nil {
-			return fmt.Errorf("decoding vote from backend: %w", err)
+		if err := json.Unmarshal(ballots[i], &vote); err != nil {
+			return nil, nil, nil, fmt.Errorf("decoding vote from backend: %w", err)
 		}
 
 		votes[i] = vote.Value
 	}
 
-	// TODO: only decrypt values in hidden polls.
 	qid, err := v.qualifiedID(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("building qualified id: %w", err)
+		return nil, nil, nil, fmt.Errorf("building qualified id: %w", err)
 	}
 
 	decrypted, signature, err := v.decrypter.Stop(ctx, qid, votes)
 	if err != nil {
-		return fmt.Errorf("decrypting votes: %w", err)
+		return nil, nil, nil, fmt.Errorf("decrypting votes: %w", err)
 	}
 
-	if userIDs == nil {
-		userIDs = []int{}
+	return decrypted, signature, userIDs, nil
+}
+
+func ballotsToJSONList(ballots [][]byte) (json.RawMessage, error) {
+	encodable := make([]json.RawMessage, len(ballots))
+	for i := range ballots {
+		encodable[i] = ballots[i]
 	}
 
-	out := struct {
-		Votes     json.RawMessage `json:"votes"`
-		Signature []byte          `json:"signature"`
-		Users     []int           `json:"user_ids"`
-	}{
-		decrypted,
-		signature,
-		userIDs,
+	bs, err := json.Marshal(encodable)
+	if err != nil {
+		return nil, fmt.Errorf("encode votes to list: %w", err)
 	}
 
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		return fmt.Errorf("encoding and sending objects: %w", err)
-	}
-
-	return nil
+	return bs, nil
 }
 
 // Clear removes all knowlage of a poll.
@@ -326,7 +328,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		voteWeight,
 	}
 
-	if poll.pollType == "pseudoanonymous" {
+	if poll.pollType != "named" {
 		voteData.RequestUser = 0
 		voteData.VoteUser = 0
 	}

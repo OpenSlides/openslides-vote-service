@@ -231,8 +231,8 @@ func TestVoteStop(t *testing.T) {
 	`)}, new(decrypterStub))
 
 	t.Run("Unknown poll", func(t *testing.T) {
-		buf := new(bytes.Buffer)
-		err := v.Stop(context.Background(), 1, buf)
+		_, _, _, err := v.Stop(context.Background(), 1)
+
 		if !errors.Is(err, vote.ErrNotExists) {
 			t.Errorf("Stopping an unknown poll has to return an ErrNotExists, got: %v", err)
 		}
@@ -246,17 +246,21 @@ func TestVoteStop(t *testing.T) {
 		backend.Vote(context.Background(), 2, 1, []byte(`{"value":"polldata1"}`))
 		backend.Vote(context.Background(), 2, 2, []byte(`{"value":"polldata2"}`))
 
-		buf := new(bytes.Buffer)
-		if err := v.Stop(context.Background(), 2, buf); err != nil {
+		votes, _, userIDs, err := v.Stop(context.Background(), 2)
+		if err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		expect := `{"votes":["polldata1","polldata2"],"signature":"c2lnbmF0dXJl","user_ids":[1,2]}`
-		if got := strings.TrimSpace(buf.String()); got != expect {
-			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
+		expected := `[{"value":"polldata1"},{"value":"polldata2"}]`
+		if string(votes) != expected {
+			t.Errorf("Got votes %s, expected %s", votes, expected)
 		}
 
-		err := backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
+		if !reflect.DeepEqual(userIDs, []int{1, 2}) {
+			t.Errorf("Got users %v, expected [1 2]", userIDs)
+		}
+
+		err = backend.Vote(context.Background(), 2, 3, []byte(`"polldata3"`))
 		var errStopped interface{ Stopped() }
 		if !errors.As(err, &errStopped) {
 			t.Errorf("Stop did not stop the poll in the backend.")
@@ -268,14 +272,17 @@ func TestVoteStop(t *testing.T) {
 			t.Fatalf("Start returned an unexpected error: %v", err)
 		}
 
-		buf := new(bytes.Buffer)
-		if err := v.Stop(context.Background(), 3, buf); err != nil {
+		votes, _, userIDs, err := v.Stop(context.Background(), 3)
+		if err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		expect := `{"votes":[],"signature":"c2lnbmF0dXJl","user_ids":[]}`
-		if got := strings.TrimSpace(buf.String()); got != expect {
-			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
+		if string(votes) != `[]` {
+			t.Errorf("Got votes %s, expected []", votes)
+		}
+
+		if len(userIDs) != 0 {
+			t.Errorf("Got userIDs %v, expected []", userIDs)
 		}
 	})
 }
