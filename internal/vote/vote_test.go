@@ -18,6 +18,7 @@ func TestVoteStart(t *testing.T) {
 	t.Run("Not started poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := dsmock.NewMockDatastore(dsmock.YAMLData(`
+		organization/1/url: test.com
 		poll:
 			1:
 				meeting_id: 5
@@ -34,7 +35,7 @@ func TestVoteStart(t *testing.T) {
 			t.Errorf("Start returned unexpected error: %v", err)
 		}
 
-		if c := len(ds.Requests()); c > 2 {
+		if c := len(ds.Requests()); c > 3 {
 			t.Errorf("Start used %d requests to the datastore, expected max 2: %v", c, ds.Requests())
 		}
 
@@ -47,6 +48,7 @@ func TestVoteStart(t *testing.T) {
 	t.Run("Start poll a second time", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
+		organization/1/url: test.com
 		poll:
 			1:
 				meeting_id: 5
@@ -68,6 +70,7 @@ func TestVoteStart(t *testing.T) {
 	t.Run("Start a stopped poll", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
+		organization/1/url: test.com
 		poll:
 			1:
 				meeting_id: 5
@@ -114,6 +117,7 @@ func TestVoteStart(t *testing.T) {
 	t.Run("Start an poll in `wrong` state", func(t *testing.T) {
 		backend := memory.New()
 		ds := StubGetter{data: dsmock.YAMLData(`
+		organization/1/url: test.com
 		poll:
 			1:
 				meeting_id: 5
@@ -179,6 +183,7 @@ func TestVoteStart(t *testing.T) {
 func TestVoteStartPreloadData(t *testing.T) {
 	backend := memory.New()
 	ds := dsmock.NewMockDatastore(dsmock.YAMLData(`
+	organization/1/url: test.com
 	poll/1:
 		meeting_id: 5
 		entitled_group_ids: [1]
@@ -219,6 +224,7 @@ func TestVoteStartDSError(t *testing.T) {
 func TestVoteStop(t *testing.T) {
 	backend := memory.New()
 	v := vote.New(backend, backend, &StubGetter{data: dsmock.YAMLData(`
+	organization/1/url: test.com
 	poll/1/meeting_id: 1
 	poll/2/meeting_id: 1
 	poll/3/meeting_id: 1
@@ -237,15 +243,15 @@ func TestVoteStop(t *testing.T) {
 			t.Fatalf("Start returned an unexpected error: %v", err)
 		}
 
-		backend.Vote(context.Background(), 2, 1, []byte(`"polldata1"`))
-		backend.Vote(context.Background(), 2, 2, []byte(`"polldata2"`))
+		backend.Vote(context.Background(), 2, 1, []byte(`{"value":"polldata1"}`))
+		backend.Vote(context.Background(), 2, 2, []byte(`{"value":"polldata2"}`))
 
 		buf := new(bytes.Buffer)
 		if err := v.Stop(context.Background(), 2, buf); err != nil {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		expect := `{"votes":["polldata1","polldata2"],"user_ids":[1,2]}`
+		expect := `{"votes":["polldata1","polldata2"],"signature":"c2lnbmF0dXJl","user_ids":[1,2]}`
 		if got := strings.TrimSpace(buf.String()); got != expect {
 			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}
@@ -267,7 +273,7 @@ func TestVoteStop(t *testing.T) {
 			t.Fatalf("Stop returned unexpected error: %v", err)
 		}
 
-		expect := `{"votes":[],"user_ids":[]}`
+		expect := `{"votes":[],"signature":"c2lnbmF0dXJl","user_ids":[]}`
 		if got := strings.TrimSpace(buf.String()); got != expect {
 			t.Errorf("Stop wrote `%s`, expected `%s`", got, expect)
 		}
@@ -275,8 +281,9 @@ func TestVoteStop(t *testing.T) {
 }
 
 func TestVoteClear(t *testing.T) {
+	data := &StubGetter{data: dsmock.YAMLData(`organization/1/url: test.com`)}
 	backend := memory.New()
-	v := vote.New(backend, backend, &StubGetter{}, new(decrypterStub))
+	v := vote.New(backend, backend, data, new(decrypterStub))
 
 	if err := v.Clear(context.Background(), 1); err != nil {
 		t.Fatalf("Clear returned unexpected error: %v", err)
@@ -324,19 +331,6 @@ func TestVoteVote(t *testing.T) {
 
 	t.Run("Invalid json", func(t *testing.T) {
 		err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{123`))
-
-		var errTyped vote.TypeError
-		if !errors.As(err, &errTyped) {
-			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
-		}
-
-		if errTyped != vote.ErrInvalid {
-			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrInvalid.Type())
-		}
-	})
-
-	t.Run("Invalid format", func(t *testing.T) {
-		err := v.Vote(context.Background(), 1, 1, strings.NewReader(`{}`))
 
 		var errTyped vote.TypeError
 		if !errors.As(err, &errTyped) {
@@ -402,6 +396,7 @@ func TestVoteNoRequests(t *testing.T) {
 		{
 			"normal vote",
 			`---
+			organization/1/url: test.com
 			poll/1:
 				meeting_id: 50
 				entitled_group_ids: [5]
@@ -422,6 +417,7 @@ func TestVoteNoRequests(t *testing.T) {
 		{
 			"delegation vote",
 			`---
+			organization/1/url: test.com
 			poll/1:
 				meeting_id: 50
 				entitled_group_ids: [5]
@@ -445,6 +441,7 @@ func TestVoteNoRequests(t *testing.T) {
 		{
 			"vote weight enabled",
 			`---
+			organization/1/url: test.com
 			poll/1:
 				meeting_id: 50
 				entitled_group_ids: [5]
@@ -465,6 +462,7 @@ func TestVoteNoRequests(t *testing.T) {
 		{
 			"vote weight enabled and delegated",
 			`---
+			organization/1/url: test.com
 			poll/1:
 				meeting_id: 50
 				entitled_group_ids: [5]

@@ -115,7 +115,6 @@ func Run(ctx context.Context, environment []string, getSecret func(name string) 
 // defaut values.
 func defaultEnv(environment []string) map[string]string {
 	env := map[string]string{
-		"VOTE_HOST":         "",
 		"VOTE_PORT":         "9013",
 		"VOTE_BACKEND_FAST": "redis",
 		"VOTE_BACKEND_LONG": "postgres",

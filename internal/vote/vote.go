@@ -23,7 +23,6 @@ type Decrypter interface {
 //
 // Vote has to be initializes with vote.New().
 type Vote struct {
-	url         string
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
@@ -32,16 +31,7 @@ type Vote struct {
 
 // New creates an initializes vote service.
 func New(fast, long Backend, ds datastore.Getter, decrypter Decrypter) *Vote {
-	url := "TODO.example.com" // TODO: what is the best way to get the name? at startup? later? from the db or an environment variable?
-	// ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// defer cancel()
-
-	// url, err := datastore.NewRequest(ds).Organization_Url(1).Value(ctx)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("getting organization url: %v", err)
-	// }
 	return &Vote{
-		url:         url,
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
@@ -58,8 +48,12 @@ func (v *Vote) backend(p pollConfig) Backend {
 	return backend
 }
 
-func (v *Vote) qualifiedID(id int) string {
-	return fmt.Sprintf("%s/%d", v.url, id)
+func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (string, error) {
+	url, err := fetch.Organization_Url(1).Value(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting organization url: %v", err)
+	}
+	return fmt.Sprintf("%s/%d", url, id), nil
 }
 
 // Start an electronic vote.
@@ -91,7 +85,12 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig 
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
 	// TODO: Only do this for crypto polls.
-	pubkey, pubKeySig, err = v.decrypter.Start(ctx, v.qualifiedID(pollID))
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building qualified id: %w", err)
+	}
+
+	pubkey, pubKeySig, err = v.decrypter.Start(ctx, qid)
 	if err != nil {
 		return nil, nil, fmt.Errorf("starting poll in decrypter: %w", err)
 	}
@@ -134,17 +133,22 @@ func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
 	votes := make([][]byte, len(rawBallots))
 	for i := range rawBallots {
 		var vote struct {
-			Value []byte `json:"value"`
+			Value json.RawMessage `json:"value"`
 		}
 		if err := json.Unmarshal(rawBallots[i], &vote); err != nil {
 			return fmt.Errorf("decoding vote from backend: %w", err)
 		}
 
-		// TODO: only decrypt values in hidden polls.
 		votes[i] = vote.Value
 	}
 
-	decrypted, signature, err := v.decrypter.Stop(ctx, v.qualifiedID(pollID), votes)
+	// TODO: only decrypt values in hidden polls.
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return fmt.Errorf("building qualified id: %w", err)
+	}
+
+	decrypted, signature, err := v.decrypter.Stop(ctx, qid, votes)
 	if err != nil {
 		return fmt.Errorf("decrypting votes: %w", err)
 	}
@@ -185,7 +189,13 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
-	if err := v.decrypter.Clear(ctx, v.qualifiedID(pollID)); err != nil {
+	ds := dsfetch.New(v.ds)
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return fmt.Errorf("building qualified id: %w", err)
+	}
+
+	if err := v.decrypter.Clear(ctx, qid); err != nil {
 		return fmt.Errorf("clearing decrypter: %w", err)
 	}
 
@@ -305,10 +315,10 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	log.Debug("Using voteWeight %s", voteWeight)
 
 	voteData := struct {
-		RequestUser int    `json:"request_user_id,omitempty"`
-		VoteUser    int    `json:"vote_user_id,omitempty"`
-		Value       []byte `json:"value"`
-		Weight      string `json:"weight"`
+		RequestUser int             `json:"request_user_id,omitempty"`
+		VoteUser    int             `json:"vote_user_id,omitempty"`
+		Value       json.RawMessage `json:"value"`
+		Weight      string          `json:"weight"`
 	}{
 		requestUser,
 		voteUser,
@@ -563,8 +573,8 @@ func (m *maybeInt) Value() (int, bool) {
 }
 
 type ballot struct {
-	UserID maybeInt `json:"user_id"`
-	Value  []byte   `json:"value"`
+	UserID maybeInt        `json:"user_id"`
+	Value  json.RawMessage `json:"value"`
 }
 
 func (v ballot) String() string {
