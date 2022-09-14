@@ -20,7 +20,7 @@ const (
 )
 
 type starter interface {
-	Start(ctx context.Context, pollID int) ([]byte, []byte, error)
+	Start(ctx context.Context, pollID int) error
 }
 
 func handleStart(mux *http.ServeMux, start starter) {
@@ -41,21 +41,8 @@ func handleStart(mux *http.ServeMux, start starter) {
 				return
 			}
 
-			pubkey, pubKeySig, err := start.Start(r.Context(), id)
-			if err != nil {
+			if err := start.Start(r.Context(), id); err != nil {
 				handleError(w, err, true)
-				return
-			}
-
-			content := struct {
-				PubKey    []byte `json:"public_key"`
-				PubKeySig []byte `json:"public_key_sig"`
-			}{
-				pubkey,
-				pubKeySig,
-			}
-			if err := json.NewEncoder(w).Encode(content); err != nil {
-				http.Error(w, MessageError{ErrInternal, err.Error()}.Error(), 500)
 				return
 			}
 		},
@@ -65,7 +52,7 @@ func handleStart(mux *http.ServeMux, start starter) {
 // stopper stops a poll. It sets the state of the poll, so that no other user
 // can vote. It writes the vote results to the writer.
 type stopper interface {
-	Stop(ctx context.Context, pollID int) (json.RawMessage, []byte, []int, error)
+	Stop(ctx context.Context, pollID int, w io.Writer) error
 }
 
 func handleStop(mux *http.ServeMux, stop stopper) {
@@ -86,29 +73,8 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			votes, signature, userIDs, err := stop.Stop(r.Context(), id)
-
-			if err != nil {
+			if err := stop.Stop(r.Context(), id, w); err != nil {
 				handleError(w, err, true)
-				return
-			}
-
-			if userIDs == nil {
-				userIDs = []int{}
-			}
-
-			out := struct {
-				Votes     json.RawMessage `json:"votes"`
-				Signature []byte          `json:"signature"`
-				Users     []int           `json:"user_ids"`
-			}{
-				votes,
-				signature,
-				userIDs,
-			}
-
-			if err := json.NewEncoder(w).Encode(out); err != nil {
-				handleError(w, fmt.Errorf("encoding and sending objects: %w", err), true)
 				return
 			}
 		},
