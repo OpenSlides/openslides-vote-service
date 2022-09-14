@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
@@ -50,17 +49,11 @@ func (v *Vote) backend(p pollConfig) Backend {
 }
 
 func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (string, error) {
-	rawURL, err := fetch.Organization_Url(1).Value(ctx)
+	url, err := fetch.Organization_Url(1).Value(ctx)
 	if err != nil {
 		return "", fmt.Errorf("getting organization url: %v", err)
 	}
-
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid url %s: %w", rawURL, err)
-	}
-
-	return fmt.Sprintf("%s/%d", parsed.Hostname(), id), nil
+	return fmt.Sprintf("%s/%d", url, id), nil
 }
 
 // Start an electronic vote.
@@ -147,7 +140,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (json.RawMessage, []byte, [
 	votes := make([][]byte, len(ballots))
 	for i := range ballots {
 		var vote struct {
-			Value []byte `json:"value"` // Use []byte for base64 decoding.
+			Value json.RawMessage `json:"value"`
 		}
 		if err := json.Unmarshal(ballots[i], &vote); err != nil {
 			return nil, nil, nil, fmt.Errorf("decoding vote from backend: %w", err)
