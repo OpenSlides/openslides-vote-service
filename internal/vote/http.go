@@ -240,7 +240,7 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter, eventer func()
 			event, cancel := eventer()
 			defer cancel()
 
-			var lastCount map[int]int
+			var countMemory map[int]int
 			firstData := true
 			for {
 				count, err := voteCounter.VoteCount(r.Context())
@@ -249,18 +249,24 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter, eventer func()
 					return
 				}
 
-				if lastCount == nil {
-					lastCount = count
+				if countMemory == nil {
+					countMemory = count
 				} else {
-					for k := range lastCount {
+					for k := range countMemory {
 						if _, ok := count[k]; !ok {
 							count[k] = 0
 						}
-						if count[k] == lastCount[k] {
+						if count[k] == countMemory[k] {
 							delete(count, k)
 							continue
 						}
-						lastCount[k] = count[k]
+						countMemory[k] = count[k]
+					}
+
+					for k := range count {
+						if _, ok := countMemory[k]; !ok {
+							countMemory[k] = count[k]
+						}
 					}
 				}
 

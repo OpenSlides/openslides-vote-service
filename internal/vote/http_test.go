@@ -747,6 +747,7 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 		{1: 11, 2: 20}, // No Change
 		{1: 11},        // Remove 2
 		{1: 11, 3: 30}, // Add 3
+		{1: 11},        // Remove 3 (that was not there at the beginning)
 	}
 
 	url := "/internal/vote/vote_count"
@@ -777,6 +778,7 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 		{1: 11},
 		{2: 0},
 		{3: 30},
+		{3: 0},
 	}
 
 	decoder := json.NewDecoder(resp.Body)
