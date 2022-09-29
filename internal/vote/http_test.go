@@ -505,21 +505,20 @@ func TestHandleVote(t *testing.T) {
 }
 
 type votedPollserStub struct {
-	pollIDs      []int
-	user         int
-	expectWriter string
-	expectErr    error
+	pollIDs    []int
+	user       int
+	expectVote map[int][]int
+	expectErr  error
 }
 
-func (v *votedPollserStub) VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error {
+func (v *votedPollserStub) VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error) {
 	v.pollIDs = pollIDs
 	v.user = requestUser
 
 	if v.expectErr != nil {
-		return v.expectErr
+		return nil, v.expectErr
 	}
-	_, err := w.Write([]byte(v.expectWriter))
-	return err
+	return v.expectVote, nil
 }
 
 func TestHandleVoted(t *testing.T) {

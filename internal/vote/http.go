@@ -183,7 +183,7 @@ func handleVote(mux *http.ServeMux, vote voter, auth authenticater) {
 }
 
 type votedPollser interface {
-	VotedPolls(ctx context.Context, pollIDs []int, requestUser int, w io.Writer) error
+	VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
 }
 
 func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
@@ -216,9 +216,14 @@ func handleVoted(mux *http.ServeMux, voted votedPollser, auth authenticater) {
 				return
 			}
 
-			if err := voted.VotedPolls(ctx, pollIDs, uid, w); err != nil {
-				handleError(w, err, false)
+			voted, err := voted.VotedPolls(ctx, pollIDs, uid)
+			if err != nil {
+				handleError(w, fmt.Errorf("voted polls: %w", err), false)
 				return
+			}
+
+			if err := json.NewEncoder(w).Encode(voted); err != nil {
+				handleError(w, fmt.Errorf("encode response: %w", err), false)
 			}
 		},
 	)
