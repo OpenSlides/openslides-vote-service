@@ -216,6 +216,15 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	backend := v.backend(poll)
 
 	if voteUser != requestUser {
+		delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+		if err != nil {
+			return fmt.Errorf("fetching user enable vote delegation: %w", err)
+		}
+
+		if !delegationActivated {
+			return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
+		}
+
 		delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
 		if err != nil {
 			// If the user from the request body does not exist, then delegation
@@ -492,6 +501,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 // requests.
 func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
+	ds.Meeting_UsersEnableVoteDelegations(p.meetingID)
 
 	userIDsList := make([][]int, len(p.groups))
 	for i, groupID := range p.groups {

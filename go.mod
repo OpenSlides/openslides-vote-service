@@ -3,12 +3,12 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.19
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20220908114317-4651e11b8a45
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20221011084125-c050f958fb7a
 	github.com/gomodule/redigo v1.8.9
 	github.com/jackc/pgconn v1.13.0
 	github.com/jackc/pgx/v4 v4.17.2
 	github.com/ory/dockertest/v3 v3.9.1
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
+	golang.org/x/sys v0.0.0-20221010170243-090e33056c14
 )
 
 require (
@@ -47,7 +47,7 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/net v0.0.0-20220607020251-c690dde0001d // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
+	golang.org/x/sync v0.0.0-20220929204114-8fcdb60fdcc0 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

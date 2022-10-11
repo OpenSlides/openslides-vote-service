@@ -392,7 +392,7 @@ func TestVoteVote(t *testing.T) {
 }
 
 func TestVoteNoRequests(t *testing.T) {
-	// Makes sure, that a a vote does not do any database requests.
+	// Makes sure, that a vote does not do any database requests.
 
 	for _, tt := range []struct {
 		name string
@@ -409,7 +409,7 @@ func TestVoteNoRequests(t *testing.T) {
 				global_yes: true
 				state: started
 			
-			meeting/50/id: 50
+			meeting/50/users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [50]
@@ -429,7 +429,7 @@ func TestVoteNoRequests(t *testing.T) {
 				global_yes: true
 				state: started
 			
-			meeting/50/id: 50
+			meeting/50/users_enable_vote_delegations: true
 
 			user:
 				1:
@@ -452,7 +452,9 @@ func TestVoteNoRequests(t *testing.T) {
 				global_yes: true
 				state: started
 			
-			meeting/50/users_enable_vote_weight: true
+			meeting/50:
+				users_enable_vote_weight: true
+				users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [50]
@@ -472,7 +474,9 @@ func TestVoteNoRequests(t *testing.T) {
 				global_yes: true
 				state: started
 			
-			meeting/50/users_enable_vote_weight: true
+			meeting/50:
+				users_enable_vote_weight: true
+				users_enable_vote_delegations: true
 
 			user:
 				1:
@@ -525,7 +529,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [1]
@@ -545,7 +549,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
-			meeting/1/id: 1				
+			meeting/1/users_enable_vote_delegations: true				
 
 			user/1:
 				is_present_in_meeting_ids: []
@@ -565,7 +569,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [1]
@@ -585,7 +589,27 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 			
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				group_$1_ids: [1]
+			`,
+			`{"user_id": 1, "value":"Y"}`,
+
+			1,
+		},
+
+		{
+			"Vote for self not activated",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+			
+			meeting/1/users_enable_vote_delegations: false
 
 			user/1:
 				is_present_in_meeting_ids: [1]
@@ -605,7 +629,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 			
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [1]
@@ -625,7 +649,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1/is_present_in_meeting_ids: [1]
 			user/2/group_$1_ids: [1]
@@ -644,7 +668,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1/is_present_in_meeting_ids: [1]
 			user/2:
@@ -657,6 +681,27 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		},
 
 		{
+			"Vote for other with delegation not activated",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+
+			meeting/1/users_enable_vote_delegations: false
+
+			user/1/is_present_in_meeting_ids: [1]
+			user/2:
+				vote_delegated_$1_to_id: 1
+				group_$1_ids: [1]
+			`,
+			`{"user_id": 2, "value":"Y"}`,
+
+			0,
+		},
+
+		{
 			"Vote for other with delegation not in group",
 			`
 			poll/1:
@@ -665,7 +710,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 			
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1/is_present_in_meeting_ids: [1]
 			user/2:
@@ -686,7 +731,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				pollmethod: Y
 				global_yes: true
 			
-			meeting/1/id: 1
+			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
 				is_present_in_meeting_ids: [1]
