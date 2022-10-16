@@ -25,6 +25,7 @@ func main() {
 
 	if err := vote.Run(ctx, os.Environ(), secret); err != nil {
 		log.Info("Error: %v", err)
+		os.Exit(1)
 	}
 }
 
