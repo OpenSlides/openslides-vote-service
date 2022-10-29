@@ -7,7 +7,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY main.go main.go
-COPY cmd cmd
 COPY internal internal
 
 # Build service in seperate stage.
