@@ -9,6 +9,7 @@ import (
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
 
@@ -51,7 +52,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
 		log.Debug("End start event with error: %v", err)
 	}()
 
-	recorder := datastore.NewRecorder(v.ds)
+	recorder := dsrecorder.New(v.ds)
 	ds := dsfetch.New(recorder)
 
 	poll, err := loadPoll(ctx, ds, pollID)

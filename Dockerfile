@@ -6,13 +6,13 @@ RUN apk add git
 COPY go.mod go.sum ./
 RUN go mod download
 
+COPY main.go main.go
 COPY cmd cmd
 COPY internal internal
 
 # Build service in seperate stage.
 FROM base as builder
-RUN CGO_ENABLED=0 go build ./cmd/vote
-RUN CGO_ENABLED=0 go build ./cmd/healthcheck
+RUN CGO_ENABLED=0 go build
 
 
 # Test build.
@@ -30,7 +30,7 @@ RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
 ENV AUTH ticket
 
-CMD CompileDaemon -log-prefix=false -build="go build ./cmd/vote" -command="./vote"
+CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
 
 
 # Productive build
@@ -41,10 +41,9 @@ LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles 
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
-COPY --from=builder /root/vote .
-COPY --from=builder /root/healthcheck .
+COPY --from=builder /root/openslides-vote-service .
 EXPOSE 9013
 ENV AUTH ticket
 
-ENTRYPOINT ["/vote"]
-HEALTHCHECK CMD ["/healthcheck"]
+ENTRYPOINT ["/openslides-vote-service"]
+HEALTHCHECK CMD ["/openslides-vote-service", "health"]

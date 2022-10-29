@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,6 +19,48 @@ const (
 	httpPathInternal = "/internal/vote"
 	httpPathExternal = "/system/vote"
 )
+
+// Run starts the http service.
+func Run(ctx context.Context, addr string, auth authenticater, service *Vote) error {
+	ticketProvider := func() (<-chan time.Time, func()) {
+		ticker := time.NewTicker(time.Second)
+		return ticker.C, ticker.Stop
+	}
+
+	mux := http.NewServeMux()
+	handleStart(mux, service)
+	handleStop(mux, service)
+	handleClear(mux, service)
+	handleClearAll(mux, service)
+	handleVote(mux, service, auth)
+	handleVoted(mux, service, auth)
+	handleVoteCount(mux, service, ticketProvider)
+	handleHealth(mux)
+
+	srv := &http.Server{
+		Addr:        addr,
+		Handler:     mux,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+
+	// Shutdown logic in separate goroutine.
+	wait := make(chan error)
+	go func() {
+		<-ctx.Done()
+		if err := srv.Shutdown(context.Background()); err != nil {
+			wait <- fmt.Errorf("HTTP server shutdown: %w", err)
+			return
+		}
+		wait <- nil
+	}()
+
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		// TODO EXTERNAL ERROR
+		return fmt.Errorf("HTTP Server failed: %v", err)
+	}
+
+	return <-wait
+}
 
 type starter interface {
 	Start(ctx context.Context, pollID int) error
