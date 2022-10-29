@@ -52,19 +52,19 @@ func main() {
 	kongCTX := kong.Parse(&cli, kong.UsageOnError())
 	switch kongCTX.Command() {
 	case "run":
-		if err := run(ctx); err != nil {
+		if err := contextDone(run(ctx)); err != nil {
 			handleError(err)
 			os.Exit(1)
 		}
 
 	case "build-doc":
-		if err := buildDocu(); err != nil {
+		if err := contextDone(buildDocu()); err != nil {
 			handleError(err)
 			os.Exit(1)
 		}
 
 	case "health":
-		if err := health(ctx); err != nil {
+		if err := contextDone(health(ctx)); err != nil {
 			handleError(err)
 			os.Exit(1)
 		}
@@ -180,11 +180,19 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	return service, nil
 }
 
+// contextDone returns an empty error if the context is done or exceeded
+func contextDone(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
+}
+
 // handleError handles an error.
 //
 // Ignores context closed errors.
 func handleError(err error) {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if contextDone(err) == nil {
 		return
 	}
 
