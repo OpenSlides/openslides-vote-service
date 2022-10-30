@@ -104,7 +104,7 @@ func health(ctx context.Context) error {
 		port = "9013"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:"+port+"/system/autoupdate/health", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:"+port+"/system/vote/health", nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}

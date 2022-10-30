@@ -27,7 +27,6 @@ FROM base as development
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
-ENV AUTH ticket
 
 CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
 
@@ -42,7 +41,6 @@ LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-
 
 COPY --from=builder /root/openslides-vote-service .
 EXPOSE 9013
-ENV AUTH ticket
 
 ENTRYPOINT ["/openslides-vote-service"]
 HEALTHCHECK CMD ["/openslides-vote-service", "health"]
