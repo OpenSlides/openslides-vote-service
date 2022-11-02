@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	golog "log"
 	"net/http"
 	"os"
 	"strings"
@@ -30,7 +31,7 @@ var (
 	envBackendLong = environment.NewVariable("VOTE_BACKEND_LONG", "postgres", "The backend used for long polls.")
 
 	envRedisHost = environment.NewVariable("VOTE_REDIS_HOST", "localhost", "Host of the redis used for the fast backend.")
-	envRedisPort = environment.NewVariable("VOTE_REDIS_PORT", "6370", "Port of the redis used for the fast backend.")
+	envRedisPort = environment.NewVariable("VOTE_REDIS_PORT", "6379", "Port of the redis used for the fast backend.")
 
 	envPostgresHost     = environment.NewVariable("VOTE_DATABASE_HOST", "localhost", "Host of the postgres database used for long polls.")
 	envPostgresPort     = environment.NewVariable("VOTE_DATABASE_PORT", "5432", "Port of the postgres database used for long polls.")
@@ -136,6 +137,8 @@ func health(ctx context.Context) error {
 //
 // Returns a the service as callable.
 func initService(lookup environment.Environmenter) (func(context.Context) error, error) {
+	log.SetInfoLogger(golog.Default())
+
 	var backgroundTasks []func(context.Context, func(error))
 	listenAddr := ":" + envVotePort.Value(lookup)
 
