@@ -33,7 +33,8 @@ func New(ctx context.Context, url string, password string) (*Backend, error) {
 		return nil, fmt.Errorf("invalid connection url: %w", err)
 	}
 
-	// Set the password. It could contains letters that are not supported by ParseConfig
+	// Set the password. It could contains letters that are not supported by
+	// ParseConfig
 	conf.ConnConfig.Password = password
 
 	// Fix issue with gbBouncer. The documentation says, that this make the

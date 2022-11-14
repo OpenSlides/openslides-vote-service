@@ -3,10 +3,10 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.19
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20221029114131-5facb46630ec
-	github.com/alecthomas/kong v0.7.0
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20221114161157-a9fdb66c37a8
+	github.com/alecthomas/kong v0.7.1
 	github.com/gomodule/redigo v1.8.9
-	github.com/jackc/pgx/v5 v5.0.4
+	github.com/jackc/pgx/v5 v5.1.0
 	github.com/ory/dockertest/v3 v3.9.1
 )
 
@@ -27,10 +27,10 @@ require (
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
-	github.com/jackc/puddle/v2 v2.1.0 // indirect
+	github.com/jackc/puddle/v2 v2.1.2 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/moby/term v0.0.0-20220808134915-39b0c02b01ae // indirect
+	github.com/moby/term v0.0.0-20221105221325-4eb28fa6025c // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/opencontainers/runc v1.1.4 // indirect
@@ -40,13 +40,14 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
-	golang.org/x/crypto v0.1.0 // indirect
-	golang.org/x/mod v0.6.0 // indirect
-	golang.org/x/net v0.1.0 // indirect
+	go.uber.org/atomic v1.10.0 // indirect
+	golang.org/x/crypto v0.2.0 // indirect
+	golang.org/x/mod v0.7.0 // indirect
+	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
-	golang.org/x/tools v0.2.0 // indirect
+	golang.org/x/tools v0.3.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
