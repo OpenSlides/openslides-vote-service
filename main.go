@@ -49,6 +49,7 @@ var cli struct {
 func main() {
 	ctx, cancel := environment.InterruptContext()
 	defer cancel()
+	log.SetInfoLogger(golog.Default())
 
 	kongCTX := kong.Parse(&cli, kong.UsageOnError())
 	switch kongCTX.Command() {
@@ -100,10 +101,9 @@ func buildDocu() error {
 }
 
 func health(ctx context.Context) error {
-	port, found := os.LookupEnv("VOTE_PORT")
-	if !found {
-		port = "9013"
-	}
+	lookup := new(environment.ForProduction)
+
+	port := envVotePort.Value(lookup)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:"+port+"/system/vote/health", nil)
 	if err != nil {
@@ -137,8 +137,6 @@ func health(ctx context.Context) error {
 //
 // Returns a the service as callable.
 func initService(lookup environment.Environmenter) (func(context.Context) error, error) {
-	log.SetInfoLogger(golog.Default())
-
 	var backgroundTasks []func(context.Context, func(error))
 	listenAddr := ":" + envVotePort.Value(lookup)
 
