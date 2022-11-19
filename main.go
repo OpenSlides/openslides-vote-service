@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	golog "log"
-	"net/http"
 	"os"
-	"strings"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
@@ -43,7 +40,12 @@ var (
 var cli struct {
 	Run      struct{} `cmd:"" help:"Runs the service." default:"withargs"`
 	BuildDoc struct{} `cmd:"" help:"Build the environment documentation."`
-	Health   struct{} `cmd:"" help:"Runs a health check."`
+	Health   struct {
+		Host     string `help:"Host of the service" short:"h" default:"localhost"`
+		Port     string `help:"Port of the service" short:"p" default:"9013" env:"VOTE_PORT"`
+		UseHTTPS bool   `help:"Use https to connect to the service" short:"s"`
+		Insecure bool   `help:"Accept invalid cert" short:"k"`
+	} `cmd:"" help:"Runs a health check."`
 }
 
 func main() {
@@ -66,7 +68,7 @@ func main() {
 		}
 
 	case "health":
-		if err := contextDone(health(ctx)); err != nil {
+		if err := contextDone(vote.HealthClient(ctx, cli.Health.UseHTTPS, cli.Health.Host, cli.Health.Port, cli.Health.Insecure)); err != nil {
 			handleError(err)
 			os.Exit(1)
 		}
@@ -97,39 +99,6 @@ func buildDocu() error {
 	}
 
 	fmt.Println(doc)
-	return nil
-}
-
-func health(ctx context.Context) error {
-	lookup := new(environment.ForProduction)
-
-	port := envVotePort.Value(lookup)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:"+port+"/system/vote/health", nil)
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("sending request: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("health returned status %s", resp.Status)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading response body: %w", err)
-	}
-
-	expect := `{"healthy": true}`
-	got := strings.TrimSpace(string(body))
-	if got != expect {
-		return fmt.Errorf("got `%s`, expected `%s`", body, expect)
-	}
-
 	return nil
 }
 

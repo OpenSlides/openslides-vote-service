@@ -2,6 +2,7 @@ package vote
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -354,6 +355,52 @@ func handleHealth(mux *http.ServeMux) {
 			fmt.Fprintf(w, `{"healthy":true}`)
 		},
 	)
+}
+
+// HealthClient sends a http request to a server to fetch the health status.
+func HealthClient(ctx context.Context, useHTTPS bool, host, port string, insecure bool) error {
+	proto := "http"
+	if useHTTPS {
+		proto = "https"
+	}
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		"GET",
+		fmt.Sprintf("%s://%s:%s/system/vote/health", proto, host, port),
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	if insecure {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("health returned status %s", resp.Status)
+	}
+
+	var body struct {
+		Healthy bool `json:"healthy"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("reading and parsing response body: %w", err)
+	}
+
+	if !body.Healthy {
+		return fmt.Errorf("Server returned unhealthy response")
+	}
+
+	return nil
 }
 
 func pollID(r *http.Request) (int, error) {
