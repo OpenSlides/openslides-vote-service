@@ -6,12 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-vote-service/internal/log"
 )
+
+// Decrypter decryptes the incomming votes.
+type Decrypter interface {
+	Start(ctx context.Context, pollID string) (pubKey []byte, pubKeySig []byte, err error)
+	Stop(ctx context.Context, pollID string, voteList [][]byte) (decryptedContent, signature []byte, err error)
+	Clear(ctx context.Context, pollID string) error
+	PublicMainKey(ctx context.Context) ([]byte, error)
+}
 
 // Vote holds the state of the service.
 //
@@ -20,14 +29,16 @@ type Vote struct {
 	fastBackend Backend
 	longBackend Backend
 	ds          datastore.Getter
+	decrypter   Decrypter
 }
 
 // New creates an initializes vote service.
-func New(fast, long Backend, ds datastore.Getter) *Vote {
+func New(fast, long Backend, ds datastore.Getter, decrypter Decrypter) *Vote {
 	return &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		ds:          ds,
+		decrypter:   decrypter,
 	}
 }
 
@@ -41,12 +52,26 @@ func (v *Vote) backend(p pollConfig) Backend {
 	return backend
 }
 
+func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (string, error) {
+	rawURL, err := fetch.Organization_Url(1).Value(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting organization url: %v", err)
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid url %s: %w", rawURL, err)
+	}
+
+	return fmt.Sprintf("%s/%d", parsed.Hostname(), id), nil
+}
+
 // Start an electronic vote.
 //
 // This function is idempotence. If you call it with the same input, you will
 // get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
-func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
+func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig []byte, err error) {
 	log.Debug("Receive start event for poll %d", pollID)
 	defer func() {
 		log.Debug("End start event with error: %v", err)
@@ -57,76 +82,142 @@ func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
 
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("loading poll: %w", err)
+		return nil, nil, fmt.Errorf("loading poll: %w", err)
 	}
 
-	if poll.pollType == "analog" {
-		return MessageError{ErrInvalid, "Analog poll can not be started"}
+	if poll.ptype == "analog" {
+		return nil, nil, MessageError{ErrInvalid, "Analog poll can not be started"}
 	}
 
 	if err := poll.preload(ctx, ds); err != nil {
-		return fmt.Errorf("preloading data: %w", err)
+		return nil, nil, fmt.Errorf("preloading data: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
 	backend := v.backend(poll)
 	if err := backend.Start(ctx, pollID); err != nil {
-		return fmt.Errorf("starting poll in the backend: %w", err)
+		return nil, nil, fmt.Errorf("starting poll in the backend: %w", err)
 	}
 
-	return nil
+	if poll.ptype != "cryptographic" {
+		return nil, nil, nil
+	}
+
+	defer func() {
+		if err != nil {
+			backend.Clear(ctx, pollID)
+		}
+	}()
+
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building qualified id: %w", err)
+	}
+
+	pubkey, pubKeySig, err = v.decrypter.Start(ctx, qid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("starting poll in decrypter: %w", err)
+	}
+
+	return pubkey, pubKeySig, nil
+}
+
+// StopResult is the return value from vote.Stop.
+type StopResult struct {
+	Votes     json.RawMessage
+	Signature []byte
+	UserIDs   []int
+	Invalid   map[int]string
 }
 
 // Stop ends a poll.
 //
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
-func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
+func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	log.Debug("Receive stop event for poll %d", pollID)
-	defer func() {
-		log.Debug("End stop event with error: %v", err)
-	}()
 
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("loading poll: %w", err)
+		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
 	backend := v.backend(poll)
-	objects, userIDs, err := backend.Stop(ctx, pollID)
+	ballots, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
+			return StopResult{}, MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
 		}
 
-		return fmt.Errorf("fetching vote objects: %w", err)
+		return StopResult{}, fmt.Errorf("fetching vote objects: %w", err)
 	}
 
-	// Convert vote objects to json.RawMessage
-	encodableObjects := make([]json.RawMessage, len(objects))
-	for i := range objects {
-		encodableObjects[i] = objects[i]
+	switch poll.ptype {
+	case "cryptographic":
+		return v.stopCrypto(ctx, poll, ds, ballots, userIDs)
+	default:
+		return stopNonCrypto(ballots, userIDs)
+	}
+}
+
+func stopNonCrypto(ballots [][]byte, userIDs []int) (StopResult, error) {
+	encodable := make([]json.RawMessage, len(ballots))
+	for i := range ballots {
+		encodable[i] = ballots[i]
 	}
 
-	if userIDs == nil {
-		userIDs = []int{}
+	votes, err := json.Marshal(encodable)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("encode votes to list: %w", err)
 	}
 
-	out := struct {
-		Votes []json.RawMessage `json:"votes"`
-		Users []int             `json:"user_ids"`
-	}{
-		encodableObjects,
-		userIDs,
+	return StopResult{Votes: votes, UserIDs: userIDs}, nil
+}
+
+func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetch, ballots [][]byte, userIDs []int) (StopResult, error) {
+	qid, err := v.qualifiedID(ctx, ds, poll.id)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("building qualified id: %w", err)
 	}
 
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		return fmt.Errorf("encoding and sending objects: %w", err)
+	voteValue := make([][]byte, len(ballots))
+	for i := range ballots {
+		// This uses the type `[]byte` to decode a base64 value.
+		var vote struct {
+			Value []byte `json:"value"`
+		}
+		if err := json.Unmarshal(ballots[i], &vote); err != nil {
+			return StopResult{}, fmt.Errorf("decoding stored vote: %w", err)
+		}
+
+		voteValue[i] = vote.Value
 	}
 
-	return nil
+	decrypted, signature, err := v.decrypter.Stop(ctx, qid, voteValue)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("decrypting votes: %w", err)
+	}
+
+	var decryptedContent struct {
+		ID    string `json:"id"`
+		Votes []struct {
+			Votes ballotValue `json:"votes"`
+		} `json:"votes"`
+	}
+	if err := json.Unmarshal(decrypted, &decryptedContent); err != nil {
+		return StopResult{}, fmt.Errorf("encoding decrypted votes: %w", err)
+	}
+
+	invalid := make(map[int]string)
+	for i, vote := range decryptedContent.Votes {
+		if validation := validate(poll, vote.Votes); validation != "" {
+			invalid[i] = validation
+		}
+	}
+
+	return StopResult{Votes: decrypted, Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
 }
 
 // Clear removes all knowlage of a poll.
@@ -144,10 +235,26 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
+	ds := dsfetch.New(v.ds)
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return fmt.Errorf("building qualified id: %w", err)
+	}
+
+	if v.decrypter == nil {
+		return nil
+	}
+
+	if err := v.decrypter.Clear(ctx, qid); err != nil {
+		return fmt.Errorf("clearing decrypter: %w", err)
+	}
+
 	return nil
 }
 
 // ClearAll removes all knowlage of all polls and the datastore-cache.
+//
+// This does not work for the vote decrypter.
 func (v *Vote) ClearAll(ctx context.Context) (err error) {
 	log.Debug("Receive clearAll event")
 	defer func() {
@@ -174,11 +281,8 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 }
 
 // Vote validates and saves the vote.
-func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (err error) {
+func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
 	log.Debug("Receive vote event for poll %d from user %d", pollID, requestUser)
-	defer func() {
-		log.Debug("End vote event with error: %v", err)
-	}()
 
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
@@ -187,13 +291,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 	}
 	log.Debug("Poll config: %v", poll)
 
-	presentMeetings, err := ds.User_IsPresentInMeetingIDs(requestUser).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching is present in meetings: %w", err)
-	}
-
-	if !isPresent(poll.meetingID, presentMeetings) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", poll.meetingID)}
+	if err := ensurePresent(ctx, ds, poll.meetingID, requestUser); err != nil {
+		return err
 	}
 
 	var vote ballot
@@ -206,74 +305,39 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		voteUser = requestUser
 	}
 
-	if voteUser == 0 {
-		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	if err := ensureVoteUser(ctx, ds, poll, voteUser, requestUser); err != nil {
+		return err
 	}
 
-	if err := vote.validate(poll); err != nil {
-		return fmt.Errorf("validating vote: %w", err)
-	}
-
-	backend := v.backend(poll)
-
-	if voteUser != requestUser {
-		delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
-		if err != nil {
-			return fmt.Errorf("fetching user enable vote delegation: %w", err)
+	var voteWeight string
+	if poll.ptype != "cryptographic" {
+		if validation := validate(poll, vote.Value); validation != "" {
+			return MessageError{ErrInvalid, validation}
 		}
 
-		if !delegationActivated {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
-		}
-
-		delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
-		if err != nil {
-			// If the user from the request body does not exist, then delegation
-			// will be 0. This case is handled below.
-			var errDoesNotExist dsfetch.DoesNotExistError
-			if !errors.As(err, &errDoesNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+		// voteData.Weight is a DecimalField with 6 zeros.
+		if ds.Meeting_UsersEnableVoteWeight(poll.meetingID).ErrorLater(ctx) {
+			voteWeight = ds.User_VoteWeight(voteUser, poll.meetingID).ErrorLater(ctx)
+			if voteWeight == "" {
+				voteWeight = ds.User_DefaultVoteWeight(voteUser).ErrorLater(ctx)
 			}
 		}
-
-		if delegation != requestUser {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
+		if err := ds.Err(); err != nil {
+			return fmt.Errorf("getting vote weight: %w", err)
 		}
-		log.Debug("Vote delegation")
-	}
 
-	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
-	}
-
-	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", voteUser)}
-	}
-
-	// voteData.Weight is a DecimalField with 6 zeros.
-	var voteWeight string
-	if ds.Meeting_UsersEnableVoteWeight(poll.meetingID).ErrorLater(ctx) {
-		voteWeight = ds.User_VoteWeight(voteUser, poll.meetingID).ErrorLater(ctx)
 		if voteWeight == "" {
-			voteWeight = ds.User_DefaultVoteWeight(voteUser).ErrorLater(ctx)
+			voteWeight = "1.000000"
 		}
-	}
-	if err := ds.Err(); err != nil {
-		return fmt.Errorf("getting vote weight: %w", err)
-	}
 
-	if voteWeight == "" {
-		voteWeight = "1.000000"
+		log.Debug("Using voteWeight %s", voteWeight)
 	}
-
-	log.Debug("Using voteWeight %s", voteWeight)
 
 	voteData := struct {
 		RequestUser int             `json:"request_user_id,omitempty"`
 		VoteUser    int             `json:"vote_user_id,omitempty"`
 		Value       json.RawMessage `json:"value"`
-		Weight      string          `json:"weight"`
+		Weight      string          `json:"weight,omitempty"`
 	}{
 		requestUser,
 		voteUser,
@@ -281,7 +345,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		voteWeight,
 	}
 
-	if poll.pollType == "pseudoanonymous" {
+	if poll.ptype != "named" {
 		voteData.RequestUser = 0
 		voteData.VoteUser = 0
 	}
@@ -291,7 +355,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
 
-	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
+	if err := v.backend(poll).Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -308,6 +372,65 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (
 		}
 
 		return fmt.Errorf("save vote: %w", err)
+	}
+
+	return nil
+}
+
+// ensurePresent makes sure that the user sending the vote request is present.
+func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) error {
+	presentMeetings, err := ds.User_IsPresentInMeetingIDs(user).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching is present in meetings: %w", err)
+	}
+
+	for _, present := range presentMeetings {
+		if present == meetingID {
+			return nil
+		}
+	}
+	return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", meetingID)}
+}
+
+// ensureVoteUser makes sure the user from the vote:
+// * is not anonymous,
+// * the delegation is correct and
+// * is in the correct group
+func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, voteUser, requestUser int) error {
+	if voteUser == 0 {
+		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	}
+
+	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+	}
+
+	if !equalElement(groupIDs, poll.groups) {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not in a group that is allowed to vote", voteUser)}
+	}
+
+	if voteUser == requestUser {
+		return nil
+	}
+
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching user enable vote delegation: %w", err)
+	}
+
+	if !delegationActivated {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
+	}
+
+	log.Debug("Vote delegation")
+	delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+	}
+
+	if delegation != requestUser {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
 	}
 
 	return nil
@@ -424,6 +547,15 @@ func (v *Vote) VoteCount(ctx context.Context) (map[int]int, error) {
 	return count, nil
 }
 
+// CryptoPublicMainKey returns the public main key from vote-decrypt.
+func (v *Vote) CryptoPublicMainKey(ctx context.Context) ([]byte, error) {
+	if v.decrypter == nil {
+		return nil, fmt.Errorf("decrypt service is not configured")
+	}
+
+	return v.decrypter.PublicMainKey(ctx)
+}
+
 // Backend is a storage for the poll options.
 type Backend interface {
 	// Start opens the poll for votes. To start a poll that is already started
@@ -467,7 +599,7 @@ type pollConfig struct {
 	id                int
 	meetingID         int
 	backend           string
-	pollType          string
+	ptype             string
 	method            string
 	groups            []int
 	globalYes         bool
@@ -484,7 +616,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 	p := pollConfig{id: pollID}
 	ds.Poll_MeetingID(pollID).Lazy(&p.meetingID)
 	ds.Poll_Backend(pollID).Lazy(&p.backend)
-	ds.Poll_Type(pollID).Lazy(&p.pollType)
+	ds.Poll_Type(pollID).Lazy(&p.ptype)
 	ds.Poll_Pollmethod(pollID).Lazy(&p.method)
 	ds.Poll_EntitledGroupIDs(pollID).Lazy(&p.groups)
 	ds.Poll_GlobalYes(pollID).Lazy(&p.globalYes)
@@ -590,7 +722,7 @@ func (v ballot) String() string {
 	return string(bs)
 }
 
-func (v *ballot) validate(poll pollConfig) error {
+func validate(poll pollConfig, v ballotValue) string {
 	if poll.minAmount == 0 {
 		poll.minAmount = 1
 	}
@@ -614,75 +746,74 @@ func (v *ballot) validate(poll pollConfig) error {
 		"A": poll.globalAbstain,
 	}
 
-	// Helper "error" that is not an error. Should help readability.
-	var voteIsValid error
+	var voteIsValid string
 
 	switch poll.method {
 	case "Y", "N":
-		switch v.Value.Type() {
+		switch v.Type() {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
-			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Global vote %s is not enabled", v.Value.str)
+			if !allowedGlobal[v.str] {
+				return fmt.Sprintf("Global vote %s is not enabled", v.str)
 			}
 			return voteIsValid
 
 		case ballotValueOptionAmount:
 			var sumAmount int
-			for optionID, amount := range v.Value.optionAmount {
+			for optionID, amount := range v.optionAmount {
 				if amount < 0 {
-					return InvalidVote("Your vote for option %d has to be >= 0", optionID)
+					return fmt.Sprintf("Your vote for option %d has to be >= 0", optionID)
 				}
 
 				if amount > poll.maxVotesPerOption {
-					return InvalidVote("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
+					return fmt.Sprintf("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
 				}
 
 				if !allowedOptions[optionID] {
-					return InvalidVote("Option_id %d does not belong to the poll", optionID)
+					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
 				}
 
 				sumAmount += amount
 			}
 
 			if sumAmount < poll.minAmount || sumAmount > poll.maxAmount {
-				return InvalidVote("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
+				return fmt.Sprintf("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
 			}
 
 			return voteIsValid
 
 		default:
-			return MessageError{ErrInvalid, "Your vote has a wrong format"}
+			return fmt.Sprintf("Your vote has a wrong format for poll method Y or N")
 		}
 
 	case "YN", "YNA":
-		switch v.Value.Type() {
+		switch v.Type() {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
-			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Global vote %s is not enabled", v.Value.str)
+			if !allowedGlobal[v.str] {
+				return fmt.Sprintf("Global vote %s is not enabled", v.str)
 			}
 			return voteIsValid
 
 		case ballotValueOptionString:
-			for optionID, yna := range v.Value.optionYNA {
+			for optionID, yna := range v.optionYNA {
 				if !allowedOptions[optionID] {
-					return InvalidVote("Option_id %d does not belong to the poll", optionID)
+					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
 				}
 
 				if yna != "Y" && yna != "N" && (yna != "A" || poll.method != "YNA") {
 					// Valid that given data matches poll method.
-					return InvalidVote("Data for option %d does not fit the poll method.", optionID)
+					return fmt.Sprintf("Data for option %d does not fit the poll method.", optionID)
 				}
 			}
 			return voteIsValid
 
 		default:
-			return InvalidVote("Your vote has a wrong format")
+			return fmt.Sprintf("Your vote has a wrong format for poll method YN or YNA")
 		}
 
 	default:
-		return InvalidVote("Your vote has a wrong format")
+		return fmt.Sprintf("Invalid poll method")
 	}
 }
 
@@ -742,15 +873,6 @@ func (v *ballotValue) Type() int {
 	}
 
 	return ballotValueUnknown
-}
-
-func isPresent(meetingID int, presentMeetings []int) bool {
-	for _, present := range presentMeetings {
-		if present == meetingID {
-			return true
-		}
-	}
-	return false
 }
 
 // equalElement returns true, if g1 and g2 have at lease one equal element.

@@ -36,6 +36,7 @@ func Run(ctx context.Context, lst net.Listener, auth authenticater, service *Vot
 	handleVote(mux, service, auth)
 	handleVoted(mux, service, auth)
 	handleVoteCount(mux, service, ticketProvider)
+	handlePublicMainKey(mux, service)
 	handleHealth(mux)
 
 	srv := &http.Server{
@@ -63,7 +64,7 @@ func Run(ctx context.Context, lst net.Listener, auth authenticater, service *Vot
 }
 
 type starter interface {
-	Start(ctx context.Context, pollID int) error
+	Start(ctx context.Context, pollID int) ([]byte, []byte, error)
 }
 
 func handleStart(mux *http.ServeMux, start starter) {
@@ -84,8 +85,21 @@ func handleStart(mux *http.ServeMux, start starter) {
 				return
 			}
 
-			if err := start.Start(r.Context(), id); err != nil {
+			pubkey, pubKeySig, err := start.Start(r.Context(), id)
+			if err != nil {
 				handleError(w, err, true)
+				return
+			}
+
+			content := struct {
+				PubKey    []byte `json:"public_key"`
+				PubKeySig []byte `json:"public_key_sig"`
+			}{
+				pubkey,
+				pubKeySig,
+			}
+			if err := json.NewEncoder(w).Encode(content); err != nil {
+				http.Error(w, MessageError{ErrInternal, err.Error()}.Error(), 500)
 				return
 			}
 		},
@@ -95,7 +109,7 @@ func handleStart(mux *http.ServeMux, start starter) {
 // stopper stops a poll. It sets the state of the poll, so that no other user
 // can vote. It writes the vote results to the writer.
 type stopper interface {
-	Stop(ctx context.Context, pollID int, w io.Writer) error
+	Stop(ctx context.Context, pollID int) (StopResult, error)
 }
 
 func handleStop(mux *http.ServeMux, stop stopper) {
@@ -116,8 +130,38 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			if err := stop.Stop(r.Context(), id, w); err != nil {
+			stopResult, err := stop.Stop(r.Context(), id)
+			if err != nil {
 				handleError(w, err, true)
+				return
+			}
+
+			// Encode the votes object separatly to make it possible for the
+			// backend (python) to read its original value.
+			encodedVotes, err := json.Marshal(stopResult.Votes)
+			if err != nil {
+				handleError(w, fmt.Errorf("encoding votes: %w", err), true)
+				return
+			}
+
+			if stopResult.UserIDs == nil {
+				stopResult.UserIDs = []int{}
+			}
+
+			out := struct {
+				Votes     string         `json:"votes"`
+				Signature []byte         `json:"signature"`
+				Users     []int          `json:"user_ids"`
+				Invalid   map[int]string `json:"invalid,omitempty"`
+			}{
+				string(encodedVotes),
+				stopResult.Signature,
+				stopResult.UserIDs,
+				stopResult.Invalid,
+			}
+
+			if err := json.NewEncoder(w).Encode(out); err != nil {
+				handleError(w, fmt.Errorf("encoding and sending objects: %w", err), true)
 				return
 			}
 		},
@@ -339,6 +383,31 @@ func handleVoteCount(mux *http.ServeMux, voteCounter voteCounter, eventer func()
 				case <-r.Context().Done():
 					return
 				}
+			}
+		},
+	)
+}
+
+type publicKeyer interface {
+	CryptoPublicMainKey(ctx context.Context) ([]byte, error)
+}
+
+func handlePublicMainKey(mux *http.ServeMux, keyer publicKeyer) {
+	mux.HandleFunc(
+		httpPathInternal+"/public_main_key",
+		func(w http.ResponseWriter, r *http.Request) {
+			log.Info("Receiving public main key request")
+			w.Header().Set("Content-Type", "application/json")
+
+			key, err := keyer.CryptoPublicMainKey(r.Context())
+			if err != nil {
+				handleError(w, err, true)
+				return
+			}
+
+			if err := json.NewEncoder(w).Encode(key); err != nil {
+				handleError(w, err, true)
+				return
 			}
 		},
 	)
