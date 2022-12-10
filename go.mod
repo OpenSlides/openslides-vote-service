@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.19
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20221119101955-2017de822931
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20221210162918-54f29da77c7e
 	github.com/OpenSlides/vote-decrypt v0.0.0-20221012082621-2bbd25022db1
 	github.com/alecthomas/kong v0.7.1
 	github.com/gomodule/redigo v1.8.9
@@ -22,7 +22,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
@@ -32,7 +32,7 @@ require (
 	github.com/jackc/puddle/v2 v2.1.2 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	github.com/moby/term v0.0.0-20221105221325-4eb28fa6025c // indirect
+	github.com/moby/term v0.0.0-20221205130635-1aeaba878587 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/opencontainers/runc v1.1.4 // indirect
@@ -47,7 +47,7 @@ require (
 	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.2.0 // indirect
+	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/genproto v0.0.0-20221010155953-15ba04fc1c0e // indirect
