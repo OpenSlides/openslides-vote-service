@@ -6,7 +6,7 @@ require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230205113522-64e8a845d31c
 	github.com/alecthomas/kong v0.7.1
 	github.com/gomodule/redigo v1.8.9
-	github.com/jackc/pgx/v5 v5.3.0
+	github.com/jackc/pgx/v5 v5.3.1
 	github.com/ory/dockertest/v3 v3.9.1
 )
 
