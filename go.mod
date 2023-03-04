@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230205113522-64e8a845d31c
-	github.com/OpenSlides/vote-decrypt v0.0.0-20221012082621-2bbd25022db1
+	github.com/OpenSlides/vote-decrypt v0.0.0-20230304083156-533a12cfc9f0
 	github.com/alecthomas/kong v0.7.1
 	github.com/gomodule/redigo v1.8.9
 	github.com/jackc/pgx/v5 v5.3.1
@@ -24,7 +24,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -49,8 +48,8 @@ require (
 	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
-	google.golang.org/genproto v0.0.0-20221010155953-15ba04fc1c0e // indirect
-	google.golang.org/grpc v1.50.0 // indirect
+	google.golang.org/genproto v0.0.0-20230303212802-e74f57abe488 // indirect
+	google.golang.org/grpc v1.53.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
