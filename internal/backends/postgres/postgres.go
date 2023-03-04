@@ -428,7 +428,7 @@ func (u *userIDList) add(userID int32) error {
 	ints := []int32(*u)
 	idx := sort.Search(len(ints), func(i int) bool { return ints[i] >= userID })
 	if idx < len(ints) && ints[idx] == userID {
-		return doupleVoteError{fmt.Errorf("User has already voted")}
+		return doubleVoteError{fmt.Errorf("User has already voted")}
 	}
 
 	// Insert the index at the correct order.
@@ -454,11 +454,11 @@ type doesNotExistError struct {
 
 func (doesNotExistError) DoesNotExist() {}
 
-type doupleVoteError struct {
+type doubleVoteError struct {
 	error
 }
 
-func (doupleVoteError) DoupleVote() {}
+func (doubleVoteError) DoubleVote() {}
 
 type stoppedError struct {
 	error

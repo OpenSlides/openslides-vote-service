@@ -361,8 +361,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 			return ErrNotExists
 		}
 
-		var errDoupleVote interface{ DoupleVote() }
-		if errors.As(err, &errDoupleVote) {
+		var errDoubleVote interface{ DoubleVote() }
+		if errors.As(err, &errDoubleVote) {
 			return ErrDoubleVote
 		}
 
@@ -566,7 +566,7 @@ type Backend interface {
 	// Vote saves vote data into the backend. The backend has to check that the
 	// poll is started and the userID has not voted before.
 	//
-	// If the user has already voted, an Error with method `DoupleVote()` has to
+	// If the user has already voted, an Error with method `DoubleVote()` has to
 	// be returned. If the poll has not started, an error with the method
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
 	//

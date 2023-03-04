@@ -434,8 +434,8 @@ func TestHandleVote(t *testing.T) {
 			t.Fatalf("decoding resp body: %v", err)
 		}
 
-		if body.Error != "douple-vote" {
-			t.Errorf("Got error `%s`, expected `douple-vote`", body.Error)
+		if body.Error != "double-vote" {
+			t.Errorf("Got error `%s`, expected `double-vote`", body.Error)
 		}
 	})
 

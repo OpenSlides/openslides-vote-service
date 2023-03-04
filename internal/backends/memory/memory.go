@@ -64,7 +64,7 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	}
 
 	if _, ok := b.voted[pollID][userID]; ok {
-		return doupleVoteError{fmt.Errorf("user has already voted")}
+		return doubleVoteError{fmt.Errorf("user has already voted")}
 	}
 
 	b.voted[pollID][userID] = true
@@ -158,11 +158,11 @@ type doesNotExistError struct {
 
 func (doesNotExistError) DoesNotExist() {}
 
-type doupleVoteError struct {
+type doubleVoteError struct {
 	error
 }
 
-func (doupleVoteError) DoupleVote() {}
+func (doubleVoteError) DoubleVote() {}
 
 type stoppedError struct {
 	error
