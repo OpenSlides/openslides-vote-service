@@ -20,7 +20,7 @@ func startPostgres(t *testing.T) (string, func()) {
 
 	runOpts := dockertest.RunOptions{
 		Repository: "postgres",
-		Tag:        "11",
+		Tag:        "13",
 		Env: []string{
 			"POSTGRES_USER=postgres",
 			"POSTGRES_PASSWORD=password",
@@ -44,8 +44,8 @@ func TestImplementBackendInterface(t *testing.T) {
 	port, close := startPostgres(t)
 	defer close()
 
-	addr := fmt.Sprintf("postgres://postgres@localhost:%s/database", port)
-	p, err := postgres.New(context.Background(), addr, "password")
+	addr := fmt.Sprintf(`user=postgres password='password' host=localhost port=%s dbname=database`, port)
+	p, err := postgres.New(context.Background(), addr)
 	if err != nil {
 		t.Fatalf("Creating postgres backend returned: %v", err)
 	}

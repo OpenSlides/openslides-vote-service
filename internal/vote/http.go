@@ -417,7 +417,6 @@ func handleHealth(mux *http.ServeMux) {
 	mux.HandleFunc(
 		httpPathExternal+"/health",
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Info("Receiving health request")
 			w.Header().Set("Content-Type", "application/json")
 
 			fmt.Fprintf(w, `{"healthy":true}`)
