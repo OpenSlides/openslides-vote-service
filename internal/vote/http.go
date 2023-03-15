@@ -91,6 +91,11 @@ func handleStart(mux *http.ServeMux, start starter) {
 				return
 			}
 
+			if pubkey == nil && pubKeySig == nil {
+				// Early exit for non crypto polls.
+				return
+			}
+
 			content := struct {
 				PubKey    []byte `json:"public_key"`
 				PubKeySig []byte `json:"public_key_sig"`
@@ -136,25 +141,17 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			// Encode the votes object separatly to make it possible for the
-			// backend (python) to read its original value.
-			encodedVotes, err := json.Marshal(stopResult.Votes)
-			if err != nil {
-				handleError(w, fmt.Errorf("encoding votes: %w", err), true)
-				return
-			}
-
 			if stopResult.UserIDs == nil {
 				stopResult.UserIDs = []int{}
 			}
 
 			out := struct {
-				Votes     string         `json:"votes"`
-				Signature []byte         `json:"signature"`
-				Users     []int          `json:"user_ids"`
-				Invalid   map[int]string `json:"invalid,omitempty"`
+				Votes     []json.RawMessage `json:"votes"` // TODO: the type has to be string.
+				Signature []byte            `json:"signature,omitempty"`
+				Users     []int             `json:"user_ids"`
+				Invalid   map[int]string    `json:"invalid,omitempty"`
 			}{
-				string(encodedVotes),
+				stopResult.Votes,
 				stopResult.Signature,
 				stopResult.UserIDs,
 				stopResult.Invalid,

@@ -126,7 +126,7 @@ type stopperStub struct {
 	id        int
 	expectErr error
 
-	expectVotes       json.RawMessage
+	expectVotes       []json.RawMessage
 	expectedSignature []byte
 	expectedUserIDs   []int
 }
@@ -171,7 +171,7 @@ func TestHandleStop(t *testing.T) {
 	})
 
 	t.Run("Valid", func(t *testing.T) {
-		stopper.expectVotes = []byte(`"some values"`)
+		stopper.expectVotes = []json.RawMessage{([]byte(`"some values"`))}
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -184,7 +184,7 @@ func TestHandleStop(t *testing.T) {
 			t.Errorf("Stopper was called with id %d, expected 1", stopper.id)
 		}
 
-		expect := `{"votes":"\"some values\"","signature":null,"user_ids":[]}`
+		expect := `{"votes":["some values"],"user_ids":[]}`
 		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
 			t.Errorf("Got body `%s`, expected `%s`", trimed, expect)
 		}
