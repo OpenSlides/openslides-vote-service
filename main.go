@@ -39,7 +39,7 @@ var (
 	envPostgresDatabase = environment.NewVariable("VOTE_DATABASE_NAME", "openslides", "")
 	envPostgresPassword = environment.NewSecret("postgres_password", "Password of the postgres database used for long polls.")
 
-	envVoteDecryptService = environment.NewVariable("VOTE_DECRYPT_SERVICE", "localhost:9014", "Host and port of the decrypt service.")
+	envVoteDecryptService = environment.NewVariable("VOTE_DECRYPT_SERVICE", "", "Host and port of the decrypt service. Empty string to disable this feature.")
 )
 
 var cli struct {
@@ -147,11 +147,15 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 			return fmt.Errorf("start long backend: %w", err)
 		}
 
-		decrypter, close, err := grpc.NewClient(decryptAddr)
-		if err != nil {
-			return fmt.Errorf("connection to vote decrypt service via grpc: %w", err)
+		var decrypter *grpc.Client
+		if decryptAddr != "" {
+			decr, close, err := grpc.NewClient(decryptAddr)
+			if err != nil {
+				return fmt.Errorf("connection to vote decrypt service via grpc: %w", err)
+			}
+			defer close()
+			decrypter = decr
 		}
-		defer close()
 
 		voteService := vote.New(fastBackend, longBackend, datastoreService, decrypter)
 
