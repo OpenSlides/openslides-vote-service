@@ -402,7 +402,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	}
 
 	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not in a group that is allowed to vote", voteUser)}
+		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote. He is not in an entitled group", voteUser)}
 	}
 
 	if voteUser == requestUser {

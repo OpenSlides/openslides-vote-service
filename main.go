@@ -147,7 +147,7 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 			return fmt.Errorf("start long backend: %w", err)
 		}
 
-		var decrypter *grpc.Client
+		var decrypter vote.Decrypter
 		if decryptAddr != "" {
 			decr, close, err := grpc.NewClient(decryptAddr)
 			if err != nil {
