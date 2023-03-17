@@ -47,7 +47,7 @@ func (err TypeError) Type() string {
 		return "invalid"
 
 	case ErrDoubleVote:
-		return "douple-vote"
+		return "double-vote"
 
 	case ErrNotAllowed:
 		return "not-allowed"

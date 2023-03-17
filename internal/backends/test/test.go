@@ -131,9 +131,9 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Fatalf("Second vote did not return an error")
 			}
 
-			var errDoupleVote interface{ DoupleVote() }
-			if !errors.As(err, &errDoupleVote) {
-				t.Fatalf("Vote has to return a error with method DoupleVote. Got: %v", err)
+			var errDoubleVote interface{ DoubleVote() }
+			if !errors.As(err, &errDoubleVote) {
+				t.Fatalf("Vote has to return a error with method DoubleVote. Got: %v", err)
 			}
 		})
 
@@ -392,7 +392,6 @@ func Backend(t *testing.T, backend vote.Backend) {
 					defer wg.Done()
 
 					err := backend.Vote(context.Background(), pollID, uid, []byte("vote"))
-
 					if err != nil {
 						var errStopped interface{ Stopped() }
 						if errors.As(err, &errStopped) {
@@ -405,7 +404,6 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 						t.Errorf("Vote %d returned undexpected error: %v", uid, err)
 					}
-
 				}(i + 1)
 			}
 
@@ -418,7 +416,6 @@ func Backend(t *testing.T, backend vote.Backend) {
 					defer wg.Done()
 
 					obj, userIDs, err := backend.Stop(context.Background(), pollID)
-
 					if err != nil {
 						t.Errorf("Stop returned undexpected error: %v", err)
 						return

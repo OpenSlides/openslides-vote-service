@@ -143,7 +143,7 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	case 2:
 		return stoppedError{fmt.Errorf("poll is stopped")}
 	case 3:
-		return doupleVoteError{fmt.Errorf("user has voted")}
+		return doubleVoteError{fmt.Errorf("user has voted")}
 	default:
 		return nil
 	}
@@ -326,11 +326,11 @@ type doesNotExistError struct {
 
 func (doesNotExistError) DoesNotExist() {}
 
-type doupleVoteError struct {
+type doubleVoteError struct {
 	error
 }
 
-func (doupleVoteError) DoupleVote() {}
+func (doubleVoteError) DoubleVote() {}
 
 type stoppedError struct {
 	error
