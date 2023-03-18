@@ -287,8 +287,8 @@ func TestVoteStop(t *testing.T) {
 		votes := stopResult.Votes
 		userIDs := stopResult.UserIDs
 
-		expected := [][]byte{[]byte(`{"value":"polldata1"}`), []byte(`{"value":"polldata2"}`)}
-		if !reflect.DeepEqual(votes, expected) {
+		expected := `[{"value":"polldata1"},{"value":"polldata2"}]`
+		if votes != expected {
 			t.Errorf("Got\n`%s`, expected\n`%s`", votes, expected)
 		}
 
@@ -317,8 +317,8 @@ func TestVoteStop(t *testing.T) {
 		votes := stopResult.Votes
 		userIDs := stopResult.UserIDs
 
-		if len(votes) != 0 {
-			t.Errorf("Got votes %s, expected []", votes)
+		if votes != `[]` {
+			t.Errorf("Got votes `%s`, expected `[]`", votes)
 		}
 
 		if len(userIDs) != 0 {
@@ -357,7 +357,7 @@ func TestVoteStopCrypto(t *testing.T) {
 	}
 
 	expected := vote.StopResult{
-		Votes:     [][]byte{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"N"}]}`)},
+		Votes:     `{"id":"/1","votes":[{"votes":"Y"},{"votes":"N"}]}`,
 		Signature: []byte("signature"),
 		UserIDs:   []int{1, 2},
 		Invalid:   map[int]string{},
@@ -398,7 +398,7 @@ func TestVoteStopCryptoInvalid(t *testing.T) {
 	}
 
 	expected := vote.StopResult{
-		Votes:     [][]byte{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"Invalid"}]}`)},
+		Votes:     `{"id":"/1","votes":[{"votes":"Y"},{"votes":"Invalid"}]}`,
 		Signature: []byte("signature"),
 		UserIDs:   []int{1, 2},
 		Invalid:   map[int]string{1: "Global vote Invalid is not enabled"},

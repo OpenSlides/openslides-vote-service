@@ -119,7 +119,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey, pubKeySig []byte,
 
 // StopResult is the return value from vote.Stop.
 type StopResult struct {
-	Votes     [][]byte // TODO: This has to be a string so the backend can validate the signature.
+	Votes     string
 	Signature []byte
 	UserIDs   []int
 	Invalid   map[int]string
@@ -151,8 +151,22 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	case "cryptographic":
 		return v.stopCrypto(ctx, poll, ds, ballots, userIDs)
 	default:
-		return StopResult{Votes: ballots, UserIDs: userIDs}, nil
+		return v.stopNonCrypt(ballots, userIDs)
 	}
+}
+
+func (v *Vote) stopNonCrypt(ballots [][]byte, userIDs []int) (StopResult, error) {
+	encodable := make([]json.RawMessage, len(ballots))
+	for i := range ballots {
+		encodable[i] = ballots[i]
+	}
+
+	votes, err := json.Marshal(encodable)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("encode votes to list: %w", err)
+	}
+
+	return StopResult{Votes: string(votes), UserIDs: userIDs}, nil
 }
 
 func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetch, ballots [][]byte, userIDs []int) (StopResult, error) {
@@ -196,7 +210,7 @@ func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetc
 		}
 	}
 
-	return StopResult{Votes: [][]byte{decrypted}, Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
+	return StopResult{Votes: string(decrypted), Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
 }
 
 // Clear removes all knowlage of a poll.
