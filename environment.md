@@ -20,10 +20,10 @@ The Service uses the following environment variables:
 * `AUTH_Fake`: Use user id 1 for every request. Ignores all other auth environment variables. The default is `false`.
 * `VOTE_REDIS_HOST`: Host of the redis used for the fast backend. The default is `localhost`.
 * `VOTE_REDIS_PORT`: Port of the redis used for the fast backend. The default is `6379`.
-* `VOTE_DATABASE_USER`: Databasename of the postgres database used for long polls. The default is `postgres`.
+* `VOTE_DATABASE_USER`: Databasename of the postgres database used for long polls. The default is `openslides`.
 * `VOTE_DATABASE_HOST`: Host of the postgres database used for long polls. The default is `localhost`.
 * `VOTE_DATABASE_PORT`: Port of the postgres database used for long polls. The default is `5432`.
-* `VOTE_DATABASE_NAME`:  The default is ``.
+* `VOTE_DATABASE_NAME`: Name of the database to save long running polls. The default is `openslides`.
 * `VOTE_BACKEND_FAST`: The backend used for fast polls. Possible backends are redis, postgres or memory. The default is `redis`.
 * `VOTE_BACKEND_LONG`: The backend used for long polls. The default is `postgres`.
 
