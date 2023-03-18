@@ -55,7 +55,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	if poll.pollType == "analog" {
+	if poll.ptype == "analog" {
 		return MessageError{ErrInvalid, "Analog poll can not be started"}
 	}
 
@@ -146,13 +146,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 	log.Debug("Poll config: %v", poll)
 
-	presentMeetings, err := ds.User_IsPresentInMeetingIDs(requestUser).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching is present in meetings: %w", err)
-	}
-
-	if !isPresent(poll.meetingID, presentMeetings) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", poll.meetingID)}
+	if err := ensurePresent(ctx, ds, poll.meetingID, requestUser); err != nil {
+		return err
 	}
 
 	var vote ballot
@@ -165,49 +160,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		voteUser = requestUser
 	}
 
-	if voteUser == 0 {
-		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	if err := ensureVoteUser(ctx, ds, poll, voteUser, requestUser); err != nil {
+		return err
 	}
 
-	if err := vote.validate(poll); err != nil {
-		return fmt.Errorf("validating vote: %w", err)
-	}
-
-	backend := v.backend(poll)
-
-	if voteUser != requestUser {
-		delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
-		if err != nil {
-			return fmt.Errorf("fetching user enable vote delegation: %w", err)
-		}
-
-		if !delegationActivated {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
-		}
-
-		delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
-		if err != nil {
-			// If the user from the request body does not exist, then delegation
-			// will be 0. This case is handled below.
-			var errDoesNotExist dsfetch.DoesNotExistError
-			if !errors.As(err, &errDoesNotExist) {
-				return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
-			}
-		}
-
-		if delegation != requestUser {
-			return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
-		}
-		log.Debug("Vote delegation")
-	}
-
-	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
-	}
-
-	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote", voteUser)}
+	if validation := validate(poll, vote.Value); validation != "" {
+		return MessageError{ErrInvalid, validation}
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
@@ -240,7 +198,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		voteWeight,
 	}
 
-	if poll.pollType == "pseudoanonymous" {
+	if poll.ptype != "named" {
 		voteData.RequestUser = 0
 		voteData.VoteUser = 0
 	}
@@ -250,7 +208,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
 
-	if err := backend.Vote(ctx, pollID, voteUser, bs); err != nil {
+	if err := v.backend(poll).Vote(ctx, pollID, voteUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -267,6 +225,65 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		}
 
 		return fmt.Errorf("save vote: %w", err)
+	}
+
+	return nil
+}
+
+// ensurePresent makes sure that the user sending the vote request is present.
+func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) error {
+	presentMeetings, err := ds.User_IsPresentInMeetingIDs(user).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching is present in meetings: %w", err)
+	}
+
+	for _, present := range presentMeetings {
+		if present == meetingID {
+			return nil
+		}
+	}
+	return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", meetingID)}
+}
+
+// ensureVoteUser makes sure the user from the vote:
+// * is not anonymous,
+// * the delegation is correct and
+// * is in the correct group
+func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, voteUser, requestUser int) error {
+	if voteUser == 0 {
+		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+	}
+
+	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+	}
+
+	if !equalElement(groupIDs, poll.groups) {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote. He is not in an entitled group", voteUser)}
+	}
+
+	if voteUser == requestUser {
+		return nil
+	}
+
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching user enable vote delegation: %w", err)
+	}
+
+	if !delegationActivated {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
+	}
+
+	log.Debug("Vote delegation")
+	delegation, err := ds.User_VoteDelegatedToID(voteUser, poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching delegation from user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+	}
+
+	if delegation != requestUser {
+		return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
 	}
 
 	return nil
@@ -426,7 +443,7 @@ type pollConfig struct {
 	id                int
 	meetingID         int
 	backend           string
-	pollType          string
+	ptype             string
 	method            string
 	groups            []int
 	globalYes         bool
@@ -443,7 +460,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 	p := pollConfig{id: pollID}
 	ds.Poll_MeetingID(pollID).Lazy(&p.meetingID)
 	ds.Poll_Backend(pollID).Lazy(&p.backend)
-	ds.Poll_Type(pollID).Lazy(&p.pollType)
+	ds.Poll_Type(pollID).Lazy(&p.ptype)
 	ds.Poll_Pollmethod(pollID).Lazy(&p.method)
 	ds.Poll_EntitledGroupIDs(pollID).Lazy(&p.groups)
 	ds.Poll_GlobalYes(pollID).Lazy(&p.globalYes)
@@ -549,7 +566,7 @@ func (v ballot) String() string {
 	return string(bs)
 }
 
-func (v *ballot) validate(poll pollConfig) error {
+func validate(poll pollConfig, v ballotValue) string {
 	if poll.minAmount == 0 {
 		poll.minAmount = 1
 	}
@@ -573,75 +590,74 @@ func (v *ballot) validate(poll pollConfig) error {
 		"A": poll.globalAbstain,
 	}
 
-	// Helper "error" that is not an error. Should help readability.
-	var voteIsValid error
+	var voteIsValid string
 
 	switch poll.method {
 	case "Y", "N":
-		switch v.Value.Type() {
+		switch v.Type() {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
-			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Global vote %s is not enabled", v.Value.str)
+			if !allowedGlobal[v.str] {
+				return fmt.Sprintf("Global vote %s is not enabled", v.str)
 			}
 			return voteIsValid
 
 		case ballotValueOptionAmount:
 			var sumAmount int
-			for optionID, amount := range v.Value.optionAmount {
+			for optionID, amount := range v.optionAmount {
 				if amount < 0 {
-					return InvalidVote("Your vote for option %d has to be >= 0", optionID)
+					return fmt.Sprintf("Your vote for option %d has to be >= 0", optionID)
 				}
 
 				if amount > poll.maxVotesPerOption {
-					return InvalidVote("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
+					return fmt.Sprintf("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
 				}
 
 				if !allowedOptions[optionID] {
-					return InvalidVote("Option_id %d does not belong to the poll", optionID)
+					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
 				}
 
 				sumAmount += amount
 			}
 
 			if sumAmount < poll.minAmount || sumAmount > poll.maxAmount {
-				return InvalidVote("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
+				return fmt.Sprintf("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
 			}
 
 			return voteIsValid
 
 		default:
-			return MessageError{ErrInvalid, "Your vote has a wrong format"}
+			return fmt.Sprintf("Your vote has a wrong format")
 		}
 
 	case "YN", "YNA":
-		switch v.Value.Type() {
+		switch v.Type() {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
-			if !allowedGlobal[v.Value.str] {
-				return InvalidVote("Global vote %s is not enabled", v.Value.str)
+			if !allowedGlobal[v.str] {
+				return fmt.Sprintf("Global vote %s is not enabled", v.str)
 			}
 			return voteIsValid
 
 		case ballotValueOptionString:
-			for optionID, yna := range v.Value.optionYNA {
+			for optionID, yna := range v.optionYNA {
 				if !allowedOptions[optionID] {
-					return InvalidVote("Option_id %d does not belong to the poll", optionID)
+					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
 				}
 
 				if yna != "Y" && yna != "N" && (yna != "A" || poll.method != "YNA") {
 					// Valid that given data matches poll method.
-					return InvalidVote("Data for option %d does not fit the poll method.", optionID)
+					return fmt.Sprintf("Data for option %d does not fit the poll method.", optionID)
 				}
 			}
 			return voteIsValid
 
 		default:
-			return InvalidVote("Your vote has a wrong format")
+			return fmt.Sprintf("Your vote has a wrong format")
 		}
 
 	default:
-		return InvalidVote("Your vote has a wrong format")
+		return fmt.Sprintf("Your vote has a wrong format")
 	}
 }
 
@@ -701,15 +717,6 @@ func (v *ballotValue) Type() int {
 	}
 
 	return ballotValueUnknown
-}
-
-func isPresent(meetingID int, presentMeetings []int) bool {
-	for _, present := range presentMeetings {
-		if present == meetingID {
-			return true
-		}
-	}
-	return false
 }
 
 // equalElement returns true, if g1 and g2 have at lease one equal element.
