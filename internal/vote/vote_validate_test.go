@@ -309,7 +309,7 @@ func TestVoteValidate(t *testing.T) {
 			}
 
 			if validation == "" {
-				t.Errorf("Got no validation error")
+				t.Fatalf("Got no validation error")
 			}
 		})
 	}

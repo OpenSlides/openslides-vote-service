@@ -764,7 +764,7 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format for poll method Y or N")
+			return fmt.Sprintf("Your vote has a wrong format")
 		}
 
 	case "YN", "YNA":
@@ -790,11 +790,11 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format for poll method YN or YNA")
+			return fmt.Sprintf("Your vote has a wrong format")
 		}
 
 	default:
-		return fmt.Sprintf("Invalid poll method")
+		return fmt.Sprintf("Your vote has a wrong format")
 	}
 }
 
