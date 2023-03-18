@@ -95,7 +95,7 @@ func handleStart(mux *http.ServeMux, start starter) {
 // stopper stops a poll. It sets the state of the poll, so that no other user
 // can vote. It writes the vote results to the writer.
 type stopper interface {
-	Stop(ctx context.Context, pollID int, w io.Writer) error
+	Stop(ctx context.Context, pollID int) (StopResult, error)
 }
 
 func handleStop(mux *http.ServeMux, stop stopper) {
@@ -116,8 +116,32 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			if err := stop.Stop(r.Context(), id, w); err != nil {
+			result, err := stop.Stop(r.Context(), id)
+			if err != nil {
 				handleError(w, err, true)
+				return
+			}
+
+			// Convert vote objects to json.RawMessage
+			encodableObjects := make([]json.RawMessage, len(result.Votes))
+			for i := range result.Votes {
+				encodableObjects[i] = result.Votes[i]
+			}
+
+			if result.UserIDs == nil {
+				result.UserIDs = []int{}
+			}
+
+			out := struct {
+				Votes []json.RawMessage `json:"votes"`
+				Users []int             `json:"user_ids"`
+			}{
+				encodableObjects,
+				result.UserIDs,
+			}
+
+			if err := json.NewEncoder(w).Encode(out); err != nil {
+				handleError(w, fmt.Errorf("encoding and sending objects: %w", err), true)
 				return
 			}
 		},

@@ -46,12 +46,7 @@ func (v *Vote) backend(p pollConfig) Backend {
 // This function is idempotence. If you call it with the same input, you will
 // get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
-func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
-	log.Debug("Receive start event for poll %d", pollID)
-	defer func() {
-		log.Debug("End start event with error: %v", err)
-	}()
-
+func (v *Vote) Start(ctx context.Context, pollID int) error {
 	recorder := dsrecorder.New(v.ds)
 	ds := dsfetch.New(recorder)
 
@@ -77,65 +72,39 @@ func (v *Vote) Start(ctx context.Context, pollID int) (err error) {
 	return nil
 }
 
+// StopResult is the return value from vote.Stop.
+type StopResult struct {
+	Votes   [][]byte
+	UserIDs []int
+}
+
 // Stop ends a poll.
 //
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
-func (v *Vote) Stop(ctx context.Context, pollID int, w io.Writer) (err error) {
-	log.Debug("Receive stop event for poll %d", pollID)
-	defer func() {
-		log.Debug("End stop event with error: %v", err)
-	}()
-
+func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("loading poll: %w", err)
+		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
 	backend := v.backend(poll)
-	objects, userIDs, err := backend.Stop(ctx, pollID)
+	ballots, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
+			return StopResult{}, MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
 		}
 
-		return fmt.Errorf("fetching vote objects: %w", err)
+		return StopResult{}, fmt.Errorf("fetching vote objects: %w", err)
 	}
 
-	// Convert vote objects to json.RawMessage
-	encodableObjects := make([]json.RawMessage, len(objects))
-	for i := range objects {
-		encodableObjects[i] = objects[i]
-	}
-
-	if userIDs == nil {
-		userIDs = []int{}
-	}
-
-	out := struct {
-		Votes []json.RawMessage `json:"votes"`
-		Users []int             `json:"user_ids"`
-	}{
-		encodableObjects,
-		userIDs,
-	}
-
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		return fmt.Errorf("encoding and sending objects: %w", err)
-	}
-
-	return nil
+	return StopResult{ballots, userIDs}, nil
 }
 
 // Clear removes all knowlage of a poll.
-func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
-	log.Debug("Receive clear event for poll %d", pollID)
-	defer func() {
-		log.Debug("End clear event with error: %v", err)
-	}()
-
+func (v *Vote) Clear(ctx context.Context, pollID int) error {
 	if err := v.fastBackend.Clear(ctx, pollID); err != nil {
 		return fmt.Errorf("clearing fastBackend: %w", err)
 	}
@@ -148,12 +117,7 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 }
 
 // ClearAll removes all knowlage of all polls and the datastore-cache.
-func (v *Vote) ClearAll(ctx context.Context) (err error) {
-	log.Debug("Receive clearAll event")
-	defer func() {
-		log.Debug("End clearAll event with error: %v", err)
-	}()
-
+func (v *Vote) ClearAll(ctx context.Context) error {
 	// Reset the cache if it has the ResetCach() method.
 	type ResetCacher interface {
 		ResetCache()
@@ -174,12 +138,7 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 }
 
 // Vote validates and saves the vote.
-func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) (err error) {
-	log.Debug("Receive vote event for poll %d from user %d", pollID, requestUser)
-	defer func() {
-		log.Debug("End vote event with error: %v", err)
-	}()
-
+func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {

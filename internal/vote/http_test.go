@@ -123,19 +123,24 @@ func TestHandleStart(t *testing.T) {
 }
 
 type stopperStub struct {
-	id           int
-	expectWriter string
-	expectErr    error
+	id        int
+	expectErr error
+
+	expectedVotes   [][]byte
+	expectedUserIDs []int
 }
 
-func (s *stopperStub) Stop(ctx context.Context, pollID int, w io.Writer) error {
+func (s *stopperStub) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	s.id = pollID
 
 	if s.expectErr != nil {
-		return s.expectErr
+		return StopResult{}, s.expectErr
 	}
-	_, err := w.Write([]byte(s.expectWriter))
-	return err
+
+	return StopResult{
+		Votes:   s.expectedVotes,
+		UserIDs: s.expectedUserIDs,
+	}, nil
 }
 
 func TestHandleStop(t *testing.T) {
@@ -164,7 +169,7 @@ func TestHandleStop(t *testing.T) {
 	})
 
 	t.Run("Valid", func(t *testing.T) {
-		stopper.expectWriter = "some text"
+		stopper.expectedVotes = [][]byte{[]byte(`"some values"`)}
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -177,8 +182,9 @@ func TestHandleStop(t *testing.T) {
 			t.Errorf("Stopper was called with id %d, expected 1", stopper.id)
 		}
 
-		if resp.Body.String() != stopper.expectWriter {
-			t.Errorf("Got body `%s`, expected `%s`", resp.Body.String(), stopper.expectWriter)
+		expect := `{"votes":["some values"],"user_ids":[]}`
+		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
+			t.Errorf("Got body:\n`%s`, expected:\n`%s`", trimed, expect)
 		}
 	})
 
