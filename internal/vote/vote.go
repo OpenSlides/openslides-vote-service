@@ -71,12 +71,7 @@ func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (s
 // This function is idempotence. If you call it with the same input, you will
 // get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
-func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig []byte, err error) {
-	log.Debug("Receive start event for poll %d", pollID)
-	defer func() {
-		log.Debug("End start event with error: %v", err)
-	}()
-
+func (v *Vote) Start(ctx context.Context, pollID int) (pubkey, pubKeySig []byte, err error) {
 	recorder := dsrecorder.New(v.ds)
 	ds := dsfetch.New(recorder)
 
@@ -124,7 +119,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey []byte, pubKeySig 
 
 // StopResult is the return value from vote.Stop.
 type StopResult struct {
-	Votes     []json.RawMessage // TODO: This has to be a string so the backend can validate the signature.
+	Votes     [][]byte // TODO: This has to be a string so the backend can validate the signature.
 	Signature []byte
 	UserIDs   []int
 	Invalid   map[int]string
@@ -135,8 +130,6 @@ type StopResult struct {
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
 func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
-	log.Debug("Receive stop event for poll %d", pollID)
-
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
@@ -158,17 +151,8 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	case "cryptographic":
 		return v.stopCrypto(ctx, poll, ds, ballots, userIDs)
 	default:
-		return stopNonCrypto(ballots, userIDs)
+		return StopResult{Votes: ballots, UserIDs: userIDs}, nil
 	}
-}
-
-func stopNonCrypto(ballots [][]byte, userIDs []int) (StopResult, error) {
-	encodable := make([]json.RawMessage, len(ballots))
-	for i := range ballots {
-		encodable[i] = ballots[i]
-	}
-
-	return StopResult{Votes: encodable, UserIDs: userIDs}, nil
 }
 
 func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetch, ballots [][]byte, userIDs []int) (StopResult, error) {
@@ -212,16 +196,11 @@ func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetc
 		}
 	}
 
-	return StopResult{Votes: []json.RawMessage{decrypted}, Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
+	return StopResult{Votes: [][]byte{decrypted}, Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
 }
 
 // Clear removes all knowlage of a poll.
-func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
-	log.Debug("Receive clear event for poll %d", pollID)
-	defer func() {
-		log.Debug("End clear event with error: %v", err)
-	}()
-
+func (v *Vote) Clear(ctx context.Context, pollID int) error {
 	if err := v.fastBackend.Clear(ctx, pollID); err != nil {
 		return fmt.Errorf("clearing fastBackend: %w", err)
 	}
@@ -250,12 +229,7 @@ func (v *Vote) Clear(ctx context.Context, pollID int) (err error) {
 // ClearAll removes all knowlage of all polls and the datastore-cache.
 //
 // This does not work for the vote decrypter.
-func (v *Vote) ClearAll(ctx context.Context) (err error) {
-	log.Debug("Receive clearAll event")
-	defer func() {
-		log.Debug("End clearAll event with error: %v", err)
-	}()
-
+func (v *Vote) ClearAll(ctx context.Context) error {
 	// Reset the cache if it has the ResetCach() method.
 	type ResetCacher interface {
 		ResetCache()
@@ -277,8 +251,6 @@ func (v *Vote) ClearAll(ctx context.Context) (err error) {
 
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
-	log.Debug("Receive vote event for poll %d from user %d", pollID, requestUser)
-
 	ds := dsfetch.New(v.ds)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {

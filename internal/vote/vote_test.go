@@ -264,7 +264,6 @@ func TestVoteStop(t *testing.T) {
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		_, err := v.Stop(context.Background(), 1)
-
 		if !errors.Is(err, vote.ErrNotExists) {
 			t.Errorf("Stopping an unknown poll has to return an ErrNotExists, got: %v", err)
 		}
@@ -288,9 +287,9 @@ func TestVoteStop(t *testing.T) {
 		votes := stopResult.Votes
 		userIDs := stopResult.UserIDs
 
-		expected := []json.RawMessage{[]byte(`{"value":"polldata1"}`), []byte(`{"value":"polldata2"}`)}
+		expected := [][]byte{[]byte(`{"value":"polldata1"}`), []byte(`{"value":"polldata2"}`)}
 		if !reflect.DeepEqual(votes, expected) {
-			t.Errorf("Got\n%s\nexpected\n%s", votes, expected)
+			t.Errorf("Got\n`%s`, expected\n`%s`", votes, expected)
 		}
 
 		if !reflect.DeepEqual(userIDs, []int{1, 2}) {
@@ -305,8 +304,9 @@ func TestVoteStop(t *testing.T) {
 	})
 
 	t.Run("Poll without data", func(t *testing.T) {
-		if err := backend.Start(context.Background(), 3); err != nil {
-			t.Fatalf("Start returned an unexpected error: %v", err)
+		ctx := context.Background()
+		if err := backend.Start(ctx, 3); err != nil {
+			t.Fatalf("Start: %v", err)
 		}
 
 		stopResult, err := v.Stop(context.Background(), 3)
@@ -357,7 +357,7 @@ func TestVoteStopCrypto(t *testing.T) {
 	}
 
 	expected := vote.StopResult{
-		Votes:     []json.RawMessage{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"N"}]}`)},
+		Votes:     [][]byte{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"N"}]}`)},
 		Signature: []byte("signature"),
 		UserIDs:   []int{1, 2},
 		Invalid:   map[int]string{},
@@ -398,7 +398,7 @@ func TestVoteStopCryptoInvalid(t *testing.T) {
 	}
 
 	expected := vote.StopResult{
-		Votes:     []json.RawMessage{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"Invalid"}]}`)},
+		Votes:     [][]byte{[]byte(`{"id":"/1","votes":[{"votes":"Y"},{"votes":"Invalid"}]}`)},
 		Signature: []byte("signature"),
 		UserIDs:   []int{1, 2},
 		Invalid:   map[int]string{1: "Global vote Invalid is not enabled"},

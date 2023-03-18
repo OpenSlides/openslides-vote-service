@@ -126,7 +126,7 @@ type stopperStub struct {
 	id        int
 	expectErr error
 
-	expectVotes       []json.RawMessage
+	expectedVotes     [][]byte
 	expectedSignature []byte
 	expectedUserIDs   []int
 }
@@ -139,7 +139,7 @@ func (s *stopperStub) Stop(ctx context.Context, pollID int) (StopResult, error) 
 	}
 
 	return StopResult{
-		Votes:     s.expectVotes,
+		Votes:     s.expectedVotes,
 		Signature: s.expectedSignature,
 		UserIDs:   s.expectedUserIDs,
 	}, nil
@@ -171,7 +171,7 @@ func TestHandleStop(t *testing.T) {
 	})
 
 	t.Run("Valid", func(t *testing.T) {
-		stopper.expectVotes = []json.RawMessage{([]byte(`"some values"`))}
+		stopper.expectedVotes = [][]byte{[]byte(`"some values"`)}
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -186,7 +186,7 @@ func TestHandleStop(t *testing.T) {
 
 		expect := `{"votes":["some values"],"user_ids":[]}`
 		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
-			t.Errorf("Got body `%s`, expected `%s`", trimed, expect)
+			t.Errorf("Got body:\n`%s`, expected:\n`%s`", trimed, expect)
 		}
 	})
 

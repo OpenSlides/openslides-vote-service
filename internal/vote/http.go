@@ -135,14 +135,20 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				return
 			}
 
-			stopResult, err := stop.Stop(r.Context(), id)
+			result, err := stop.Stop(r.Context(), id)
 			if err != nil {
 				handleError(w, err, true)
 				return
 			}
 
-			if stopResult.UserIDs == nil {
-				stopResult.UserIDs = []int{}
+			// Convert vote objects to json.RawMessage
+			encodableObjects := make([]json.RawMessage, len(result.Votes))
+			for i := range result.Votes {
+				encodableObjects[i] = result.Votes[i]
+			}
+
+			if result.UserIDs == nil {
+				result.UserIDs = []int{}
 			}
 
 			out := struct {
@@ -151,10 +157,10 @@ func handleStop(mux *http.ServeMux, stop stopper) {
 				Users     []int             `json:"user_ids"`
 				Invalid   map[int]string    `json:"invalid,omitempty"`
 			}{
-				stopResult.Votes,
-				stopResult.Signature,
-				stopResult.UserIDs,
-				stopResult.Invalid,
+				encodableObjects,
+				result.Signature,
+				result.UserIDs,
+				result.Invalid,
 			}
 
 			if err := json.NewEncoder(w).Encode(out); err != nil {
