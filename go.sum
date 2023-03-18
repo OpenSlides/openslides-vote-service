@@ -7,8 +7,8 @@ github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 h1:TngWCqHvy9oXAN6lEV
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5/go.mod h1:lmUJ/7eu/Q8D7ML55dXQrVaamCz2vxCfdQBasLZfHKk=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230205113522-64e8a845d31c h1:/atD4G3jmfvsWfdtUePUs86Hr8qkOqC9Z8b4rTKj12A=
 github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230205113522-64e8a845d31c/go.mod h1:HFtyW133MGuoPtJLMUmSgdVihhzoDUJla9/S4TTyP74=
-github.com/OpenSlides/vote-decrypt v0.0.0-20230314183154-52d9ebb2fd19 h1:MutnFtwJUUQPUxNZ42RygEn1OnMHA0BY+XRkPGZrcA8=
-github.com/OpenSlides/vote-decrypt v0.0.0-20230314183154-52d9ebb2fd19/go.mod h1:JTLPgPy0efqp3YfTmkntQejCslhz4vypHVtYP/d/Lsg=
+github.com/OpenSlides/vote-decrypt v0.0.0-20230317070656-9af51d5a96d2 h1:tlJ97Ia31o/fDTO1mjF7BsZ46ejplnfrkxIine+RLXI=
+github.com/OpenSlides/vote-decrypt v0.0.0-20230317070656-9af51d5a96d2/go.mod h1:L6bLLrlWthJftcn8nIdHslpQzBrD0V8c+a8KEFyU1bw=
 github.com/alecthomas/assert/v2 v2.1.0 h1:tbredtNcQnoSd3QBhQWI7QZ3XHOVkw1Moklp2ojoH/0=
 github.com/alecthomas/kong v0.7.1 h1:azoTh0IOfwlAX3qN9sHWTxACE2oV8Bg2gAwBsMwDQY4=
 github.com/alecthomas/kong v0.7.1/go.mod h1:n1iCIO2xS46oE8ZfYCNDqdR0b0wZNrXAIAqro/2132U=
@@ -183,8 +183,8 @@ google.golang.org/grpc v1.53.0/go.mod h1:OnIrk0ipVdj4N5d9IUoFUx72/VlD7+jUsHwZgwS
 google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp09yW+WbY/TyQbw=
 google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
 google.golang.org/protobuf v1.27.1/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
-google.golang.org/protobuf v1.29.1 h1:7QBf+IK2gx70Ap/hDsOmam3GE0v9HicjfEdAxE62UoM=
-google.golang.org/protobuf v1.29.1/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
+google.golang.org/protobuf v1.30.0 h1:kPPoIgf3TsEvrm0PFe15JQ+570QVxYzEvvHqChK+cng=
+google.golang.org/protobuf v1.30.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
 gopkg.in/yaml.v2 v2.2.2/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=

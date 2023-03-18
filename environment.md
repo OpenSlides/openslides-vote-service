@@ -23,10 +23,10 @@ The Service uses the following environment variables:
 * `VOTE_DATABASE_USER`: Databasename of the postgres database used for long polls. The default is `openslides`.
 * `VOTE_DATABASE_HOST`: Host of the postgres database used for long polls. The default is `localhost`.
 * `VOTE_DATABASE_PORT`: Port of the postgres database used for long polls. The default is `5432`.
-* `VOTE_DATABASE_NAME`:  The default is `openslides`.
+* `VOTE_DATABASE_NAME`: Name of the database to save long running polls. The default is `openslides`.
 * `VOTE_BACKEND_FAST`: The backend used for fast polls. Possible backends are redis, postgres or memory. The default is `redis`.
 * `VOTE_BACKEND_LONG`: The backend used for long polls. The default is `postgres`.
-* `VOTE_DECRYPT_SERVICE`: Host and port of the decrypt service. The default is `localhost:9014`.
+* `VOTE_DECRYPT_SERVICE`: Host and port of the decrypt service. Empty string to disable this feature. The default is ``.
 
 
 ## Secrets
