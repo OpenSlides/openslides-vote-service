@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 // Backend checks that a backend implements the vote.Backend interface.

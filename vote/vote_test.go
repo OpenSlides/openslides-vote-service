@@ -10,8 +10,8 @@ import (
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dskey"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
-	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"github.com/OpenSlides/openslides-vote-service/backends/memory"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 func TestVoteStart(t *testing.T) {

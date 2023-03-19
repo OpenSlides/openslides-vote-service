@@ -13,11 +13,11 @@ import (
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
 	messageBusRedis "github.com/OpenSlides/openslides-autoupdate-service/pkg/redis"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/postgres"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/redis"
-	"github.com/OpenSlides/openslides-vote-service/internal/log"
-	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"github.com/OpenSlides/openslides-vote-service/backends/memory"
+	"github.com/OpenSlides/openslides-vote-service/backends/postgres"
+	"github.com/OpenSlides/openslides-vote-service/backends/redis"
+	"github.com/OpenSlides/openslides-vote-service/log"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 	"github.com/alecthomas/kong"
 )
 

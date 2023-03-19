@@ -10,7 +10,7 @@ import (
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
-	"github.com/OpenSlides/openslides-vote-service/internal/log"
+	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
 // Vote holds the state of the service.

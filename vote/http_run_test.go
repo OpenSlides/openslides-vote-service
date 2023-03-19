@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/memory"
-	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"github.com/OpenSlides/openslides-vote-service/backends/memory"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 func waitForServer(addr string) error {
@@ -55,13 +55,13 @@ func TestRun(t *testing.T) {
 
 	t.Run("URLs", func(t *testing.T) {
 		for _, url := range []string{
-			"/internal/vote/start",
-			"/internal/vote/stop",
-			"/internal/vote/clear",
-			"/internal/vote/clear_all",
+			"/vote/start",
+			"/vote/stop",
+			"/vote/clear",
+			"/vote/clear_all",
 			"/system/vote",
 			"/system/vote/voted",
-			"/internal/vote/vote_count",
+			"/vote/vote_count",
 			"/system/vote/health",
 		} {
 			resp, err := http.Get(fmt.Sprintf("http://%s%s", addr, url))

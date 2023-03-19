@@ -26,7 +26,7 @@ func (c *starterStub) Start(ctx context.Context, pollID int) error {
 func TestHandleStart(t *testing.T) {
 	starter := &starterStub{}
 
-	url := "/internal/vote/start"
+	url := "/vote/start"
 	mux := http.NewServeMux()
 	handleStart(mux, starter)
 
@@ -146,7 +146,7 @@ func (s *stopperStub) Stop(ctx context.Context, pollID int) (StopResult, error) 
 func TestHandleStop(t *testing.T) {
 	stopper := &stopperStub{}
 
-	url := "/internal/vote/stop"
+	url := "/vote/stop"
 	mux := http.NewServeMux()
 	handleStop(mux, stopper)
 
@@ -225,7 +225,7 @@ func (c *clearerStub) Clear(ctx context.Context, pollID int) error {
 func TestHandleClear(t *testing.T) {
 	clearer := &clearerStub{}
 
-	url := "/internal/vote/clear"
+	url := "/vote/clear"
 	mux := http.NewServeMux()
 	handleClear(mux, clearer)
 
@@ -295,7 +295,7 @@ func (c *clearAllerStub) ClearAll(ctx context.Context) error {
 func TestHandleClearAll(t *testing.T) {
 	clearAller := &clearAllerStub{}
 
-	url := "/internal/vote/clear_all"
+	url := "/vote/clear_all"
 	mux := http.NewServeMux()
 	handleClearAll(mux, clearAller)
 
@@ -676,7 +676,7 @@ func TestHandleVoteCountFirstData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	url := "/internal/vote/vote_count"
+	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
 	voteCounter.expectCount = map[int]int{1: 10, 2: 20}
 
@@ -711,7 +711,7 @@ func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	url := "/internal/vote/vote_count"
+	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
 	voteCounter.expectCount = map[int]int{}
 
@@ -755,7 +755,7 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 		{1: 11},        // Remove 3 (that was not there at the beginning)
 	}
 
-	url := "/internal/vote/vote_count"
+	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)

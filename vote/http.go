@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenSlides/openslides-vote-service/internal/log"
+	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
 const (
-	httpPathInternal = "/internal/vote"
+	httpPathInternal = "/vote"
 	httpPathExternal = "/system/vote"
 )
 
