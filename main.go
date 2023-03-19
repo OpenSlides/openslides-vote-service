@@ -18,6 +18,7 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/backends/redis"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
+	"github.com/OpenSlides/openslides-vote-service/vote/http"
 	"github.com/alecthomas/kong"
 )
 
@@ -70,7 +71,7 @@ func main() {
 		}
 
 	case "health":
-		if err := contextDone(vote.HealthClient(ctx, cli.Health.UseHTTPS, cli.Health.Host, cli.Health.Port, cli.Health.Insecure)); err != nil {
+		if err := contextDone(http.HealthClient(ctx, cli.Health.UseHTTPS, cli.Health.Host, cli.Health.Port, cli.Health.Insecure)); err != nil {
 			handleError(err)
 			os.Exit(1)
 		}
@@ -151,7 +152,7 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 
 		// Start http server.
 		log.Info("Listen on %s\n", listenAddr)
-		return vote.Run(ctx, lst, authService, voteService)
+		return http.Run(ctx, lst, authService, voteService)
 	}
 
 	return service, nil

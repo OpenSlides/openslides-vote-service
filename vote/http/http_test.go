@@ -1,4 +1,4 @@
-package vote
+package http
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 type starterStub struct {
@@ -27,17 +29,7 @@ func TestHandleStart(t *testing.T) {
 	starter := &starterStub{}
 
 	url := "/vote/start"
-	mux := http.NewServeMux()
-	handleStart(mux, starter)
-
-	t.Run("Get request", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleInternal(handleStart(starter))
 
 	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -71,7 +63,7 @@ func TestHandleStart(t *testing.T) {
 	})
 
 	t.Run("Exist error", func(t *testing.T) {
-		starter.expectErr = ErrExists
+		starter.expectErr = vote.ErrExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
@@ -130,14 +122,14 @@ type stopperStub struct {
 	expectedUserIDs []int
 }
 
-func (s *stopperStub) Stop(ctx context.Context, pollID int) (StopResult, error) {
+func (s *stopperStub) Stop(ctx context.Context, pollID int) (vote.StopResult, error) {
 	s.id = pollID
 
 	if s.expectErr != nil {
-		return StopResult{}, s.expectErr
+		return vote.StopResult{}, s.expectErr
 	}
 
-	return StopResult{
+	return vote.StopResult{
 		Votes:   s.expectedVotes,
 		UserIDs: s.expectedUserIDs,
 	}, nil
@@ -147,17 +139,7 @@ func TestHandleStop(t *testing.T) {
 	stopper := &stopperStub{}
 
 	url := "/vote/stop"
-	mux := http.NewServeMux()
-	handleStop(mux, stopper)
-
-	t.Run("Get request", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleInternal(handleStop(stopper))
 
 	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -189,7 +171,7 @@ func TestHandleStop(t *testing.T) {
 	})
 
 	t.Run("Not Exist error", func(t *testing.T) {
-		stopper.expectErr = ErrNotExists
+		stopper.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -226,17 +208,7 @@ func TestHandleClear(t *testing.T) {
 	clearer := &clearerStub{}
 
 	url := "/vote/clear"
-	mux := http.NewServeMux()
-	handleClear(mux, clearer)
-
-	t.Run("Get request", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleInternal(handleClear(clearer))
 
 	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -261,7 +233,7 @@ func TestHandleClear(t *testing.T) {
 	})
 
 	t.Run("Not Exist error", func(t *testing.T) {
-		clearer.expectErr = ErrNotExists
+		clearer.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -296,17 +268,7 @@ func TestHandleClearAll(t *testing.T) {
 	clearAller := &clearAllerStub{}
 
 	url := "/vote/clear_all"
-	mux := http.NewServeMux()
-	handleClearAll(mux, clearAller)
-
-	t.Run("Get request", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleInternal(handleClearAll(clearAller))
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -318,7 +280,7 @@ func TestHandleClearAll(t *testing.T) {
 	})
 
 	t.Run("Not Exist error", func(t *testing.T) {
-		clearAller.expectErr = ErrNotExists
+		clearAller.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
@@ -391,17 +353,7 @@ func TestHandleVote(t *testing.T) {
 	auther := &autherStub{}
 
 	url := "/system/vote"
-	mux := http.NewServeMux()
-	handleVote(mux, voter, auther)
-
-	t.Run("Get request", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleExternal(handleVote(voter, auther))
 
 	t.Run("No id", func(t *testing.T) {
 		auther.userID = 5
@@ -415,7 +367,7 @@ func TestHandleVote(t *testing.T) {
 	})
 
 	t.Run("ErrDoubleVote error", func(t *testing.T) {
-		voter.expectErr = ErrDoubleVote
+		voter.expectErr = vote.ErrDoubleVote
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -532,18 +484,7 @@ func TestHandleVoted(t *testing.T) {
 	auther := &autherStub{}
 
 	url := "/system/vote/voted"
-	mux := http.NewServeMux()
-	handleVoted(mux, voted, auther)
-
-	t.Run("POST request", func(t *testing.T) {
-		auther.userID = 5
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 405 {
-			t.Errorf("Got status %s, expected 405 - Method not allowed", resp.Result().Status)
-		}
-	})
+	mux := handleExternal(handleVoted(voted, auther))
 
 	t.Run("No polls given", func(t *testing.T) {
 		auther.userID = 5
@@ -631,7 +572,7 @@ func TestHandleVoted(t *testing.T) {
 	t.Run("Voted Error", func(t *testing.T) {
 		auther.userID = 5
 		auther.authErr = false
-		voted.expectErr = ErrNotExists
+		voted.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1,2", nil))
@@ -670,8 +611,7 @@ func TestHandleVoteCountFirstData(t *testing.T) {
 		return make(chan time.Time), func() {}
 	}
 
-	mux := http.NewServeMux()
-	handleVoteCount(mux, voteCounter, eventer)
+	mux := handleVoteCount(voteCounter, eventer)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -705,8 +645,7 @@ func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
 		return make(chan time.Time), func() {}
 	}
 
-	mux := http.NewServeMux()
-	handleVoteCount(mux, voteCounter, eventer)
+	mux := handleVoteCount(voteCounter, eventer)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -741,8 +680,7 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 		return event, func() {}
 	}
 
-	mux := http.NewServeMux()
-	handleVoteCount(mux, voteCounter, eventer)
+	mux := handleVoteCount(voteCounter, eventer)
 
 	ctx := context.Background()
 
@@ -805,8 +743,7 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 
 func TestHandleHealth(t *testing.T) {
 	url := "/system/vote/health"
-	mux := http.NewServeMux()
-	handleHealth(mux)
+	mux := handleHealth()
 
 	resp := httptest.NewRecorder()
 	mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))

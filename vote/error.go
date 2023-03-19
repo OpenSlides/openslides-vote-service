@@ -1,7 +1,6 @@
 package vote
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -88,28 +87,35 @@ func (err TypeError) Error() string {
 	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, err.Type(), msg)
 }
 
-// MessageError is a TypeError with an individuel error message.
-type MessageError struct {
+type messageError struct {
 	TypeError
 	msg string
 }
 
-func (err MessageError) Error() string {
-	out := struct {
-		Error string `json:"error"`
-		MSG   string `json:"message"`
-	}{
-		err.Type(),
-		err.msg,
+// MessageError creates an typed error with a message.
+func MessageError(t TypeError, format string, a ...any) error {
+	return messageError{
+		t,
+		fmt.Sprintf(format, a...),
 	}
-
-	decoded, jsonerr := json.Marshal(out)
-	if jsonerr != nil {
-		return fmt.Sprintf(`{"error":"internal", "message":"someting went wrong encoding the error message"}`)
-	}
-	return string(decoded)
 }
 
-func (err MessageError) Unwrap() error {
+// WrapError wrapps an error with an type.
+func WrapError(t TypeError, err error) error {
+	return messageError{
+		t,
+		err.Error(),
+	}
+}
+
+func (err messageError) Type() string {
+	return err.TypeError.Type()
+}
+
+func (err messageError) Error() string {
+	return err.msg
+}
+
+func (err messageError) Unwrap() error {
 	return err.TypeError
 }

@@ -1,4 +1,4 @@
-package vote_test
+package http_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/backends/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
+	votehttp "github.com/OpenSlides/openslides-vote-service/vote/http"
 )
 
 func waitForServer(addr string) error {
@@ -23,6 +24,18 @@ func waitForServer(addr string) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("waiting for server failed")
+}
+
+type autherStub struct {
+	userID int
+}
+
+func (a *autherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+	return r.Context(), nil
+}
+
+func (a *autherStub) FromContext(context.Context) int {
+	return a.userID
 }
 
 func TestRun(t *testing.T) {
@@ -42,7 +55,7 @@ func TestRun(t *testing.T) {
 
 		getAddr <- lst.Addr().String()
 
-		if err := vote.Run(ctx, lst, new(autherStub), service); err != nil {
+		if err := votehttp.Run(ctx, lst, new(autherStub), service); err != nil {
 			t.Errorf("vote.Run: %v", err)
 		}
 	}()
@@ -55,13 +68,13 @@ func TestRun(t *testing.T) {
 
 	t.Run("URLs", func(t *testing.T) {
 		for _, url := range []string{
-			"/vote/start",
-			"/vote/stop",
-			"/vote/clear",
-			"/vote/clear_all",
+			"/internal/vote/start",
+			"/internal/vote/stop",
+			"/internal/vote/clear",
+			"/internal/vote/clear_all",
+			"/internal/vote/vote_count",
 			"/system/vote",
 			"/system/vote/voted",
-			"/vote/vote_count",
 			"/system/vote/health",
 		} {
 			resp, err := http.Get(fmt.Sprintf("http://%s%s", addr, url))
