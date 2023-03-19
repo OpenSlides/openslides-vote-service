@@ -12,12 +12,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
+var envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which the service listen on.")
+
+// Server can start the service on a port.
+type Server struct {
+	Addr string
+	lst  net.Listener
+}
+
+// New initializes a new Server.
+func New(lookup environment.Environmenter) Server {
+	return Server{
+		Addr: ":" + envVotePort.Value(lookup),
+	}
+}
+
+// StartListener starts the listener where the server will listen on.
+//
+// This is usefull for testing so an empty port will be dissolved.
+func (s *Server) StartListener() error {
+	lst, err := net.Listen("tcp", s.Addr)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", s.Addr, err)
+	}
+
+	s.lst = lst
+	s.Addr = lst.Addr().String()
+	return nil
+}
+
 // Run starts the http service.
-func Run(ctx context.Context, lst net.Listener, auth authenticater, service *vote.Vote) error {
+func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote) error {
 	ticketProvider := func() (<-chan time.Time, func()) {
 		ticker := time.NewTicker(time.Second)
 		return ticker.C, ticker.Stop
@@ -41,7 +71,14 @@ func Run(ctx context.Context, lst net.Listener, auth authenticater, service *vot
 		wait <- nil
 	}()
 
-	if err := srv.Serve(lst); err != http.ErrServerClosed {
+	if s.lst == nil {
+		if err := s.StartListener(); err != nil {
+			return fmt.Errorf("start listening: %w", err)
+		}
+	}
+
+	log.Info("Listen on %s\n", s.Addr)
+	if err := srv.Serve(s.lst); err != http.ErrServerClosed {
 		return fmt.Errorf("HTTP Server failed: %v", err)
 	}
 

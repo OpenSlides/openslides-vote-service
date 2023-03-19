@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
-	"github.com/OpenSlides/openslides-vote-service/backends/memory"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
+	"github.com/OpenSlides/openslides-vote-service/backend/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 	votehttp "github.com/OpenSlides/openslides-vote-service/vote/http"
 )
@@ -45,24 +46,19 @@ func TestRun(t *testing.T) {
 	backend := memory.New()
 	ds := dsmock.Stub{}
 	service := vote.New(backend, backend, ds)
+	httpServer := votehttp.New(environment.ForTests(map[string]string{"VOTE_PORT": "0"}))
 
-	getAddr := make(chan string)
+	if err := httpServer.StartListener(); err != nil {
+		t.Fatalf("start listening: %v", err)
+	}
+
 	go func() {
-		lst, err := net.Listen("tcp", ":0")
-		if err != nil {
-			t.Errorf("open listener: %v", err)
-		}
-
-		getAddr <- lst.Addr().String()
-
-		if err := votehttp.Run(ctx, lst, new(autherStub), service); err != nil {
+		if err := httpServer.Run(ctx, new(autherStub), service); err != nil {
 			t.Errorf("vote.Run: %v", err)
 		}
 	}()
 
-	addr := <-getAddr
-
-	if err := waitForServer(addr); err != nil {
+	if err := waitForServer(httpServer.Addr); err != nil {
 		t.Errorf("waiting for server: %v", err)
 	}
 
@@ -77,7 +73,7 @@ func TestRun(t *testing.T) {
 			"/system/vote/voted",
 			"/system/vote/health",
 		} {
-			resp, err := http.Get(fmt.Sprintf("http://%s%s", addr, url))
+			resp, err := http.Get(fmt.Sprintf("http://%s%s", httpServer.Addr, url))
 			if err != nil {
 				t.Fatalf("sending request: %v", err)
 			}
