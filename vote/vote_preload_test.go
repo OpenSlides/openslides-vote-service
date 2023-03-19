@@ -11,6 +11,8 @@ import (
 )
 
 func TestPreload(t *testing.T) {
+	ctx := context.Background()
+
 	for _, tt := range []struct {
 		name        string
 		data        string
@@ -161,13 +163,13 @@ func TestPreload(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
 
-			poll, err := loadPoll(context.Background(), dsfetch.New(ds), 1)
+			poll, err := loadPoll(ctx, dsfetch.New(ds), 1)
 			if err != nil {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
 
 			dsCount.(*dsmock.Counter).Reset()
-			poll.preload(context.Background(), dsfetch.New(ds))
+			poll.preload(ctx, dsfetch.New(ds))
 
 			if err != nil {
 				t.Errorf("preload returned: %v", err)
