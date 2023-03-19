@@ -380,6 +380,9 @@ func pollID(r *http.Request) (int, error) {
 
 func pollsID(r *http.Request) ([]int, error) {
 	rawIDs := strings.Split(r.URL.Query().Get("ids"), ",")
+	if len(rawIDs) == 0 {
+		return nil, fmt.Errorf("no ids argument provided")
+	}
 
 	ids := make([]int, len(rawIDs))
 	for i, rawID := range rawIDs {
