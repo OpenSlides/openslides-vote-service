@@ -305,8 +305,7 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (
 	for _, pid := range pollIDs {
 		poll, err := loadPoll(ctx, ds, pid)
 		if err != nil {
-			var errDoesNotExist dsfetch.DoesNotExistError
-			if errors.As(err, &errDoesNotExist) && errDoesNotExist.Collection == "poll" {
+			if errors.Is(err, ErrNotExists) {
 				continue
 			}
 			return nil, fmt.Errorf("loading poll: %w", err)
@@ -473,6 +472,10 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 	ds.Poll_State(pollID).Lazy(&p.state)
 
 	if err := ds.Execute(ctx); err != nil {
+		var errDoesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &errDoesNotExist) && errDoesNotExist.Collection == "poll" && errDoesNotExist.ID == pollID {
+			return pollConfig{}, ErrNotExists
+		}
 		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
 	}
 
