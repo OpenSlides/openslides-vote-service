@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/postgres"
-	"github.com/OpenSlides/openslides-vote-service/internal/backends/test"
+	"github.com/OpenSlides/openslides-vote-service/backends/postgres"
+	"github.com/OpenSlides/openslides-vote-service/backends/test"
 	"github.com/ory/dockertest/v3"
 )
 
@@ -41,18 +41,19 @@ func startPostgres(t *testing.T) (string, func()) {
 }
 
 func TestImplementBackendInterface(t *testing.T) {
+	ctx := context.Background()
 	port, close := startPostgres(t)
 	defer close()
 
 	addr := fmt.Sprintf(`user=postgres password='password' host=localhost port=%s dbname=database`, port)
-	p, err := postgres.New(context.Background(), addr)
+	p, err := postgres.New(ctx, addr)
 	if err != nil {
 		t.Fatalf("Creating postgres backend returned: %v", err)
 	}
 	defer p.Close()
 
-	p.Wait(context.Background())
-	if err := p.Migrate(context.Background()); err != nil {
+	p.Wait(ctx)
+	if err := p.Migrate(ctx); err != nil {
 		t.Fatalf("Creating db schema: %v", err)
 	}
 

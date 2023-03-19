@@ -11,7 +11,7 @@ import (
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
-	"github.com/OpenSlides/openslides-vote-service/internal/log"
+	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
 // Decrypter decryptes the incomming votes.
@@ -81,7 +81,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) (pubkey, pubKeySig []byte,
 	}
 
 	if poll.ptype == "analog" {
-		return nil, nil, MessageError{ErrInvalid, "Analog poll can not be started"}
+		return nil, nil, MessageError(ErrInvalid, "Analog poll can not be started")
 	}
 
 	if err := poll.preload(ctx, ds); err != nil {
@@ -141,7 +141,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return StopResult{}, MessageError{ErrNotExists, fmt.Sprintf("Poll %d does not exist in the backend", pollID)}
+			return StopResult{}, MessageError(ErrNotExists, "Poll %d does not exist in the backend", pollID)
 		}
 
 		return StopResult{}, fmt.Errorf("fetching vote objects: %w", err)
@@ -278,7 +278,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	var vote ballot
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
-		return MessageError{ErrInvalid, fmt.Sprintf("decoding payload: %v", err)}
+		return MessageError(ErrInvalid, "decoding payload: %v", err)
 	}
 
 	voteUser, exist := vote.UserID.Value()
@@ -293,7 +293,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	var voteWeight string
 	if poll.ptype != "cryptographic" {
 		if validation := validate(poll, vote.Value); validation != "" {
-			return MessageError{ErrInvalid, validation}
+			return MessageError(ErrInvalid, validation)
 		}
 
 		// voteData.Weight is a DecimalField with 6 zeros.
@@ -370,7 +370,7 @@ func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) 
 			return nil
 		}
 	}
-	return MessageError{ErrNotAllowed, fmt.Sprintf("You have to be present in meeting %d", meetingID)}
+	return MessageError(ErrNotAllowed, "You have to be present in meeting %d", meetingID)
 }
 
 // ensureVoteUser makes sure the user from the vote:
@@ -379,7 +379,7 @@ func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) 
 // * is in the correct group
 func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, voteUser, requestUser int) error {
 	if voteUser == 0 {
-		return MessageError{ErrNotAllowed, "Votes for anonymous user are not allowed"}
+		return MessageError(ErrNotAllowed, "Votes for anonymous user are not allowed")
 	}
 
 	groupIDs, err := ds.User_GroupIDs(voteUser, poll.meetingID).Value(ctx)
@@ -388,7 +388,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	}
 
 	if !equalElement(groupIDs, poll.groups) {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("User %d is not allowed to vote. He is not in an entitled group", voteUser)}
+		return MessageError(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
 	}
 
 	if voteUser == requestUser {
@@ -401,7 +401,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	}
 
 	if !delegationActivated {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("Vote delegation is not activated in meeting %d", poll.meetingID)}
+		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.meetingID)
 	}
 
 	log.Debug("Vote delegation")
@@ -411,7 +411,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	}
 
 	if delegation != requestUser {
-		return MessageError{ErrNotAllowed, fmt.Sprintf("You can not vote for user %d", voteUser)}
+		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
 
 	return nil
@@ -433,8 +433,7 @@ func (v *Vote) VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (
 	for _, pid := range pollIDs {
 		poll, err := loadPoll(ctx, ds, pid)
 		if err != nil {
-			var errDoesNotExist dsfetch.DoesNotExistError
-			if errors.As(err, &errDoesNotExist) && errDoesNotExist.Collection == "poll" {
+			if errors.Is(err, ErrNotExists) {
 				continue
 			}
 			return nil, fmt.Errorf("loading poll: %w", err)
@@ -610,6 +609,10 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 	ds.Poll_State(pollID).Lazy(&p.state)
 
 	if err := ds.Execute(ctx); err != nil {
+		var errDoesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &errDoesNotExist) && errDoesNotExist.Collection == "poll" && errDoesNotExist.ID == pollID {
+			return pollConfig{}, ErrNotExists
+		}
 		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
 	}
 

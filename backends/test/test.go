@@ -11,38 +11,39 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OpenSlides/openslides-vote-service/internal/vote"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 // Backend checks that a backend implements the vote.Backend interface.
 func Backend(t *testing.T, backend vote.Backend) {
 	t.Helper()
+	ctx := context.Background()
 
 	pollID := 1
 	t.Run("Start", func(t *testing.T) {
 		t.Run("Start unknown poll", func(t *testing.T) {
-			if err := backend.Start(context.Background(), pollID); err != nil {
+			if err := backend.Start(ctx, pollID); err != nil {
 				t.Errorf("Start an unknown poll returned error: %v", err)
 			}
 		})
 
 		t.Run("Start started poll", func(t *testing.T) {
-			backend.Start(context.Background(), pollID)
-			if err := backend.Start(context.Background(), pollID); err != nil {
+			backend.Start(ctx, pollID)
+			if err := backend.Start(ctx, pollID); err != nil {
 				t.Errorf("Start a started poll returned error: %v", err)
 			}
 		})
 
 		t.Run("Start a stopped poll", func(t *testing.T) {
-			if _, _, err := backend.Stop(context.Background(), pollID); err != nil {
+			if _, _, err := backend.Stop(ctx, pollID); err != nil {
 				t.Fatalf("Stop returned: %v", err)
 			}
 
-			if err := backend.Start(context.Background(), pollID); err != nil {
+			if err := backend.Start(ctx, pollID); err != nil {
 				t.Errorf("Start a stopped poll returned error: %v", err)
 			}
 
-			err := backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
 			var errStopped interface{ Stopped() }
 			if !errors.As(err, &errStopped) {
 				t.Errorf("The stopped poll has to be stopped after calling start. Vote returned error: %v", err)
@@ -52,7 +53,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	t.Run("Stop", func(t *testing.T) {
 		t.Run("poll unknown", func(t *testing.T) {
-			_, _, err := backend.Stop(context.Background(), 404)
+			_, _, err := backend.Stop(ctx, 404)
 
 			var errDoesNotExist interface{ DoesNotExist() }
 			if !errors.As(err, &errDoesNotExist) {
@@ -62,11 +63,11 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 		pollID++
 		t.Run("empty poll", func(t *testing.T) {
-			if err := backend.Start(context.Background(), pollID); err != nil {
+			if err := backend.Start(ctx, pollID); err != nil {
 				t.Fatalf("Start returned unexpected error: %v", err)
 			}
 
-			data, users, err := backend.Stop(context.Background(), pollID)
+			data, users, err := backend.Stop(ctx, pollID)
 			if err != nil {
 				t.Fatalf("Stop returned unexpected error: %v", err)
 			}
@@ -80,7 +81,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Vote", func(t *testing.T) {
 		t.Run("on notstarted poll", func(t *testing.T) {
-			err := backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
 			var errDoesNotExist interface{ DoesNotExist() }
 			if !errors.As(err, &errDoesNotExist) {
@@ -89,13 +90,13 @@ func Backend(t *testing.T, backend vote.Backend) {
 		})
 
 		t.Run("successfull", func(t *testing.T) {
-			backend.Start(context.Background(), pollID)
+			backend.Start(ctx, pollID)
 
-			if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
+			if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
 				t.Fatalf("Vote returned unexpected error: %v", err)
 			}
 
-			data, userIDs, err := backend.Stop(context.Background(), pollID)
+			data, userIDs, err := backend.Stop(ctx, pollID)
 			if err != nil {
 				t.Fatalf("Stop returned unexpected error: %v", err)
 			}
@@ -119,13 +120,13 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 		pollID++
 		t.Run("two times", func(t *testing.T) {
-			backend.Start(context.Background(), pollID)
+			backend.Start(ctx, pollID)
 
-			if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
+			if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
 				t.Fatalf("Vote returned unexpected error: %v", err)
 			}
 
-			err := backend.Vote(context.Background(), pollID, 5, []byte("my second vote"))
+			err := backend.Vote(ctx, pollID, 5, []byte("my second vote"))
 
 			if err == nil {
 				t.Fatalf("Second vote did not return an error")
@@ -139,13 +140,13 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 		pollID++
 		t.Run("on stopped vote", func(t *testing.T) {
-			backend.Start(context.Background(), pollID)
+			backend.Start(ctx, pollID)
 
-			if _, _, err := backend.Stop(context.Background(), pollID); err != nil {
+			if _, _, err := backend.Stop(ctx, pollID); err != nil {
 				t.Fatalf("Stop returned unexpected error: %v", err)
 			}
 
-			err := backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
 			if err == nil {
 				t.Fatalf("Vote on stopped poll did not return an error")
@@ -160,14 +161,14 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	pollID++
 	t.Run("Clear removes vote data", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		if err := backend.Clear(context.Background(), pollID); err != nil {
+		if err := backend.Clear(ctx, pollID); err != nil {
 			t.Fatalf("Clear returned unexpected error: %v", err)
 		}
 
-		bs, userIDs, err := backend.Stop(context.Background(), pollID)
+		bs, userIDs, err := backend.Stop(ctx, pollID)
 		var errDoesNotExist interface{ DoesNotExist() }
 		if !errors.As(err, &errDoesNotExist) {
 			t.Fatalf("Stop a cleared poll has to return an error with a method DoesNotExist(), got: %v", err)
@@ -184,31 +185,31 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	pollID++
 	t.Run("Clear removes voted users", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		if err := backend.Clear(context.Background(), pollID); err != nil {
+		if err := backend.Clear(ctx, pollID); err != nil {
 			t.Fatalf("Clear returned unexpected error: %v", err)
 		}
 
-		backend.Start(context.Background(), pollID)
+		backend.Start(ctx, pollID)
 
 		// Vote on the same poll with the same user id
-		if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
+		if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clear returned unexpected error: %v", err)
 		}
 	})
 
 	pollID++
 	t.Run("ClearAll removes vote data", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		if err := backend.ClearAll(context.Background()); err != nil {
+		if err := backend.ClearAll(ctx); err != nil {
 			t.Fatalf("ClearAll returned unexpected error: %v", err)
 		}
 
-		bs, userIDs, err := backend.Stop(context.Background(), pollID)
+		bs, userIDs, err := backend.Stop(ctx, pollID)
 		var errDoesNotExist interface{ DoesNotExist() }
 		if !errors.As(err, &errDoesNotExist) {
 			t.Fatalf("Stop after clearAll has to return an error with a method DoesNotExist(), got: %v", err)
@@ -225,29 +226,29 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	pollID++
 	t.Run("ClearAll removes voted users", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		if err := backend.ClearAll(context.Background()); err != nil {
+		if err := backend.ClearAll(ctx); err != nil {
 			t.Fatalf("ClearAll returned unexpected error: %v", err)
 		}
 
-		if err := backend.Start(context.Background(), pollID); err != nil {
+		if err := backend.Start(ctx, pollID); err != nil {
 			t.Fatalf("Start after clearAll returned unexpected error: %v", err)
 		}
 
 		// Vote on the same poll with the same user id
-		if err := backend.Vote(context.Background(), pollID, 5, []byte("my vote")); err != nil {
+		if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clearAll returned unexpected error: %v", err)
 		}
 	})
 
 	pollID++
 	t.Run("VotedPolls", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		got, err := backend.VotedPolls(context.Background(), []int{pollID, pollID + 1}, []int{5})
+		got, err := backend.VotedPolls(ctx, []int{pollID, pollID + 1}, []int{5})
 		if err != nil {
 			t.Fatalf("VotedPolls returned unexpected error: %v", err)
 		}
@@ -260,11 +261,11 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	pollID++
 	t.Run("VotedPolls for many users", func(t *testing.T) {
-		backend.Start(context.Background(), pollID)
-		backend.Vote(context.Background(), pollID, 5, []byte("my vote"))
-		backend.Vote(context.Background(), pollID, 6, []byte("my vote"))
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 6, []byte("my vote"))
 
-		got, err := backend.VotedPolls(context.Background(), []int{pollID, pollID + 1}, []int{5, 6})
+		got, err := backend.VotedPolls(ctx, []int{pollID, pollID + 1}, []int{5, 6})
 		if err != nil {
 			t.Fatalf("VotedPolls returned unexpected error: %v", err)
 		}
@@ -275,19 +276,19 @@ func Backend(t *testing.T, backend vote.Backend) {
 		}
 	})
 
-	backend.ClearAll(context.Background())
+	backend.ClearAll(ctx)
 	pollID++
 	pollID1 := pollID
 	pollID++
 	pollID2 := pollID
 	t.Run("VoteCount", func(t *testing.T) {
-		backend.Start(context.Background(), pollID1)
-		backend.Start(context.Background(), pollID2)
-		backend.Vote(context.Background(), pollID1, 5, []byte("my vote"))
-		backend.Vote(context.Background(), pollID2, 5, []byte("my vote"))
-		backend.Vote(context.Background(), pollID2, 6, []byte("my vote"))
+		backend.Start(ctx, pollID1)
+		backend.Start(ctx, pollID2)
+		backend.Vote(ctx, pollID1, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID2, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID2, 6, []byte("my vote"))
 
-		count, err := backend.VoteCount(context.Background())
+		count, err := backend.VoteCount(ctx)
 		if err != nil {
 			t.Fatalf("VoteCount: %v", err)
 		}
@@ -302,7 +303,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	t.Run("Concurrency", func(t *testing.T) {
 		t.Run("Many Votes", func(t *testing.T) {
 			count := 100
-			backend.Start(context.Background(), pollID)
+			backend.Start(ctx, pollID)
 
 			var wg sync.WaitGroup
 			for i := 0; i < count; i++ {
@@ -310,14 +311,14 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func(uid int) {
 					defer wg.Done()
 
-					if err := backend.Vote(context.Background(), pollID, uid, []byte("vote")); err != nil {
+					if err := backend.Vote(ctx, pollID, uid, []byte("vote")); err != nil {
 						t.Errorf("Vote %d returned undexpected error: %v", uid, err)
 					}
 				}(i + 1)
 			}
 			wg.Wait()
 
-			data, userIDs, err := backend.Stop(context.Background(), pollID)
+			data, userIDs, err := backend.Stop(ctx, pollID)
 			if err != nil {
 				t.Fatalf("Stop returned unexpected error: %v", err)
 			}
@@ -349,7 +350,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func() {
 					defer wg.Done()
 
-					if err := backend.Start(context.Background(), pollID); err != nil {
+					if err := backend.Start(ctx, pollID); err != nil {
 						t.Errorf("Start returned undexpected error: %v", err)
 					}
 				}()
@@ -360,7 +361,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func() {
 					defer wg.Done()
 
-					if _, _, err := backend.Stop(context.Background(), pollID); err != nil {
+					if _, _, err := backend.Stop(ctx, pollID); err != nil {
 						var errDoesNotExist interface{ DoesNotExist() }
 						if errors.As(err, &errDoesNotExist) {
 							// Does not exist errors are expected
@@ -378,7 +379,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 			stopsCount := 50
 			votesCount := 50
 
-			backend.Start(context.Background(), pollID)
+			backend.Start(ctx, pollID)
 
 			expectedObjects := make([][][]byte, stopsCount)
 			expectedUserIDs := make([][]int, stopsCount)
@@ -391,7 +392,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func(uid int) {
 					defer wg.Done()
 
-					err := backend.Vote(context.Background(), pollID, uid, []byte("vote"))
+					err := backend.Vote(ctx, pollID, uid, []byte("vote"))
 					if err != nil {
 						var errStopped interface{ Stopped() }
 						if errors.As(err, &errStopped) {
@@ -415,7 +416,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func(i int) {
 					defer wg.Done()
 
-					obj, userIDs, err := backend.Stop(context.Background(), pollID)
+					obj, userIDs, err := backend.Stop(ctx, pollID)
 					if err != nil {
 						t.Errorf("Stop returned undexpected error: %v", err)
 						return

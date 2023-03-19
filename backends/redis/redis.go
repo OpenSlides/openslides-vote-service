@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenSlides/openslides-vote-service/internal/log"
+	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/gomodule/redigo/redis"
 )
 
