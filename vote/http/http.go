@@ -76,9 +76,9 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
 	mux.Handle(internal+"/vote_count", handleInternal(handleVoteCount(service, ticketProvider)))
-	mux.Handle(external+"/voted", handleExternal(handleVote(service, auth)))
-	mux.Handle(external+"/health", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
+	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
+	mux.Handle(external+"/health", handleExternal(handleVote(service, auth)))
 
 	return mux
 }
