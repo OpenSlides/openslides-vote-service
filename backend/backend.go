@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
@@ -22,12 +23,11 @@ var (
 	envPostgresDatabase = environment.NewVariable("VOTE_DATABASE_NAME", "openslides", "Name of the database to save long running polls.")
 	envPostgresPassword = environment.NewSecret("postgres_password", "Password of the postgres database used for long polls.")
 
-	envBackendFast = environment.NewVariable("VOTE_BACKEND_FAST", "redis", "The backend used for fast polls. Possible backends are redis, postgres or memory.")
-	envBackendLong = environment.NewVariable("VOTE_BACKEND_LONG", "postgres", "The backend used for long polls.")
+	envSingleInstance = environment.NewVariable("VOTE_SINGLE_INSTANCE", "false", "More performance if the serice is not scalled horizontally.")
 )
 
 // Build builds a fast and a long backends from the environment.
-func Build(lookup environment.Environmenter) (fast, long func(context.Context) (vote.Backend, error)) {
+func Build(lookup environment.Environmenter) (fast, long func(context.Context) (vote.Backend, error), singleInstance bool) {
 	// All environment variables have to be called in this function and not in a
 	// sub function. In other case they will not be included in the generated
 	// file environment.md.
@@ -69,16 +69,14 @@ func Build(lookup environment.Environmenter) (fast, long func(context.Context) (
 		return p, nil
 	}
 
-	builder := map[string]func(context.Context) (vote.Backend, error){
-		"memory":   buildMemory,
-		"redis":    buildRedis,
-		"postgres": buildPostgres,
+	long = buildPostgres
+	fast = buildRedis
+	singleInstace, _ := strconv.ParseBool(envSingleInstance.Value(lookup))
+	if singleInstace {
+		fast = buildMemory
 	}
 
-	fast = builder[envBackendFast.Value(lookup)]
-	long = builder[envBackendLong.Value(lookup)]
-
-	return fast, long
+	return fast, long, singleInstace
 }
 
 // encodePostgresConfig encodes a string to be used in the postgres key value style.

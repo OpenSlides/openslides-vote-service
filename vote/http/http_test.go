@@ -462,14 +462,14 @@ func TestHandleVote(t *testing.T) {
 	})
 }
 
-type votedPollserStub struct {
+type votederStub struct {
 	pollIDs    []int
 	user       int
 	expectVote map[int][]int
 	expectErr  error
 }
 
-func (v *votedPollserStub) VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error) {
+func (v *votederStub) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error) {
 	v.pollIDs = pollIDs
 	v.user = requestUser
 
@@ -480,7 +480,7 @@ func (v *votedPollserStub) VotedPolls(ctx context.Context, pollIDs []int, reques
 }
 
 func TestHandleVoted(t *testing.T) {
-	voted := &votedPollserStub{}
+	voted := &votederStub{}
 	auther := &autherStub{}
 
 	url := "/system/vote/voted"
@@ -597,11 +597,10 @@ func TestHandleVoted(t *testing.T) {
 
 type voteCounterStub struct {
 	expectCount map[int]int
-	expectErr   error
 }
 
-func (v *voteCounterStub) VoteCount(ctx context.Context) (map[int]int, error) {
-	return v.expectCount, v.expectErr
+func (v *voteCounterStub) VoteCount(ctx context.Context) map[int]int {
+	return v.expectCount
 }
 
 func TestHandleVoteCountFirstData(t *testing.T) {

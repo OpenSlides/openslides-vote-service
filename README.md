@@ -6,21 +6,9 @@ for an electonic poll.
 
 ## Install and Start
 
-### With Golang
-
-```
-go build
-./openslides-vote-service
-```
-
-
-### With Docker
-
-The docker build uses the redis messaging service, the auth token and the real
-datastore service as default. Either configure it to use the fake services (see
-environment variables below) or make sure the service inside the docker
-container can connect to redis and the datastore-reader. For example with the
-docker argument --network host. The auth-secrets have to given as a file.
+The docker build uses the redis messaging service, the auth token and postgres.
+Make sure the service inside the docker container can connect to this services.
+ The auth-secrets have to given as a file.
 
 ```
 docker build . --tag openslides-vote
@@ -30,25 +18,6 @@ docker run --network host -v $PWD/auth_token_key:/run/secrets/auth_token_key -v 
 ```
 
 It uses the host network to connect to redis.
-
-
-### With Auto Restart
-
-To restart the service when ever a source file has shanged, the tool
-[CompileDaemon](https://github.com/githubnemo/CompileDaemon) can help.
-
-```
-go install github.com/githubnemo/CompileDaemon@latest
-CompileDaemon -log-prefix=false -build "go build" -command "./openslides-vote-service"
-```
-
-The make target `build-dev` creates a docker image that uses this tool. The
-environment varialbe `OPENSLIDES_DEVELOPMENT` is used to use default auth keys.
-
-```
-make build-dev
-docker run --network host --env OPENSLIDES_DEVELOPMENT=true openslides-vote-dev
-```
 
 
 ## Example Request with CURL
@@ -169,3 +138,5 @@ Response:
 ## Configuration
 
 The service is configurated with environment variables. See [all environment varialbes](environment.md).
+
+If VOTE_SINGLE_INSTANCE it uses the memory to save fast votes. If not, it uses redis.

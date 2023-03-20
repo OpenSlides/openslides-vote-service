@@ -107,13 +107,9 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	authService, authBackground := auth.New(lookup, messageBus)
 	backgroundTasks = append(backgroundTasks, authBackground)
 
-	fastBackendStarter, longBackendStarter := backend.Build(lookup)
+	fastBackendStarter, longBackendStarter, singleInstance := backend.Build(lookup)
 
 	service := func(ctx context.Context) error {
-		for _, bg := range backgroundTasks {
-			go bg(ctx, handleError)
-		}
-
 		fastBackend, err := fastBackendStarter(ctx)
 		if err != nil {
 			return fmt.Errorf("start fast backend: %w", err)
@@ -124,7 +120,15 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 			return fmt.Errorf("start long backend: %w", err)
 		}
 
-		voteService := vote.New(fastBackend, longBackend, datastoreService)
+		voteService, voteBackground, err := vote.New(ctx, fastBackend, longBackend, datastoreService, singleInstance)
+		if err != nil {
+			return fmt.Errorf("starting service: %w", err)
+		}
+		backgroundTasks = append(backgroundTasks, voteBackground)
+
+		for _, bg := range backgroundTasks {
+			go bg(ctx, handleError)
+		}
 
 		return httpServer.Run(ctx, authService, voteService)
 	}

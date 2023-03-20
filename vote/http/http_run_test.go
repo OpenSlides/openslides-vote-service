@@ -45,7 +45,7 @@ func TestRun(t *testing.T) {
 
 	backend := memory.New()
 	ds := dsmock.Stub{}
-	service := vote.New(backend, backend, ds)
+	service, _, _ := vote.New(ctx, backend, backend, ds, true)
 	httpServer := votehttp.New(environment.ForTests(map[string]string{"VOTE_PORT": "0"}))
 
 	if err := httpServer.StartListener(); err != nil {

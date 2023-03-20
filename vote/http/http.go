@@ -244,7 +244,7 @@ func handleVote(service voter, auth authenticater) HandlerFunc {
 }
 
 type haveIvoteder interface {
-	VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
+	Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
 }
 
 func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
@@ -267,7 +267,7 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		voted, err := voted.VotedPolls(ctx, pollIDs, uid)
+		voted, err := voted.Voted(ctx, pollIDs, uid)
 		if err != nil {
 			return err
 		}
@@ -281,7 +281,7 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 }
 
 type voteCounter interface {
-	VoteCount(ctx context.Context) (map[int]int, error)
+	VoteCount(ctx context.Context) map[int]int
 }
 
 func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, func())) HandlerFunc {
@@ -297,10 +297,7 @@ func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, 
 		var countMemory map[int]int
 		firstData := true
 		for {
-			count, err := voteCounter.VoteCount(r.Context())
-			if err != nil {
-				return err
-			}
+			count := voteCounter.VoteCount(r.Context())
 
 			if countMemory == nil {
 				countMemory = count

@@ -24,8 +24,7 @@ The Service uses the following environment variables:
 * `VOTE_DATABASE_HOST`: Host of the postgres database used for long polls. The default is `localhost`.
 * `VOTE_DATABASE_PORT`: Port of the postgres database used for long polls. The default is `5432`.
 * `VOTE_DATABASE_NAME`: Name of the database to save long running polls. The default is `openslides`.
-* `VOTE_BACKEND_FAST`: The backend used for fast polls. Possible backends are redis, postgres or memory. The default is `redis`.
-* `VOTE_BACKEND_LONG`: The backend used for long polls. The default is `postgres`.
+* `VOTE_SINGLE_INSTANCE`: More performance if the serice is not scalled horizontally. The default is `false`.
 
 
 ## Secrets
