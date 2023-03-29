@@ -69,7 +69,7 @@ func (p *postgresTestData) conn(ctx context.Context) (*pgx.Conn, error) {
 
 	for {
 		var err error
-		if p.pgxConfig == nil {
+		if p == nil {
 			return nil, fmt.Errorf("some error")
 		}
 		conn, err = pgx.ConnectConfig(ctx, p.pgxConfig)
