@@ -115,7 +115,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/vote_count", handleInternal(handleVoteCount(service, ticketProvider)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
-	mux.Handle(external+"/health", handleExternal(handleVote(service, auth)))
+	mux.Handle(external+"/health", handleExternal(handleHealth()))
 
 	return mux
 }
@@ -344,11 +344,12 @@ func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, 
 	}
 }
 
-func handleHealth() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func handleHealth() HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 
 		fmt.Fprintf(w, `{"healthy":true}`)
+		return nil
 	}
 }
 
