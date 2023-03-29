@@ -6,6 +6,7 @@ import (
 	"fmt"
 	golog "log"
 	"os"
+	"strconv"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
@@ -17,6 +18,8 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/vote/http"
 	"github.com/alecthomas/kong"
 )
+
+var envDebugLog = environment.NewVariable("VOTE_DEBUG_LOG", "false", "Show debug log.")
 
 //go:generate  sh -c "go run main.go build-doc > environment.md"
 
@@ -60,6 +63,10 @@ func main() {
 
 func run(ctx context.Context) error {
 	lookup := new(environment.ForProduction)
+
+	if debug, _ := strconv.ParseBool(envDebugLog.Value(lookup)); debug {
+		log.SetDebugLogger(golog.Default())
+	}
 
 	service, err := initService(lookup)
 	if err != nil {
