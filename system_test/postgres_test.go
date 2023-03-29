@@ -88,7 +88,6 @@ func (p *postgresTestData) conn(ctx context.Context) (*pgx.Conn, error) {
 func (p *postgresTestData) addSchema(ctx context.Context) error {
 	// Schema from datastore-repo
 	schema := `
-	DROP TABLE models;
 	CREATE TABLE IF NOT EXISTS models (
 		fqid VARCHAR(48) PRIMARY KEY,
 		data JSONB NOT NULL,
