@@ -37,23 +37,23 @@ func newPostgresTestData(ctx context.Context) (p *postgresTestData, err error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	p = &postgresTestData{
+	ptd := postgresTestData{
 		pgxConfig: config,
 	}
 
 	defer func() {
 		if err != nil {
-			if err := p.Close(ctx); err != nil {
-				log.Println("Closing postgres: %w", err)
+			if err := ptd.Close(ctx); err != nil {
+				log.Printf("Closing postgres: %v", err)
 			}
 		}
 	}()
 
-	if err := p.addSchema(ctx); err != nil {
+	if err := ptd.addSchema(ctx); err != nil {
 		return nil, fmt.Errorf("add schema: %w", err)
 	}
 
-	return p, nil
+	return &ptd, nil
 }
 
 func (p *postgresTestData) Close(ctx context.Context) error {
