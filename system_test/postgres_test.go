@@ -64,12 +64,15 @@ func (p *postgresTestData) Close(ctx context.Context) error {
 	return nil
 }
 
-func (tp *postgresTestData) conn(ctx context.Context) (*pgx.Conn, error) {
+func (p *postgresTestData) conn(ctx context.Context) (*pgx.Conn, error) {
 	var conn *pgx.Conn
 
 	for {
 		var err error
-		conn, err = pgx.ConnectConfig(ctx, tp.pgxConfig)
+		if p.pgxConfig == nil {
+			return nil, fmt.Errorf("some error")
+		}
+		conn, err = pgx.ConnectConfig(ctx, p.pgxConfig)
 		if err == nil {
 			return conn, nil
 		}
