@@ -129,7 +129,7 @@ func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
 		for userID := range userIDs {
 			out[pid] = append(out[pid], userID)
 		}
-		
+
 		sort.Ints(out[pid])
 	}
 
