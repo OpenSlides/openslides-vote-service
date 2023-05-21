@@ -1,0 +1,40 @@
+version: "3"
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=openslides
+      - POSTGRES_PASSWORD=openslides
+      - POSTGRES_DB=openslides
+    ports:
+      - 127.0.0.1:5432:5432
+
+  redis:
+    image: redis:latest
+    command: redis-server --save ""
+    
+  vote:
+    build:
+      context: ..
+    environment:
+      - MESSAGE_BUS_HOST=redis
+      - DATASTORE_DATABASE_HOST=postgres
+      - VOTE_REDIS_HOST=redis
+      - VOTE_DATABASE_HOST=postgres
+      - VOTE_DEBUG_LOG=1
+
+    secrets:
+      - postgres_password
+      - auth_token_key
+      - auth_cookie_key
+
+    ports:
+      - 127.0.0.1:9013:9013
+    
+secrets:
+  auth_token_key:
+    file: ./secrets/auth_token_key
+  auth_cookie_key:
+    file: ./secrets/auth_cookie_key
+  postgres_password:
+    file: ./secrets/postgres_password

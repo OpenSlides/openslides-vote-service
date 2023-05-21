@@ -27,6 +27,7 @@ The Service uses the following environment variables:
 * `VOTE_BACKEND_FAST`: The backend used for fast polls. Possible backends are redis, postgres or memory. The default is `redis`.
 * `VOTE_BACKEND_LONG`: The backend used for long polls. The default is `postgres`.
 * `VOTE_DECRYPT_SERVICE`: Host and port of the decrypt service. Empty string to disable this feature. The default is ``.
+* `VOTE_SINGLE_INSTANCE`: More performance if the serice is not scalled horizontally. The default is `false`.
 
 
 ## Secrets

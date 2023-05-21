@@ -5,17 +5,14 @@ import (
 	"errors"
 	"fmt"
 	golog "log"
-	"net"
 	"os"
-	"strings"
+	"strconv"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
 	messageBusRedis "github.com/OpenSlides/openslides-autoupdate-service/pkg/redis"
-	"github.com/OpenSlides/openslides-vote-service/backends/memory"
-	"github.com/OpenSlides/openslides-vote-service/backends/postgres"
-	"github.com/OpenSlides/openslides-vote-service/backends/redis"
+	"github.com/OpenSlides/openslides-vote-service/backend"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 	"github.com/OpenSlides/openslides-vote-service/vote/http"
@@ -23,25 +20,12 @@ import (
 	"github.com/alecthomas/kong"
 )
 
-//go:generate  sh -c "go run main.go build-doc > environment.md"
-
 var (
-	envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which the service listen on.")
-
-	envBackendFast = environment.NewVariable("VOTE_BACKEND_FAST", "redis", "The backend used for fast polls. Possible backends are redis, postgres or memory.")
-	envBackendLong = environment.NewVariable("VOTE_BACKEND_LONG", "postgres", "The backend used for long polls.")
-
-	envRedisHost = environment.NewVariable("VOTE_REDIS_HOST", "localhost", "Host of the redis used for the fast backend.")
-	envRedisPort = environment.NewVariable("VOTE_REDIS_PORT", "6379", "Port of the redis used for the fast backend.")
-
-	envPostgresHost     = environment.NewVariable("VOTE_DATABASE_HOST", "localhost", "Host of the postgres database used for long polls.")
-	envPostgresPort     = environment.NewVariable("VOTE_DATABASE_PORT", "5432", "Port of the postgres database used for long polls.")
-	envPostgresUser     = environment.NewVariable("VOTE_DATABASE_USER", "openslides", "Databasename of the postgres database used for long polls.")
-	envPostgresDatabase = environment.NewVariable("VOTE_DATABASE_NAME", "openslides", "Name of the database to save long running polls.")
-	envPostgresPassword = environment.NewSecret("postgres_password", "Password of the postgres database used for long polls.")
-
+	envDebugLog           = environment.NewVariable("VOTE_DEBUG_LOG", "false", "Show debug log.")
 	envVoteDecryptService = environment.NewVariable("VOTE_DECRYPT_SERVICE", "", "Host and port of the decrypt service. Empty string to disable this feature.")
 )
+
+//go:generate  sh -c "go run main.go build-doc > environment.md"
 
 var cli struct {
 	Run      struct{} `cmd:"" help:"Runs the service." default:"withargs"`
@@ -84,6 +68,10 @@ func main() {
 func run(ctx context.Context) error {
 	lookup := new(environment.ForProduction)
 
+	if debug, _ := strconv.ParseBool(envDebugLog.Value(lookup)); debug {
+		log.SetDebugLogger(golog.Default())
+	}
+
 	service, err := initService(lookup)
 	if err != nil {
 		return fmt.Errorf("init services: %w", err)
@@ -113,7 +101,8 @@ func buildDocu() error {
 // Returns a the service as callable.
 func initService(lookup environment.Environmenter) (func(context.Context) error, error) {
 	var backgroundTasks []func(context.Context, func(error))
-	listenAddr := ":" + envVotePort.Value(lookup)
+
+	httpServer := http.New(lookup)
 
 	// Redis as message bus for datastore and logout events.
 	messageBus := messageBusRedis.New(lookup)
@@ -129,15 +118,11 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	authService, authBackground := auth.New(lookup, messageBus)
 	backgroundTasks = append(backgroundTasks, authBackground)
 
-	fastBackendStarter, longBackendStarter := buildBackends(lookup)
+	fastBackendStarter, longBackendStarter, singleInstance := backend.Build(lookup)
 
 	decryptAddr := envVoteDecryptService.Value(lookup)
 
 	service := func(ctx context.Context) error {
-		for _, bg := range backgroundTasks {
-			go bg(ctx, handleError)
-		}
-
 		fastBackend, err := fastBackendStarter(ctx)
 		if err != nil {
 			return fmt.Errorf("start fast backend: %w", err)
@@ -158,16 +143,17 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 			decrypter = decr
 		}
 
-		voteService := vote.New(fastBackend, longBackend, datastoreService, decrypter)
-
-		lst, err := net.Listen("tcp", listenAddr)
+		voteService, voteBackground, err := vote.New(ctx, fastBackend, longBackend, datastoreService, singleInstance, decrypter)
 		if err != nil {
-			return fmt.Errorf("open %s: %w", listenAddr, err)
+			return fmt.Errorf("starting service: %w", err)
+		}
+		backgroundTasks = append(backgroundTasks, voteBackground)
+
+		for _, bg := range backgroundTasks {
+			go bg(ctx, handleError)
 		}
 
-		// Start http server.
-		log.Info("Listen on %s\n", listenAddr)
-		return http.Run(ctx, lst, authService, voteService)
+		return httpServer.Run(ctx, authService, voteService)
 	}
 
 	return service, nil
@@ -190,67 +176,4 @@ func handleError(err error) {
 	}
 
 	log.Info("Error: %v", err)
-}
-
-// encodePostgresConfig encodes a string to be used in the postgres key value style.
-//
-// See: https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
-func encodePostgresConfig(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `'`, `\'`)
-	return s
-}
-
-func buildBackends(lookup environment.Environmenter) (fast, long func(context.Context) (vote.Backend, error)) {
-	// All environment variables have to be called in this function and not in a
-	// sub function. In other case they will not be included in the generated
-	// file environment.md.
-
-	buildMemory := func(_ context.Context) (vote.Backend, error) {
-		return memory.New(), nil
-	}
-
-	redisAddr := envRedisHost.Value(lookup) + ":" + envRedisPort.Value(lookup)
-	buildRedis := func(ctx context.Context) (vote.Backend, error) {
-		r := redis.New(redisAddr)
-		r.Wait(ctx)
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		return r, nil
-	}
-
-	postgresAddr := fmt.Sprintf(
-		`user='%s' password='%s' host='%s' port='%s' dbname='%s'`,
-		encodePostgresConfig(envPostgresUser.Value(lookup)),
-		encodePostgresConfig(envPostgresPassword.Value(lookup)),
-		encodePostgresConfig(envPostgresHost.Value(lookup)),
-		encodePostgresConfig(envPostgresPort.Value(lookup)),
-		encodePostgresConfig(envPostgresDatabase.Value(lookup)),
-	)
-
-	buildPostgres := func(ctx context.Context) (vote.Backend, error) {
-		p, err := postgres.New(ctx, postgresAddr)
-		if err != nil {
-			return nil, fmt.Errorf("creating postgres connection pool: %w", err)
-		}
-
-		p.Wait(ctx)
-		if err := p.Migrate(ctx); err != nil {
-			return nil, fmt.Errorf("creating shema: %w", err)
-		}
-		return p, nil
-	}
-
-	builder := map[string]func(context.Context) (vote.Backend, error){
-		"memory":   buildMemory,
-		"redis":    buildRedis,
-		"postgres": buildPostgres,
-	}
-
-	fast = builder[envBackendFast.Value(lookup)]
-	long = builder[envBackendLong.Value(lookup)]
-
-	return fast, long
 }

@@ -12,12 +12,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
+var envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which the service listen on.")
+
+// Server can start the service on a port.
+type Server struct {
+	Addr string
+	lst  net.Listener
+}
+
+// New initializes a new Server.
+func New(lookup environment.Environmenter) Server {
+	return Server{
+		Addr: ":" + envVotePort.Value(lookup),
+	}
+}
+
+// StartListener starts the listener where the server will listen on.
+//
+// This is usefull for testing so an empty port will be dissolved.
+func (s *Server) StartListener() error {
+	lst, err := net.Listen("tcp", s.Addr)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", s.Addr, err)
+	}
+
+	s.lst = lst
+	s.Addr = lst.Addr().String()
+	return nil
+}
+
 // Run starts the http service.
-func Run(ctx context.Context, lst net.Listener, auth authenticater, service *vote.Vote) error {
+func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote) error {
 	ticketProvider := func() (<-chan time.Time, func()) {
 		ticker := time.NewTicker(time.Second)
 		return ticker.C, ticker.Stop
@@ -41,7 +71,14 @@ func Run(ctx context.Context, lst net.Listener, auth authenticater, service *vot
 		wait <- nil
 	}()
 
-	if err := srv.Serve(lst); err != http.ErrServerClosed {
+	if s.lst == nil {
+		if err := s.StartListener(); err != nil {
+			return fmt.Errorf("start listening: %w", err)
+		}
+	}
+
+	log.Info("Listen on %s\n", s.Addr)
+	if err := srv.Serve(s.lst); err != http.ErrServerClosed {
 		return fmt.Errorf("HTTP Server failed: %v", err)
 	}
 
@@ -80,7 +117,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/public_main_key", handleExternal(handlePublicMainKey(service)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
-	mux.Handle(external+"/health", handleExternal(handleVote(service, auth)))
+	mux.Handle(external+"/health", handleExternal(handleHealth()))
 
 	return mux
 }
@@ -228,7 +265,7 @@ func handleVote(service voter, auth authenticater) HandlerFunc {
 }
 
 type haveIvoteder interface {
-	VotedPolls(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
+	Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
 }
 
 func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
@@ -251,7 +288,7 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		voted, err := voted.VotedPolls(ctx, pollIDs, uid)
+		voted, err := voted.Voted(ctx, pollIDs, uid)
 		if err != nil {
 			return err
 		}
@@ -265,7 +302,7 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 }
 
 type voteCounter interface {
-	VoteCount(ctx context.Context) (map[int]int, error)
+	VoteCount(ctx context.Context) map[int]int
 }
 
 func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, func())) HandlerFunc {
@@ -281,10 +318,7 @@ func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, 
 		var countMemory map[int]int
 		firstData := true
 		for {
-			count, err := voteCounter.VoteCount(r.Context())
-			if err != nil {
-				return err
-			}
+			count := voteCounter.VoteCount(r.Context())
 
 			if countMemory == nil {
 				countMemory = count
@@ -353,11 +387,12 @@ func handlePublicMainKey(keyer publicKeyer) HandlerFunc {
 	}
 }
 
-func handleHealth() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func handleHealth() HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 
 		fmt.Fprintf(w, `{"healthy":true}`)
+		return nil
 	}
 }
 

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OpenSlides/openslides-vote-service/backends/postgres"
-	"github.com/OpenSlides/openslides-vote-service/backends/test"
+	"github.com/OpenSlides/openslides-vote-service/backend/postgres"
+	"github.com/OpenSlides/openslides-vote-service/backend/test"
 	"github.com/ory/dockertest/v3"
 )
 

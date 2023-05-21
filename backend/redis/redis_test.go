@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/OpenSlides/openslides-vote-service/backends/redis"
-	"github.com/OpenSlides/openslides-vote-service/backends/test"
+	"github.com/OpenSlides/openslides-vote-service/backend/redis"
+	"github.com/OpenSlides/openslides-vote-service/backend/test"
 	"github.com/ory/dockertest/v3"
 )
 

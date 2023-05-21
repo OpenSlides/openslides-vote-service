@@ -6,13 +6,16 @@
 // access to the redis database can see the vote results and how each user has
 // voted.
 //
-// It uses the keys `vote_state_X` and `vote_data_X` where X is a pollID.
+// It uses the keys `vote_state_X`, `vote_data_X` and `vote_polls` where X is a
+// pollID.
 //
 // The key `vote_state_X` has type int. It is a number that tells the current
 // state of the poll. 1: Poll is started. 2: Poll is stopped.
 //
-// The key `vote_data_%X` has type hash. The key is a user id and the value the
+// The key `vote_data_X` has type hash. The key is a user id and the value the
 // vote of the user.
+//
+// The key `vote_polls` has type set. It contains the pollIDs of all known polls.
 package redis
 
 import (
@@ -30,6 +33,7 @@ import (
 const (
 	keyState = "vote_state_%d"
 	keyVote  = "vote_data_%d"
+	keyPolls = "vote_polls"
 )
 
 // Backend is the vote-Backend.
@@ -56,7 +60,7 @@ func New(addr string) *Backend {
 		pool: &pool,
 
 		luaScriptVote:     redis.NewScript(2, luaVoteScript),
-		luaScriptClearAll: redis.NewScript(0, luaClearAll),
+		luaScriptClearAll: redis.NewScript(1, luaClearAll),
 	}
 }
 
@@ -88,6 +92,11 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 	log.Debug("Redis: SETNX %s 1", sKey)
 	if _, err := conn.Do("SETNX", sKey, 1); err != nil {
 		return fmt.Errorf("set state key to 1: %w", err)
+	}
+
+	log.Debug("Redis: SADD %s %d", keyPolls, pollID)
+	if _, err := conn.Do("SADD", keyPolls, pollID); err != nil {
+		return fmt.Errorf("add poll ID to %s: %w", keyPolls, err)
 	}
 	return nil
 }
@@ -201,120 +210,72 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	if _, err := conn.Do("DEL", vKey, sKey); err != nil {
 		return fmt.Errorf("removing keys: %w", err)
 	}
+
+	log.Debug("REDIS: SREM %s %d", keyPolls, pollID)
+	if _, err := conn.Do("SREM", keyPolls, pollID); err != nil {
+		return fmt.Errorf("remove pollID from %s: %w", keyPolls, err)
+	}
+
 	return nil
 }
 
 // luaClearAll removes all vote related data from redis.
 //
+// KEYS[1] == polls
+//
 // ARGV[1] == state key pattern
 // ARGV[2] == vote data pattern
 const luaClearAll = `
-for _, key in ipairs(redis.call("KEYS", ARGV[1])) do
-	redis.call("DEL", key)
+for _, pollID in ipairs(redis.call("SMEMBERS",KEYS[1])) do
+	redis.call("DEL", ARGV[1]..pollID)
+	redis.call("DEL", ARGV[2]..pollID)
 end
-
-for _, key in ipairs(redis.call("KEYS", ARGV[2])) do
-	redis.call("DEL", key)
-end
+redis.call("DEL", KEYS[1])
 `
 
 // ClearAll removes all data from all polls.
-//
-// It does this in an atomic way so it is save to call this function any time.
-// But this functions makes use of the redis command KEYS, that has a O(N)
-// performance. If there are a lot of polls in the database, this could take
-// some time, stopping the hole redis instance.
-//
-// The redis documentations says:
-//
-// Warning: consider KEYS as a command that should only be used in production
-// environments with extreme care. It may ruin performance when it is executed
-// against large databases. This command is intended for debugging and special
-// operations, such as changing your keyspace layout. Don't use KEYS in your
-// regular application code.
-//
-// Don't use this function regulary.
 func (b *Backend) ClearAll(ctx context.Context) error {
 	conn := b.pool.Get()
 	defer conn.Close()
 
-	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "*")
-	stateKeyPattern := strings.ReplaceAll(keyState, "%d", "*")
+	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "")
+	stateKeyPattern := strings.ReplaceAll(keyState, "%d", "")
 
 	log.Debug("Redis: lua script clear all: '%s' 2 %s %s", luaClearAll, voteKeyPattern, stateKeyPattern)
-	if _, err := b.luaScriptClearAll.Do(conn, voteKeyPattern, stateKeyPattern); err != nil {
+	if _, err := b.luaScriptClearAll.Do(conn, keyPolls, voteKeyPattern, stateKeyPattern); err != nil {
 		return fmt.Errorf("removing keys: %w", err)
 	}
 
 	return nil
 }
 
-// VotedPolls tells for a list of poll IDs if the given userIDs have already
-// voted.
+// Voted returns for all polls the userIDs, that have voted.
 //
 // This command is not atomic.
-func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userIDs []int) (map[int][]int, error) {
+func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
 	conn := b.pool.Get()
 	defer conn.Close()
 
-	out := make(map[int][]int)
+	log.Debug("REDIS: SMEMBERS %s", keyPolls)
+	pollIDs, err := redis.Ints(conn.Do("SMEMBERS", keyPolls))
+	if err != nil {
+		return nil, fmt.Errorf("getting all known pollIDs: %w", err)
+	}
+
+	out := make(map[int][]int, len(pollIDs))
 	for _, pollID := range pollIDs {
 		key := fmt.Sprintf(keyVote, pollID)
 
-		args := make([]any, len(userIDs)+1)
-		args[0] = key
-		for i, uid := range userIDs {
-			args[i+1] = uid
-		}
-
-		log.Debug("Redis: HMGET %v", args)
-		votes, err := redis.Strings(conn.Do("HMGET", args...))
+		log.Debug("Redis: HKEYS %s", key)
+		userIDs, err := redis.Ints(conn.Do("HKEYS", key))
 		if err != nil {
-			return nil, fmt.Errorf("HMGET for key %s: %w", key, err)
+			return nil, fmt.Errorf("HKEYS for key %s: %w", key, err)
 		}
 
-		out[pollID] = nil
-		for i, userID := range userIDs {
-			if votes[i] != "" {
-				out[pollID] = append(out[pollID], userID)
-			}
-		}
+		out[pollID] = userIDs
 	}
+
 	return out, nil
-}
-
-// VoteCount returns the amout of votes for each vote in the backend.
-func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
-	conn := b.pool.Get()
-	defer conn.Close()
-
-	// TODO: This uses the redis `KEY` command, which should not be used on big
-	// instances with lot of pools. Maybe create a new key that contains all id
-	// of all started and stopped polls. This could also be used on clearAll. An
-	// alternative is to introduce a key voteCount as a map from pollID to count
-	// that get increased on successfull votes with HINCR.
-	voteKeyPattern := strings.ReplaceAll(keyVote, "%d", "*")
-	keys, err := redis.Strings(conn.Do("Keys", voteKeyPattern))
-	if err != nil {
-		return nil, fmt.Errorf("get all vote data keys: %w", err)
-	}
-
-	count := make(map[int]int, len(keys))
-	for _, key := range keys {
-		var pollID int
-		found, err := fmt.Sscanf(key, keyVote, &pollID)
-		if err != nil || found != 1 {
-			return nil, fmt.Errorf("getting pollID: %d, %w", found, err)
-		}
-
-		amount, err := redis.Int(conn.Do("HLEN", key))
-		if err != nil {
-			return nil, fmt.Errorf("getting vote count for poll %d: %w", pollID, err)
-		}
-		count[pollID] = amount
-	}
-
-	return count, nil
 }
 
 type doesNotExistError struct {

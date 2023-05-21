@@ -83,8 +83,7 @@ func (b *Backend) Close() {
 
 // Start starts a poll.
 func (b *Backend) Start(ctx context.Context, pollID int) error {
-	sql := `
-	INSERT INTO vote.poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
+	sql := `INSERT INTO vote.poll (id, stopped) VALUES ($1, false) ON CONFLICT DO NOTHING;
 	`
 	log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 	if _, err := b.pool.Exec(ctx, sql, pollID); err != nil {
@@ -98,11 +97,9 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 // If an transaction error happens, the vote is saved again. This is done until
 // either the vote is saved or the given context is canceled.
 func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
-	err := continueOnTransactionError(ctx, func() error {
+	return continueOnTransactionError(ctx, func() error {
 		return b.voteOnce(ctx, pollID, userID, object)
 	})
-
-	return err
 }
 
 // voteOnce tries to add the vote once.
@@ -119,14 +116,11 @@ func (b *Backend) voteOnce(ctx context.Context, pollID int, userID int, object [
 			IsoLevel: "REPEATABLE READ",
 		},
 		func(tx pgx.Tx) error {
-			sql := `
-			SELECT stopped, user_ids 
-			FROM vote.poll
-			WHERE id = $1;
-			`
+			sql := `SELECT stopped, user_ids FROM vote.poll	WHERE id = $1;`
+			log.Debug("SQL: `%s` (values: %d)", sql, pollID)
+
 			var stopped bool
 			var uIDsRaw []byte
-			log.Debug("SQL: `%s` (values: %d)", sql, pollID)
 			if err := tx.QueryRow(ctx, sql, pollID).Scan(&stopped, &uIDsRaw); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					return doesNotExistError{fmt.Errorf("unknown poll")}
@@ -311,23 +305,17 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	return nil
 }
 
-// VotedPolls tells for a list of poll IDs if the given userID has already
-// voted.
-func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userIDs []int) (map[int][]int, error) {
-	log.Debug("SQL: Begin voted polls")
+// Voted returns for all polls the userIDs, that have voted.
+func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
+	sql := `SELECT id, user_ids	FROM vote.poll;`
 
-	sql := `
-	SELECT id, user_ids
-	FROM vote.poll
-	WHERE id = ANY ($1);
-	`
-
-	rows, err := b.pool.Query(ctx, sql, pollIDs)
+	log.Debug("SQL: `%s`", sql)
+	rows, err := b.pool.Query(ctx, sql)
 	if err != nil {
-		return nil, fmt.Errorf("fetching user_ids from poll objects: %w", err)
+		return nil, fmt.Errorf("fetching user_ids from all poll objects: %w", err)
 	}
 
-	out := make(map[int][]int, len(pollIDs))
+	out := make(map[int][]int)
 	for rows.Next() {
 		var pid int
 		var rawUIDs []byte
@@ -340,42 +328,13 @@ func (b *Backend) VotedPolls(ctx context.Context, pollIDs []int, userIDs []int) 
 			return nil, fmt.Errorf("parsing user ids: %w", err)
 		}
 
-		for _, userID := range userIDs {
-			if uIDs.contains(int32(userID)) {
-				out[pid] = append(out[pid], userID)
-			}
+		out[pid] = make([]int, 0, uIDs.len())
+		for _, uid := range uIDs {
+			out[pid] = append(out[pid], int(uid))
 		}
 	}
 
-	// Add values for non existing polls
-	for _, id := range pollIDs {
-		if _, ok := out[id]; !ok {
-			out[id] = nil
-		}
-	}
 	return out, nil
-}
-
-// VoteCount returns the amout of votes for each vote in the backend.
-func (b *Backend) VoteCount(ctx context.Context) (map[int]int, error) {
-	sql := `select poll_id, count(poll_id) from vote.objects GROUP BY poll_id;`
-
-	rows, err := b.pool.Query(ctx, sql)
-	if err != nil {
-		return nil, fmt.Errorf("fetching vote count from poll objects: %w", err)
-	}
-
-	count := make(map[int]int)
-	for rows.Next() {
-		var pollID int
-		var amount int
-		if err := rows.Scan(&pollID, &amount); err != nil {
-			return nil, fmt.Errorf("parsind row: %w", err)
-		}
-		count[pollID] = amount
-	}
-
-	return count, nil
 }
 
 // ContinueOnTransactionError runs the given many times until is does not return

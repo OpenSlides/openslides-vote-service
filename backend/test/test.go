@@ -243,59 +243,38 @@ func Backend(t *testing.T, backend vote.Backend) {
 		}
 	})
 
+	backend.ClearAll(ctx)
 	pollID++
-	t.Run("VotedPolls", func(t *testing.T) {
+	t.Run("Voted", func(t *testing.T) {
 		backend.Start(ctx, pollID)
 		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		got, err := backend.VotedPolls(ctx, []int{pollID, pollID + 1}, []int{5})
+		got, err := backend.Voted(ctx)
 		if err != nil {
-			t.Fatalf("VotedPolls returned unexpected error: %v", err)
+			t.Fatalf("Voted returned unexpected error: %v", err)
 		}
 
-		expect := map[int][]int{pollID: {5}, pollID + 1: nil}
+		expect := map[int][]int{pollID: {5}}
 		if !reflect.DeepEqual(got, expect) {
-			t.Errorf("VotedPolls returned %v, expected %v", got, expect)
-		}
-	})
-
-	pollID++
-	t.Run("VotedPolls for many users", func(t *testing.T) {
-		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
-		backend.Vote(ctx, pollID, 6, []byte("my vote"))
-
-		got, err := backend.VotedPolls(ctx, []int{pollID, pollID + 1}, []int{5, 6})
-		if err != nil {
-			t.Fatalf("VotedPolls returned unexpected error: %v", err)
-		}
-
-		expect := map[int][]int{pollID: {5, 6}, pollID + 1: nil}
-		if !reflect.DeepEqual(got, expect) {
-			t.Errorf("VotedPolls returned %v, expected %v", got, expect)
+			t.Errorf("Voted returned %v, expected %v", got, expect)
 		}
 	})
 
 	backend.ClearAll(ctx)
 	pollID++
-	pollID1 := pollID
-	pollID++
-	pollID2 := pollID
-	t.Run("VoteCount", func(t *testing.T) {
-		backend.Start(ctx, pollID1)
-		backend.Start(ctx, pollID2)
-		backend.Vote(ctx, pollID1, 5, []byte("my vote"))
-		backend.Vote(ctx, pollID2, 5, []byte("my vote"))
-		backend.Vote(ctx, pollID2, 6, []byte("my vote"))
+	t.Run("Voted for many users", func(t *testing.T) {
+		backend.Start(ctx, pollID)
+		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 6, []byte("my vote"))
 
-		count, err := backend.VoteCount(ctx)
+		got, err := backend.Voted(ctx)
 		if err != nil {
-			t.Fatalf("VoteCount: %v", err)
+			t.Fatalf("Voted returned unexpected error: %v", err)
 		}
 
-		expect := map[int]int{pollID1: 1, pollID2: 2}
-		if !reflect.DeepEqual(count, expect) {
-			t.Errorf("Got %v, expected %v", count, expect)
+		expect := map[int][]int{pollID: {5, 6}}
+		if !reflect.DeepEqual(got, expect) {
+			t.Errorf("Voted returned %v, expected %v", got, expect)
 		}
 	})
 
