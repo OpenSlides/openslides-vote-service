@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.20
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230519212348-5aab6b37920d
+	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230614144349-b7250a3c0e45
 	github.com/OpenSlides/vote-decrypt v0.0.0-20230510045515-df8672d3571c
 	github.com/alecthomas/kong v0.7.1
 	github.com/gomodule/redigo v1.8.9
@@ -45,7 +45,7 @@ require (
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/sys v0.9.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
