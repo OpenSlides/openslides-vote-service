@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dskey"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/cache"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/backend/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
@@ -19,7 +19,7 @@ func TestVoteStart(t *testing.T) {
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		backend := memory.New()
-		ds, _ := dsmock.NewMockDatastore(dsmock.YAMLData(""))
+		ds := dsmock.Stub(dsmock.YAMLData(""))
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
 
 		err := v.Start(ctx, 1)
@@ -30,19 +30,23 @@ func TestVoteStart(t *testing.T) {
 
 	t.Run("Not started poll", func(t *testing.T) {
 		backend := memory.New()
-		ds, _ := dsmock.NewMockDatastore(dsmock.YAMLData(`
-		poll:
-			1:
-				meeting_id: 5
-				state: started
-				backend: fast
-				type: pseudoanonymous
-				pollmethod: Y
+		ds := dsmock.NewFlow(
+			dsmock.YAMLData(`
+			poll:
+				1:
+					meeting_id: 5
+					state: started
+					backend: fast
+					type: pseudoanonymous
+					pollmethod: Y
 
-		group/1/user_ids: [1]
-		user/1/is_present_in_meeting_ids: [1]
-		meeting/5/id: 5
-		`))
+			group/1/user_ids: [1]
+			user/1/is_present_in_meeting_ids: [1]
+			meeting/5/id: 5
+			`),
+			dsmock.NewCounter,
+		)
+		counter := ds.Middlewares()[0].(*dsmock.Counter)
 
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
 
@@ -50,8 +54,8 @@ func TestVoteStart(t *testing.T) {
 			t.Errorf("Start returned unexpected error: %v", err)
 		}
 
-		if c := len(ds.Requests()); c > 2 {
-			t.Errorf("Start used %d requests to the datastore, expected max 2: %v", c, ds.Requests())
+		if c := counter.Count(); c > 2 {
+			t.Errorf("Start used %d requests to the datastore, expected max 2: %v", c, counter.Requests())
 		}
 
 		// After a poll was started, it has to be possible to send votes.
@@ -201,39 +205,6 @@ func TestVoteStart(t *testing.T) {
 			t.Errorf("Got no error, expected `Some error`")
 		}
 	})
-}
-
-func TestVoteStartPreloadData(t *testing.T) {
-	ctx := context.Background()
-	backend := memory.New()
-	ds, _ := dsmock.NewMockDatastore(dsmock.YAMLData(`
-	poll/1:
-		meeting_id: 5
-		entitled_group_ids: [1]
-		state: started
-		backend: fast
-		type: pseudoanonymous
-		pollmethod: Y
-	
-	group:
-		1:
-			user_ids: [1,2]
-	user:
-		1:
-			is_present_in_meeting_ids: [1]
-		2:
-			is_present_in_meeting_ids: [1]
-	meeting/5/id: 5
-	`))
-	v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-	if err := v.Start(ctx, 1); err != nil {
-		t.Errorf("Start returned unexpected error: %v", err)
-	}
-
-	if !ds.KeysRequested(dskey.MustKey("poll/1/meeting_id"), dskey.MustKey("user/1/is_present_in_meeting_ids"), dskey.MustKey("user/2/is_present_in_meeting_ids")) {
-		t.Fatalf("Not all keys where preloaded.")
-	}
 }
 
 func TestVoteStartDSError(t *testing.T) {
@@ -575,22 +546,27 @@ func TestVoteNoRequests(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ds, _ := dsmock.NewMockDatastore(dsmock.YAMLData(tt.data))
+			ds := dsmock.NewFlow(
+				dsmock.YAMLData(tt.data),
+				dsmock.NewCounter,
+			)
+			counter := ds.Middlewares()[0].(*dsmock.Counter)
+			cachedDS := cache.New(ds)
 			backend := memory.New()
-			v, _, _ := vote.New(ctx, backend, backend, ds, true)
+			v, _, _ := vote.New(ctx, backend, backend, cachedDS, true)
 
 			if err := v.Start(ctx, 1); err != nil {
 				t.Fatalf("Can not start poll: %v", err)
 			}
 
-			ds.ResetRequests()
+			counter.Reset()
 
 			if err := v.Vote(ctx, 1, 1, strings.NewReader(tt.vote)); err != nil {
 				t.Errorf("Vote returned unexpected error: %v", err)
 			}
 
-			if len(ds.Requests()) != 0 {
-				t.Errorf("Vote send %d requests to the datastore: %v", len(ds.Requests()), ds.Requests())
+			if counter.Count() != 0 {
+				t.Errorf("Vote send %d requests to the datastore: %v", counter.Count(), counter.Requests())
 			}
 		})
 	}

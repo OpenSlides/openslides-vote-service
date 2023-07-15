@@ -11,6 +11,8 @@ import (
 )
 
 func TestPreload(t *testing.T) {
+	// Tests, that the preload function needs a specific number of requests to
+	// postgres.
 	ctx := context.Background()
 
 	for _, tt := range []struct {
@@ -175,7 +177,7 @@ func TestPreload(t *testing.T) {
 				t.Errorf("preload returned: %v", err)
 			}
 
-			if got := dsCount.(*dsmock.Counter).Value(); got != tt.expectCount {
+			if got := dsCount.(*dsmock.Counter).Count(); got != tt.expectCount {
 				buf := new(bytes.Buffer)
 				for _, req := range dsCount.(*dsmock.Counter).Requests() {
 					fmt.Fprintln(buf, req)

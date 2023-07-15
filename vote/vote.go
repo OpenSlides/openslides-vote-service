@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
@@ -21,14 +21,14 @@ import (
 type Vote struct {
 	fastBackend Backend
 	longBackend Backend
-	ds          datastore.Getter
+	ds          flow.Getter
 
 	votedMu sync.Mutex
 	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
 }
 
 // New creates an initializes vote service.
-func New(ctx context.Context, fast, long Backend, ds datastore.Getter, singleInstance bool) (*Vote, func(context.Context, func(error)), error) {
+func New(ctx context.Context, fast, long Backend, ds flow.Getter, singleInstance bool) (*Vote, func(context.Context, func(error)), error) {
 	v := &Vote{
 		fastBackend: fast,
 		longBackend: long,
