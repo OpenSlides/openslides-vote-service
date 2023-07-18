@@ -19,7 +19,7 @@ func TestVoteStart(t *testing.T) {
 
 	t.Run("Unknown poll", func(t *testing.T) {
 		backend := memory.New()
-		ds := dsmock.Stub(dsmock.YAMLData(""))
+		ds := dsmock.NewFlow(dsmock.YAMLData(""))
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
 
 		err := v.Start(ctx, 1)
@@ -1005,7 +1005,7 @@ func TestVotedPolls(t *testing.T) {
 	ctx := context.Background()
 
 	backend := memory.New()
-	ds := dsmock.Stub(dsmock.YAMLData(`---
+	ds := dsmock.NewFlow(dsmock.YAMLData(`---
 	poll/1:
 		backend: memory
 		meeting_id: 1
@@ -1034,7 +1034,7 @@ func TestVotedPolls(t *testing.T) {
 func TestVotedPollsWithDelegation(t *testing.T) {
 	ctx := context.Background()
 	backend := memory.New()
-	ds := dsmock.Stub(dsmock.YAMLData(`---
+	ds := dsmock.NewFlow(dsmock.YAMLData(`---
 	poll/1:
 		backend: memory
 		type: named
@@ -1072,7 +1072,7 @@ func TestVoteCount(t *testing.T) {
 	backend2.Start(ctx, 42)
 	backend2.Vote(ctx, 42, 1, []byte("vote"))
 	backend2.Vote(ctx, 42, 2, []byte("vote"))
-	ds := dsmock.Stub(dsmock.YAMLData(``))
+	ds := dsmock.NewFlow(dsmock.YAMLData(``))
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
