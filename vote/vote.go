@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
@@ -30,7 +30,7 @@ type Decrypter interface {
 type Vote struct {
 	fastBackend Backend
 	longBackend Backend
-	ds          datastore.Getter
+	flow        flow.Flow
 
 	decrypter Decrypter
 	votedMu   sync.Mutex
@@ -38,11 +38,11 @@ type Vote struct {
 }
 
 // New creates an initializes vote service.
-func New(ctx context.Context, fast, long Backend, ds datastore.Getter, singleInstance bool, decrypter Decrypter) (*Vote, func(context.Context, func(error)), error) {
+func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance bool, decrypter Decrypter) (*Vote, func(context.Context, func(error)), error) {
 	v := &Vote{
 		fastBackend: fast,
 		longBackend: long,
-		ds:          ds,
+		flow:        flow,
 		decrypter:   decrypter,
 	}
 
@@ -50,16 +50,21 @@ func New(ctx context.Context, fast, long Backend, ds datastore.Getter, singleIns
 		return nil, nil, fmt.Errorf("loading voted: %w", err)
 	}
 
-	bg := func(context.Context, func(error)) {}
-	if !singleInstance {
-		bg = func(ctx context.Context, errorHandler func(error)) {
+	bg := func(ctx context.Context, errorHandler func(error)) {
+		go v.flow.Update(ctx, nil)
+
+		if singleInstance {
+			return
+		}
+
+		go func() {
 			for {
 				if err := v.loadVoted(ctx); err != nil {
 					errorHandler(err)
 				}
 				time.Sleep(time.Second)
 			}
-		}
+		}()
 	}
 
 	return v, bg, nil
@@ -95,7 +100,7 @@ func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (s
 // get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
 func (v *Vote) Start(ctx context.Context, pollID int) (pubkey, pubKeySig []byte, err error) {
-	recorder := dsrecorder.New(v.ds)
+	recorder := dsrecorder.New(v.flow)
 	ds := dsfetch.New(recorder)
 
 	poll, err := loadPoll(ctx, ds, pollID)
@@ -153,7 +158,7 @@ type StopResult struct {
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
 func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
-	ds := dsfetch.New(v.ds)
+	ds := dsfetch.New(v.flow)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
@@ -246,7 +251,7 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
-	ds := dsfetch.New(v.ds)
+	ds := dsfetch.New(v.flow)
 	qid, err := v.qualifiedID(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("building qualified id: %w", err)
@@ -273,10 +278,10 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 func (v *Vote) ClearAll(ctx context.Context) error {
 	// Reset the cache if it has the ResetCach() method.
 	type ResetCacher interface {
-		ResetCache()
+		Reset()
 	}
-	if r, ok := v.ds.(ResetCacher); ok {
-		r.ResetCache()
+	if r, ok := v.flow.(ResetCacher); ok {
+		r.Reset()
 	}
 
 	if err := v.fastBackend.ClearAll(ctx); err != nil {
@@ -296,7 +301,7 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
-	ds := dsfetch.New(v.ds)
+	ds := dsfetch.New(v.flow)
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
 		return fmt.Errorf("loading poll: %w", err)
@@ -478,7 +483,7 @@ func delegatedUserIDs(ctx context.Context, fetch *dsfetch.Fetch, userID int) ([]
 
 // Voted tells, on which the requestUser has already voted.
 func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error) {
-	ds := dsfetch.New(v.ds)
+	ds := dsfetch.New(v.flow)
 	userIDs, err := delegatedUserIDs(ctx, ds, requestUser)
 	if err != nil {
 		return nil, fmt.Errorf("getting all delegated users: %w", err)
