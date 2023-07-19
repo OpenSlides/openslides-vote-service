@@ -18,7 +18,8 @@ services:
       context: ..
     environment:
       - MESSAGE_BUS_HOST=redis
-      - DATASTORE_DATABASE_HOST=postgres
+      - CACHE_HOST=redis
+      - DATABASE_HOST=postgres
       - VOTE_REDIS_HOST=redis
       - VOTE_DATABASE_HOST=postgres
       - VOTE_DEBUG_LOG=1
