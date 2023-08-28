@@ -40,7 +40,6 @@ func TestVoteStart(t *testing.T) {
 					type: pseudoanonymous
 					pollmethod: Y
 
-			group/1/user_ids: [1]
 			user/1/is_present_in_meeting_ids: [1]
 			meeting/5/id: 5
 			`),
@@ -75,7 +74,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
@@ -98,7 +96,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
@@ -125,7 +122,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -148,7 +144,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
 		`)}
@@ -171,7 +166,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -194,7 +188,6 @@ func TestVoteStart(t *testing.T) {
 				backend: fast
 				pollmethod: Y
 
-		group/1/user_ids: [1]
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -503,7 +496,7 @@ func TestVoteNoRequests(t *testing.T) {
 			meeting_user:
 				10:
 					user_id: 1
-					vote_delegated_from_ids: [20]
+					vote_delegations_from_ids: [20]
 					meeting_id: 50
 				20:
 					meeting_id: 50

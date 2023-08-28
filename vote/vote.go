@@ -566,8 +566,8 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
 func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
-	ds.Meeting_UsersEnableVoteWeight(p.meetingID)
-	ds.Meeting_UsersEnableVoteDelegations(p.meetingID)
+	ds.Meeting_UsersEnableVoteWeight(p.meetingID).Preload()
+	ds.Meeting_UsersEnableVoteDelegations(p.meetingID).Preload()
 
 	meetingUserIDsList := make([][]int, len(p.groups))
 	for i, groupID := range p.groups {
@@ -586,10 +586,10 @@ func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 			var uid int
 			userIDs = append(userIDs, &uid)
 			ds.MeetingUser_UserID(muID).Lazy(&uid)
-			ds.MeetingUser_GroupIDs(muID)
-			ds.MeetingUser_VoteWeight(muID)
-			ds.MeetingUser_VoteDelegatedToID(muID)
-			ds.MeetingUser_MeetingID(muID)
+			ds.MeetingUser_GroupIDs(muID).Preload()
+			ds.MeetingUser_VoteWeight(muID).Preload()
+			ds.MeetingUser_VoteDelegatedToID(muID).Preload()
+			ds.MeetingUser_MeetingID(muID).Preload()
 		}
 	}
 
@@ -617,7 +617,7 @@ func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	delegatedUserIDs := make([]int, len(delegatedMeetingUserIDs))
 	for i, muID := range delegatedMeetingUserIDs {
 		ds.MeetingUser_UserID(muID).Lazy(&delegatedUserIDs[i])
-		ds.MeetingUser_MeetingID(muID)
+		ds.MeetingUser_MeetingID(muID).Preload()
 	}
 
 	// Third database request to get all delegated user ids. Only fetches data
@@ -627,13 +627,13 @@ func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	}
 
 	for _, uID := range userIDs {
-		ds.User_DefaultVoteWeight(*uID)
-		ds.User_MeetingUserIDs(*uID)
-		ds.User_IsPresentInMeetingIDs(*uID)
+		ds.User_DefaultVoteWeight(*uID).Preload()
+		ds.User_MeetingUserIDs(*uID).Preload()
+		ds.User_IsPresentInMeetingIDs(*uID).Preload()
 	}
 	for _, uID := range delegatedUserIDs {
-		ds.User_IsPresentInMeetingIDs(uID)
-		ds.User_MeetingUserIDs(uID)
+		ds.User_IsPresentInMeetingIDs(uID).Preload()
+		ds.User_MeetingUserIDs(uID).Preload()
 	}
 
 	// Thrid or forth database request to get is present_in_meeting for all users and delegates.
