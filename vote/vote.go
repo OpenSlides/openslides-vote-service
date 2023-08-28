@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dskey"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
@@ -218,15 +219,23 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 
 	// voteData.Weight is a DecimalField with 6 zeros.
-	var voteWeight string
-	if ds.Meeting_UsersEnableVoteWeight(poll.meetingID).ErrorLater(ctx) {
-		voteWeight = ds.MeetingUser_VoteWeight(voteMeetingUserID).ErrorLater(ctx)
-		if voteWeight == "" {
-			voteWeight = ds.User_DefaultVoteWeight(voteUser).ErrorLater(ctx)
-		}
-	}
-	if err := ds.Err(); err != nil {
+	var voteWeightEnabled bool
+	var meetingUserVoteWeight string
+	var userDefaultVoteWeight string
+	ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Lazy(&voteWeightEnabled)
+	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
+	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
+
+	if err := ds.Execute(ctx); err != nil {
 		return fmt.Errorf("getting vote weight: %w", err)
+	}
+
+	var voteWeight string
+	if voteWeightEnabled {
+		voteWeight = meetingUserVoteWeight
+		if voteWeight == "" {
+			voteWeight = userDefaultVoteWeight
+		}
 	}
 
 	if voteWeight == "" {
@@ -545,7 +554,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 
 	if err := ds.Execute(ctx); err != nil {
 		var errDoesNotExist dsfetch.DoesNotExistError
-		if errors.As(err, &errDoesNotExist) && errDoesNotExist.Collection == "poll" && errDoesNotExist.ID == pollID {
+		if errors.As(err, &errDoesNotExist) && dskey.Key(errDoesNotExist).Collection() == "poll" && dskey.Key(errDoesNotExist).ID() == pollID {
 			return pollConfig{}, ErrNotExists
 		}
 		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
@@ -594,7 +603,11 @@ func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 		for _, muID := range muIDs {
 			// This does not send a db request, since the value was fetched in
 			// the block above.
-			muID, found := ds.MeetingUser_VoteDelegatedToID(muID).ErrorLater(ctx)
+			muID, found, err := ds.MeetingUser_VoteDelegatedToID(muID).Value(ctx)
+			if err != nil {
+				return fmt.Errorf("getting vote delegated to for meeting user %d: %w", muID, err)
+			}
+
 			if found {
 				delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, muID)
 			}
