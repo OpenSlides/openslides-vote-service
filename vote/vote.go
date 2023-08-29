@@ -397,12 +397,23 @@ func delegatedUserIDs(ctx context.Context, fetch *dsfetch.Fetch, userID int) ([]
 		return nil, fmt.Errorf("getting vote_delegation_from values: %w", err)
 	}
 
-	var uids []int
-	for _, muids := range meetingUserDelegationsIDs {
-		uids = append(uids, muids...)
+	var delegatedMeetingUserIDs []int
+	for i := range meetingUserDelegationsIDs {
+		for j := range meetingUserDelegationsIDs[i] {
+			delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, meetingUserDelegationsIDs[i][j])
+		}
 	}
 
-	return uids, nil
+	userIDs := make([]int, len(delegatedMeetingUserIDs))
+	for i := range delegatedMeetingUserIDs {
+		fetch.MeetingUser_UserID(delegatedMeetingUserIDs[i]).Lazy(&userIDs[i])
+	}
+
+	if err := fetch.Execute(ctx); err != nil {
+		return nil, fmt.Errorf("getting user_ids from meeting_user_ids: %w", err)
+	}
+
+	return userIDs, nil
 }
 
 // Voted tells, on which the requestUser has already voted.

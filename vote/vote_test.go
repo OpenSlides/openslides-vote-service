@@ -1257,15 +1257,21 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 
 	user/5:
 		meeting_user_ids: [10]
-	meeting_user/10:
-		meeting_id: 8
-		vote_delegations_from_ids: [11,12]
+	meeting_user:
+		10:
+			meeting_id: 8
+			vote_delegations_from_ids: [11]
+		11:
+			user_id: 6
+		12:
+			user_id: 7
+		
 	`))
 
 	backend.Start(ctx, 1)
 	backend.Vote(ctx, 1, 5, []byte(`"Y"`))
-	backend.Vote(ctx, 1, 10, []byte(`"Y"`))
-	backend.Vote(ctx, 1, 11, []byte(`"Y"`))
+	backend.Vote(ctx, 1, 6, []byte(`"Y"`))
+	backend.Vote(ctx, 1, 7, []byte(`"Y"`))
 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
 
 	got, err := v.Voted(ctx, []int{1, 2}, 5)
@@ -1273,7 +1279,7 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 		t.Fatalf("Voted() returned unexected error: %v", err)
 	}
 
-	expect := map[int][]int{1: {5, 11}, 2: nil}
+	expect := map[int][]int{1: {5, 6}, 2: nil}
 	if !reflect.DeepEqual(got, expect) {
 		t.Errorf("Voted() == `%v`, expected `%v`", got, expect)
 	}
