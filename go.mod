@@ -1,6 +1,6 @@
 module github.com/OpenSlides/openslides-vote-service
 
-go 1.21
+go 1.22
 
 require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20230828101706-f7761f227b1f
