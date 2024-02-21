@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20240215065743-ed5556257712
 	github.com/alecthomas/kong v0.8.1
-	github.com/gomodule/redigo v1.8.9
+	github.com/gomodule/redigo v1.9.1
 	github.com/jackc/pgx/v5 v5.5.3
 	github.com/ory/dockertest/v3 v3.10.0
 )
