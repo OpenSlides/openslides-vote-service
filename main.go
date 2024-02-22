@@ -15,10 +15,14 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 	"github.com/OpenSlides/openslides-vote-service/vote/http"
+	"github.com/OpenSlides/vote-decrypt/grpc"
 	"github.com/alecthomas/kong"
 )
 
-var envDebugLog = environment.NewVariable("VOTE_DEBUG_LOG", "false", "Show debug log.")
+var (
+	envDebugLog           = environment.NewVariable("VOTE_DEBUG_LOG", "false", "Show debug log.")
+	envVoteDecryptService = environment.NewVariable("VOTE_DECRYPT_SERVICE", "", "Host and port of the decrypt service. Empty string to disable this feature.")
+)
 
 //go:generate  sh -c "go run main.go build-doc > environment.md"
 
@@ -120,6 +124,8 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 		return nil, fmt.Errorf("init vote backend: %w", err)
 	}
 
+	decryptAddr := envVoteDecryptService.Value(lookup)
+
 	service := func(ctx context.Context) error {
 		fastBackend, err := fastBackendStarter(ctx)
 		if err != nil {
@@ -131,7 +137,17 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 			return fmt.Errorf("start long backend: %w", err)
 		}
 
-		voteService, voteBackground, err := vote.New(ctx, fastBackend, longBackend, database, singleInstance)
+		var decrypter vote.Decrypter
+		if decryptAddr != "" {
+			decr, close, err := grpc.NewClient(decryptAddr)
+			if err != nil {
+				return fmt.Errorf("connection to vote decrypt service via grpc: %w", err)
+			}
+			defer close()
+			decrypter = decr
+		}
+
+		voteService, voteBackground, err := vote.New(ctx, fastBackend, longBackend, database, singleInstance, decrypter)
 		if err != nil {
 			return fmt.Errorf("starting service: %w", err)
 		}

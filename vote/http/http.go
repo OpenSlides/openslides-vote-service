@@ -93,6 +93,7 @@ type voteService interface {
 	voteCounter
 	voter
 	haveIvoteder
+	publicKeyer
 }
 
 type authenticater interface {
@@ -113,6 +114,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
 	mux.Handle(internal+"/vote_count", handleInternal(handleVoteCount(service, ticketProvider)))
+	mux.Handle(internal+"/public_main_key", handleExternal(handlePublicMainKey(service)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
@@ -121,7 +123,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 }
 
 type starter interface {
-	Start(ctx context.Context, pollID int) error
+	Start(ctx context.Context, pollID int) ([]byte, []byte, error)
 }
 
 func handleStart(start starter) HandlerFunc {
@@ -134,7 +136,28 @@ func handleStart(start starter) HandlerFunc {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		return start.Start(r.Context(), id)
+		pubkey, pubKeySig, err := start.Start(r.Context(), id)
+		if err != nil {
+			return err
+		}
+
+		if pubkey == nil && pubKeySig == nil {
+			// Early exit for non crypto polls.
+			return nil
+		}
+
+		content := struct {
+			PubKey    []byte `json:"public_key"`
+			PubKeySig []byte `json:"public_key_sig"`
+		}{
+			pubkey,
+			pubKeySig,
+		}
+		if err := json.NewEncoder(w).Encode(content); err != nil {
+			return fmt.Errorf("encoding and sending objects: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -159,22 +182,20 @@ func handleStop(stop stopper) HandlerFunc {
 			return err
 		}
 
-		// Convert vote objects to json.RawMessage
-		encodableObjects := make([]json.RawMessage, len(result.Votes))
-		for i := range result.Votes {
-			encodableObjects[i] = result.Votes[i]
-		}
-
 		if result.UserIDs == nil {
 			result.UserIDs = []int{}
 		}
 
 		out := struct {
-			Votes []json.RawMessage `json:"votes"`
-			Users []int             `json:"user_ids"`
+			Votes     string         `json:"votes"`
+			Signature []byte         `json:"signature,omitempty"`
+			Users     []int          `json:"user_ids"`
+			Invalid   map[int]string `json:"invalid,omitempty"`
 		}{
-			encodableObjects,
+			result.Votes,
+			result.Signature,
 			result.UserIDs,
+			result.Invalid,
 		}
 
 		if err := json.NewEncoder(w).Encode(out); err != nil {
@@ -341,6 +362,28 @@ func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, 
 				return nil
 			}
 		}
+	}
+}
+
+type publicKeyer interface {
+	CryptoPublicMainKey(ctx context.Context) ([]byte, error)
+}
+
+func handlePublicMainKey(keyer publicKeyer) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		log.Info("Receiving public main key request")
+		w.Header().Set("Content-Type", "application/json")
+
+		key, err := keyer.CryptoPublicMainKey(r.Context())
+		if err != nil {
+			return err
+		}
+
+		if err := json.NewEncoder(w).Encode(key); err != nil {
+			return err
+		}
+
+		return nil
 	}
 }
 

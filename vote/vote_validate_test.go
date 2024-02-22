@@ -303,7 +303,7 @@ func TestVoteValidate(t *testing.T) {
 
 			if tt.expectValid {
 				if validation != "" {
-					t.Fatalf("Validate returned unexpected message: %v", validation)
+					t.Fatalf("Validate returned unexpected message: %s", validation)
 				}
 				return
 			}

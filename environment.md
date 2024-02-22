@@ -28,3 +28,4 @@ The Service uses the following environment variables:
 * `VOTE_DATABASE_PORT`: Port of the postgres database used for long polls. The default is `5432`.
 * `VOTE_DATABASE_NAME`: Name of the database to save long running polls. The default is `openslides`.
 * `VOTE_SINGLE_INSTANCE`: More performance if the serice is not scalled horizontally. The default is `false`.
+* `VOTE_DECRYPT_SERVICE`: Host and port of the decrypt service. Empty string to disable this feature. The default is ``.
