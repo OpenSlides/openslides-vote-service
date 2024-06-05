@@ -373,12 +373,8 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	if err != nil {
 		return fmt.Errorf("fetching delegation : %w", err)
 	}
-	if id, ok := delegation.Value(); ok {
-		if id != requestMeetingUserID {
-			return fmt.Errorf("You can not vote for user %d", voteUser)
-		}
-	} else {
-		return fmt.Errorf("No valid vote delegation found for meeting_user %d", requestMeetingUserID)
+	if id, ok := delegation.Value(); !ok || id != requestMeetingUserID {
+		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
 
 	return nil
