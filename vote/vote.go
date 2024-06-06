@@ -497,12 +497,11 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 		return MessageError(ErrNotAllowed, "You are not in the right meeting")
 	}
 
-	delegation, found, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
+	delegation, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching delegation : %w", err)
 	}
-
-	if !found || delegation != requestMeetingUserID {
+	if id, ok := delegation.Value(); !ok || id != requestMeetingUserID {
 		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
 
@@ -751,13 +750,12 @@ func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 		for _, muID := range muIDs {
 			// This does not send a db request, since the value was fetched in
 			// the block above.
-			muID, found, err := ds.MeetingUser_VoteDelegatedToID(muID).Value(ctx)
+			mID, err := ds.MeetingUser_VoteDelegatedToID(muID).Value(ctx)
 			if err != nil {
 				return fmt.Errorf("getting vote delegated to for meeting user %d: %w", muID, err)
 			}
-
-			if found {
-				delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, muID)
+			if id, ok := mID.Value(); ok {
+				delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, id)
 			}
 		}
 	}
