@@ -20,9 +20,9 @@ type starterStub struct {
 	expectErr error
 }
 
-func (c *starterStub) Start(ctx context.Context, pollID int) error {
+func (c *starterStub) Start(ctx context.Context, pollID int) ([]byte, []byte, error) {
 	c.id = pollID
-	return c.expectErr
+	return nil, nil, c.expectErr
 }
 
 func TestHandleStart(t *testing.T) {
@@ -118,8 +118,9 @@ type stopperStub struct {
 	id        int
 	expectErr error
 
-	expectedVotes   [][]byte
-	expectedUserIDs []int
+	expectedVotes     string
+	expectedSignature []byte
+	expectedUserIDs   []int
 }
 
 func (s *stopperStub) Stop(ctx context.Context, pollID int) (vote.StopResult, error) {
@@ -130,8 +131,9 @@ func (s *stopperStub) Stop(ctx context.Context, pollID int) (vote.StopResult, er
 	}
 
 	return vote.StopResult{
-		Votes:   s.expectedVotes,
-		UserIDs: s.expectedUserIDs,
+		Votes:     s.expectedVotes,
+		Signature: s.expectedSignature,
+		UserIDs:   s.expectedUserIDs,
 	}, nil
 }
 
@@ -151,7 +153,7 @@ func TestHandleStop(t *testing.T) {
 	})
 
 	t.Run("Valid", func(t *testing.T) {
-		stopper.expectedVotes = [][]byte{[]byte(`"some values"`)}
+		stopper.expectedVotes = `["some values"]`
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
@@ -164,7 +166,7 @@ func TestHandleStop(t *testing.T) {
 			t.Errorf("Stopper was called with id %d, expected 1", stopper.id)
 		}
 
-		expect := `{"votes":["some values"],"user_ids":[]}`
+		expect := `{"votes":"[\"some values\"]","user_ids":[]}`
 		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
 			t.Errorf("Got body:\n`%s`, expected:\n`%s`", trimed, expect)
 		}

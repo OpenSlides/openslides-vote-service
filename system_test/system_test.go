@@ -63,7 +63,7 @@ func TestStartVoteStopClear(t *testing.T) {
 		t.Fatalf("Stop poll: %v", err)
 	}
 
-	expectBody := `{"votes":[{"request_user_id":1,"vote_user_id":1,"value":"Y","weight":"1.000000"}],"user_ids":[1]}`
+	expectBody := `{"votes":"[{\"request_user_id\":1,\"vote_user_id\":1,\"value\":\"Y\",\"weight\":\"1.000000\"}]","user_ids":[1]}`
 	if strings.TrimSpace(string(stopBody)) != expectBody {
 		t.Fatalf("Got != expect\n%s\n%s", stopBody, expectBody)
 	}
@@ -115,6 +115,7 @@ func startPoll(ctx context.Context, db *postgresTestData, pollID int) error {
 			is_present_in_meeting_ids: [1]
 			meeting_user_ids: [10]
 		meeting/1/id: 5
+		organization/1/url: test
 		`,
 		pollID)))
 

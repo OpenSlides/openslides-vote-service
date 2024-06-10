@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"sync"
 	"time"
 
@@ -16,6 +17,14 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
+// Decrypter decryptes the incomming votes.
+type Decrypter interface {
+	Start(ctx context.Context, pollID string) (pubKey []byte, pubKeySig []byte, err error)
+	Stop(ctx context.Context, pollID string, voteList [][]byte) (decryptedContent, signature []byte, err error)
+	Clear(ctx context.Context, pollID string) error
+	PublicMainKey(ctx context.Context) ([]byte, error)
+}
+
 // Vote holds the state of the service.
 //
 // Vote has to be initializes with vote.New().
@@ -24,16 +33,18 @@ type Vote struct {
 	longBackend Backend
 	flow        flow.Flow
 
-	votedMu sync.Mutex
-	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
+	decrypter Decrypter
+	votedMu   sync.Mutex
+	voted     map[int][]int // voted holds for all running polls, which user ids have already voted.
 }
 
 // New creates an initializes vote service.
-func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance bool) (*Vote, func(context.Context, func(error)), error) {
+func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance bool, decrypter Decrypter) (*Vote, func(context.Context, func(error)), error) {
 	v := &Vote{
 		fastBackend: fast,
 		longBackend: long,
 		flow:        flow,
+		decrypter:   decrypter,
 	}
 
 	if err := v.loadVoted(ctx); err != nil {
@@ -70,41 +81,77 @@ func (v *Vote) backend(p pollConfig) Backend {
 	return backend
 }
 
+func (v *Vote) qualifiedID(ctx context.Context, fetch *dsfetch.Fetch, id int) (string, error) {
+	rawURL, err := fetch.Organization_Url(1).Value(ctx)
+	if err != nil {
+		return "", fmt.Errorf("getting organization url: %v", err)
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid url %s: %w", rawURL, err)
+	}
+
+	return fmt.Sprintf("%s/%d", parsed.Hostname(), id), nil
+}
+
 // Start an electronic vote.
 //
 // This function is idempotence. If you call it with the same input, you will
 // get the same output. This means, that when a poll is stopped, Start() will
 // not throw an error.
-func (v *Vote) Start(ctx context.Context, pollID int) error {
+func (v *Vote) Start(ctx context.Context, pollID int) (pubkey, pubKeySig []byte, err error) {
 	recorder := dsrecorder.New(v.flow)
 	ds := dsfetch.New(recorder)
 
 	poll, err := loadPoll(ctx, ds, pollID)
 	if err != nil {
-		return fmt.Errorf("loading poll: %w", err)
+		return nil, nil, fmt.Errorf("loading poll: %w", err)
 	}
 
 	if poll.ptype == "analog" {
-		return MessageError(ErrInvalid, "Analog poll can not be started")
+		return nil, nil, MessageError(ErrInvalid, "Analog poll can not be started")
 	}
 
 	if err := poll.preload(ctx, ds); err != nil {
-		return fmt.Errorf("preloading data: %w", err)
+		return nil, nil, fmt.Errorf("preloading data: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
 	backend := v.backend(poll)
 	if err := backend.Start(ctx, pollID); err != nil {
-		return fmt.Errorf("starting poll in the backend: %w", err)
+		return nil, nil, fmt.Errorf("starting poll in the backend: %w", err)
 	}
 
-	return nil
+	if poll.ptype != "cryptographic" {
+		return nil, nil, nil
+	}
+
+	defer func() {
+		if err != nil {
+			backend.Clear(ctx, pollID)
+		}
+	}()
+
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("building qualified id: %w", err)
+	}
+
+	pubkey, pubKeySig, err = v.decrypter.Start(ctx, qid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("starting poll in decrypter: %w", err)
+	}
+
+	return pubkey, pubKeySig, nil
 }
 
 // StopResult is the return value from vote.Stop.
 type StopResult struct {
-	Votes   [][]byte
-	UserIDs []int
+	Votes     string
+	Signature []byte
+	UserIDs   []int
+	Invalid   map[int]string
 }
 
 // Stop ends a poll.
@@ -129,7 +176,70 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 		return StopResult{}, fmt.Errorf("fetching vote objects: %w", err)
 	}
 
-	return StopResult{ballots, userIDs}, nil
+	switch poll.ptype {
+	case "cryptographic":
+		return v.stopCrypto(ctx, poll, ds, ballots, userIDs)
+	default:
+		return v.stopNonCrypt(ballots, userIDs)
+	}
+}
+
+func (v *Vote) stopNonCrypt(ballots [][]byte, userIDs []int) (StopResult, error) {
+	encodable := make([]json.RawMessage, len(ballots))
+	for i := range ballots {
+		encodable[i] = ballots[i]
+	}
+
+	votes, err := json.Marshal(encodable)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("encode votes to list: %w", err)
+	}
+
+	return StopResult{Votes: string(votes), UserIDs: userIDs}, nil
+}
+
+func (v *Vote) stopCrypto(ctx context.Context, poll pollConfig, ds *dsfetch.Fetch, ballots [][]byte, userIDs []int) (StopResult, error) {
+	qid, err := v.qualifiedID(ctx, ds, poll.id)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("building qualified id: %w", err)
+	}
+
+	voteValue := make([][]byte, len(ballots))
+	for i := range ballots {
+		// This uses the type `[]byte` to decode a base64 value.
+		var vote struct {
+			Value []byte `json:"value"`
+		}
+		if err := json.Unmarshal(ballots[i], &vote); err != nil {
+			return StopResult{}, fmt.Errorf("decoding stored vote: %w", err)
+		}
+
+		voteValue[i] = vote.Value
+	}
+
+	decrypted, signature, err := v.decrypter.Stop(ctx, qid, voteValue)
+	if err != nil {
+		return StopResult{}, fmt.Errorf("decrypting votes: %w", err)
+	}
+
+	var decryptedContent struct {
+		ID    string `json:"id"`
+		Votes []struct {
+			Votes ballotValue `json:"votes"`
+		} `json:"votes"`
+	}
+	if err := json.Unmarshal(decrypted, &decryptedContent); err != nil {
+		return StopResult{}, fmt.Errorf("encoding decrypted votes: %w", err)
+	}
+
+	invalid := make(map[int]string)
+	for i, vote := range decryptedContent.Votes {
+		if validation := validate(poll, vote.Votes); validation != "" {
+			invalid[i] = validation
+		}
+	}
+
+	return StopResult{Votes: string(decrypted), Signature: signature, UserIDs: userIDs, Invalid: invalid}, nil
 }
 
 // Clear removes all knowlage of a poll.
@@ -142,6 +252,20 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
+	ds := dsfetch.New(v.flow)
+	qid, err := v.qualifiedID(ctx, ds, pollID)
+	if err != nil {
+		return fmt.Errorf("building qualified id: %w", err)
+	}
+
+	if v.decrypter == nil {
+		return nil
+	}
+
+	if err := v.decrypter.Clear(ctx, qid); err != nil {
+		return fmt.Errorf("clearing decrypter: %w", err)
+	}
+
 	v.votedMu.Lock()
 	v.voted[pollID] = nil
 	v.votedMu.Unlock()
@@ -150,6 +274,8 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 }
 
 // ClearAll removes all knowlage of all polls and the datastore-cache.
+//
+// This does not work for the vote decrypter.
 func (v *Vote) ClearAll(ctx context.Context) error {
 	// Reset the cache if it has the ResetCach() method.
 	type ResetCacher interface {
@@ -214,41 +340,43 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return err
 	}
 
-	if validation := validate(poll, vote.Value); validation != "" {
-		return MessageError(ErrInvalid, validation)
-	}
-
-	// voteData.Weight is a DecimalField with 6 zeros.
-	var voteWeightEnabled bool
-	var meetingUserVoteWeight string
-	var userDefaultVoteWeight string
-	ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Lazy(&voteWeightEnabled)
-	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
-	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
-
-	if err := ds.Execute(ctx); err != nil {
-		return fmt.Errorf("getting vote weight: %w", err)
-	}
-
 	var voteWeight string
-	if voteWeightEnabled {
-		voteWeight = meetingUserVoteWeight
-		if voteWeight == "" {
-			voteWeight = userDefaultVoteWeight
+	if poll.ptype != "cryptographic" {
+		if validation := validate(poll, vote.Value); validation != "" {
+			return MessageError(ErrInvalid, validation)
 		}
-	}
 
-	if voteWeight == "" {
-		voteWeight = "1.000000"
-	}
+		// voteData.Weight is a DecimalField with 6 zeros.
+		var voteWeightEnabled bool
+		var meetingUserVoteWeight string
+		var userDefaultVoteWeight string
+		ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Lazy(&voteWeightEnabled)
+		ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
+		ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
 
-	log.Debug("Using voteWeight %s", voteWeight)
+		if err := ds.Execute(ctx); err != nil {
+			return fmt.Errorf("getting vote weight: %w", err)
+		}
+
+		if voteWeightEnabled {
+			voteWeight = meetingUserVoteWeight
+			if voteWeight == "" {
+				voteWeight = userDefaultVoteWeight
+			}
+		}
+
+		if voteWeight == "" {
+			voteWeight = "1.000000"
+		}
+
+		log.Debug("Using voteWeight %s", voteWeight)
+	}
 
 	voteData := struct {
 		RequestUser int             `json:"request_user_id,omitempty"`
 		VoteUser    int             `json:"vote_user_id,omitempty"`
 		Value       json.RawMessage `json:"value"`
-		Weight      string          `json:"weight"`
+		Weight      string          `json:"weight,omitempty"`
 	}{
 		requestUser,
 		voteUser,
@@ -492,6 +620,15 @@ func (v *Vote) loadVoted(ctx context.Context) error {
 	v.voted = fastData
 	v.votedMu.Unlock()
 	return nil
+}
+
+// CryptoPublicMainKey returns the public main key from vote-decrypt.
+func (v *Vote) CryptoPublicMainKey(ctx context.Context) ([]byte, error) {
+	if v.decrypter == nil {
+		return nil, fmt.Errorf("decrypt service is not configured")
+	}
+
+	return v.decrypter.PublicMainKey(ctx)
 }
 
 // Backend is a storage for the poll options.
