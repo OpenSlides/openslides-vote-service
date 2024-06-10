@@ -115,6 +115,7 @@ func startPoll(ctx context.Context, db *postgresTestData, pollID int) error {
 			is_present_in_meeting_ids: [1]
 			meeting_user_ids: [10]
 		meeting/1/id: 5
+		organization/1/url: test
 		`,
 		pollID)))
 
