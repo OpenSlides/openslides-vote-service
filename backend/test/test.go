@@ -3,11 +3,12 @@
 package test
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"reflect"
 	"runtime"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 
@@ -43,7 +44,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Errorf("Start a stopped poll returned error: %v", err)
 			}
 
-			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 			var errStopped interface{ Stopped() }
 			if !errors.As(err, &errStopped) {
 				t.Errorf("The stopped poll has to be stopped after calling start. Vote returned error: %v", err)
@@ -81,7 +82,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Vote", func(t *testing.T) {
 		t.Run("on notstarted poll", func(t *testing.T) {
-			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 			var errDoesNotExist interface{ DoesNotExist() }
 			if !errors.As(err, &errDoesNotExist) {
@@ -92,7 +93,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 		t.Run("successfull", func(t *testing.T) {
 			backend.Start(ctx, pollID)
 
-			if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
+			if err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote")); err != nil {
 				t.Fatalf("Vote returned unexpected error: %v", err)
 			}
 
@@ -113,7 +114,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Fatalf("Found %d user ids, expected 1", len(userIDs))
 			}
 
-			if userIDs[0] != 5 {
+			if userIDs[0].VoteUser != 5 {
 				t.Errorf("Got userID %d, expected 5", userIDs[0])
 			}
 		})
@@ -122,11 +123,11 @@ func Backend(t *testing.T, backend vote.Backend) {
 		t.Run("two times", func(t *testing.T) {
 			backend.Start(ctx, pollID)
 
-			if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
+			if err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote")); err != nil {
 				t.Fatalf("Vote returned unexpected error: %v", err)
 			}
 
-			err := backend.Vote(ctx, pollID, 5, []byte("my second vote"))
+			err := backend.Vote(ctx, pollID, 5, 5, []byte("my second vote"))
 
 			if err == nil {
 				t.Fatalf("Second vote did not return an error")
@@ -146,7 +147,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Fatalf("Stop returned unexpected error: %v", err)
 			}
 
-			err := backend.Vote(ctx, pollID, 5, []byte("my vote"))
+			err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 			if err == nil {
 				t.Fatalf("Vote on stopped poll did not return an error")
@@ -162,7 +163,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Clear removes vote data", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 		if err := backend.Clear(ctx, pollID); err != nil {
 			t.Fatalf("Clear returned unexpected error: %v", err)
@@ -186,7 +187,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Clear removes voted users", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 		if err := backend.Clear(ctx, pollID); err != nil {
 			t.Fatalf("Clear returned unexpected error: %v", err)
@@ -195,7 +196,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 		backend.Start(ctx, pollID)
 
 		// Vote on the same poll with the same user id
-		if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
+		if err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clear returned unexpected error: %v", err)
 		}
 	})
@@ -203,7 +204,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("ClearAll removes vote data", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 		if err := backend.ClearAll(ctx); err != nil {
 			t.Fatalf("ClearAll returned unexpected error: %v", err)
@@ -227,7 +228,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("ClearAll removes voted users", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 		if err := backend.ClearAll(ctx); err != nil {
 			t.Fatalf("ClearAll returned unexpected error: %v", err)
@@ -238,7 +239,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 		}
 
 		// Vote on the same poll with the same user id
-		if err := backend.Vote(ctx, pollID, 5, []byte("my vote")); err != nil {
+		if err := backend.Vote(ctx, pollID, 5, 5, []byte("my vote")); err != nil {
 			t.Fatalf("Vote after clearAll returned unexpected error: %v", err)
 		}
 	})
@@ -247,7 +248,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Voted", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
 
 		got, err := backend.Voted(ctx)
 		if err != nil {
@@ -264,8 +265,8 @@ func Backend(t *testing.T, backend vote.Backend) {
 	pollID++
 	t.Run("Voted for many users", func(t *testing.T) {
 		backend.Start(ctx, pollID)
-		backend.Vote(ctx, pollID, 5, []byte("my vote"))
-		backend.Vote(ctx, pollID, 6, []byte("my vote"))
+		backend.Vote(ctx, pollID, 5, 5, []byte("my vote"))
+		backend.Vote(ctx, pollID, 6, 6, []byte("my vote"))
 
 		got, err := backend.Voted(ctx)
 		if err != nil {
@@ -290,7 +291,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func(uid int) {
 					defer wg.Done()
 
-					if err := backend.Vote(ctx, pollID, uid, []byte("vote")); err != nil {
+					if err := backend.Vote(ctx, pollID, uid, uid, []byte("vote")); err != nil {
 						t.Errorf("Vote %d returned undexpected error: %v", uid, err)
 					}
 				}(i + 1)
@@ -310,9 +311,11 @@ func Backend(t *testing.T, backend vote.Backend) {
 				t.Fatalf("Found %d userIDs, expected %d", len(userIDs), count)
 			}
 
-			sort.Ints(userIDs)
+			slices.SortFunc(userIDs, func(a, b vote.UserTuple) int {
+				return cmp.Compare(a.VoteUser, b.VoteUser)
+			})
 			for i := 0; i < count; i++ {
-				if userIDs[i] != i+1 {
+				if userIDs[i].VoteUser != i+1 {
 					t.Fatalf("Found user id %d on place %d, expected %d", userIDs[i], i, i+1)
 				}
 			}
@@ -361,7 +364,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 			backend.Start(ctx, pollID)
 
 			expectedObjects := make([][][]byte, stopsCount)
-			expectedUserIDs := make([][]int, stopsCount)
+			expectedUserIDs := make([][]vote.UserTuple, stopsCount)
 			var stoppedErrsMu sync.Mutex
 			var stoppedErrs int
 
@@ -371,7 +374,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 				go func(uid int) {
 					defer wg.Done()
 
-					err := backend.Vote(ctx, pollID, uid, []byte("vote"))
+					err := backend.Vote(ctx, pollID, uid, uid, []byte("vote"))
 					if err != nil {
 						var errStopped interface{ Stopped() }
 						if errors.As(err, &errStopped) {

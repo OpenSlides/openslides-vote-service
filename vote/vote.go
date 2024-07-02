@@ -104,7 +104,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 // StopResult is the return value from vote.Stop.
 type StopResult struct {
 	Votes   [][]byte
-	UserIDs []int
+	UserIDs []UserTuple
 }
 
 // Stop ends a poll.
@@ -266,7 +266,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("decoding vote data: %w", err)
 	}
 
-	if err := v.backend(poll).Vote(ctx, pollID, voteUser, bs); err != nil {
+	if err := v.backend(poll).Vote(ctx, pollID, voteUser, requestUser, bs); err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
 			return ErrNotExists
@@ -494,6 +494,13 @@ func (v *Vote) loadVoted(ctx context.Context) error {
 	return nil
 }
 
+// UserTuple combines a the user id for a vote with the request user, that has
+// send the vote request.
+type UserTuple struct {
+	VoteUser    int
+	RequestUser int
+}
+
 // Backend is a storage for the poll options.
 type Backend interface {
 	// Start opens the poll for votes. To start a poll that is already started
@@ -502,19 +509,20 @@ type Backend interface {
 	Start(ctx context.Context, pollID int) error
 
 	// Vote saves vote data into the backend. The backend has to check that the
-	// poll is started and the userID has not voted before.
+	// poll is started and the voteUserID has not voted before.
 	//
 	// If the user has already voted, an Error with method `DoubleVote()` has to
 	// be returned. If the poll has not started, an error with the method
 	// `DoesNotExist()` is required. An a stopped vote, it has to be `Stopped()`.
 	//
 	// The return value is the number of already voted objects.
-	Vote(ctx context.Context, pollID int, userID int, object []byte) error
+	Vote(ctx context.Context, pollID int, voteUserID int, requestUserID int, object []byte) error
 
 	// Stop ends a poll and returns all poll objects and all userIDs from users
-	// that have voted. It is ok to call Stop() on a stopped poll. On a unknown
-	// poll `DoesNotExist()` has to be returned.
-	Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
+	// that have voted with the user_id from the user, that send the vote
+	// request. It is ok to call Stop() on a stopped poll. On a unknown poll
+	// `DoesNotExist()` has to be returned.
+	Stop(ctx context.Context, pollID int) ([][]byte, []UserTuple, error)
 
 	// Clear has to remove all data. It can be called on a started or stopped or
 	// non existing poll.

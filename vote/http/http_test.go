@@ -119,7 +119,7 @@ type stopperStub struct {
 	expectErr error
 
 	expectedVotes   [][]byte
-	expectedUserIDs []int
+	expectedUserIDs []vote.UserTuple
 }
 
 func (s *stopperStub) Stop(ctx context.Context, pollID int) (vote.StopResult, error) {

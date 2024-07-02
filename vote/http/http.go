@@ -165,16 +165,17 @@ func handleStop(stop stopper) HandlerFunc {
 			encodableObjects[i] = result.Votes[i]
 		}
 
-		if result.UserIDs == nil {
-			result.UserIDs = []int{}
+		userMap := make(map[int]int, len(result.UserIDs))
+		for _, userTuple := range result.UserIDs {
+			userMap[userTuple.VoteUser] = userTuple.RequestUser
 		}
 
 		out := struct {
 			Votes []json.RawMessage `json:"votes"`
-			Users []int             `json:"user_ids"`
+			Users map[int]int       `json:"user_ids"`
 		}{
 			encodableObjects,
-			result.UserIDs,
+			userMap,
 		}
 
 		if err := json.NewEncoder(w).Encode(out); err != nil {
