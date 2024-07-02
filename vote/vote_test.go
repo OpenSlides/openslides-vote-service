@@ -953,6 +953,123 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			2,
 		},
+
+		{
+			"Vote for self when delegation is activated users_forbid_delegator_to_vote==false",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+				backend: fast
+				type: pseudoanonymous
+
+			meeting/1:
+				users_enable_vote_delegations: true
+				users_forbid_delegator_to_vote: false
+
+			user:
+				1:
+					is_present_in_meeting_ids: [1]
+					meeting_user_ids: [10]
+					
+				2:
+					meeting_user_ids: [20]
+
+			meeting_user:
+				10:
+					meeting_id: 1
+					user_id: 1
+					group_ids: [1]
+					vote_delegated_to_id: 20
+
+				20:
+					meeting_id: 1	
+					
+			`,
+			`{"user_id": 1, "value":"Y"}`,
+
+			1,
+		},
+
+		{
+			"Vote for self when delegation is activated users_forbid_delegator_to_vote==true",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+				backend: fast
+				type: pseudoanonymous
+
+			meeting/1:
+				users_enable_vote_delegations: true
+				users_forbid_delegator_to_vote: true
+
+			user:
+				1:
+					is_present_in_meeting_ids: [1]
+					meeting_user_ids: [10]
+					
+				2:
+					meeting_user_ids: [20]
+
+			meeting_user:
+				10:
+					meeting_id: 1
+					user_id: 1
+					group_ids: [1]
+					vote_delegated_to_id: 20
+
+				20:
+					meeting_id: 1	
+					
+			`,
+			`{"user_id": 1, "value":"Y"}`,
+
+			0,
+		},
+
+		{
+			"Vote for self when delegation is deactivated users_forbid_delegator_to_vote==true",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				pollmethod: Y
+				global_yes: true
+				backend: fast
+				type: pseudoanonymous
+
+			meeting/1:
+				users_enable_vote_delegations: false
+				users_forbid_delegator_to_vote: true
+
+			user:
+				1:
+					is_present_in_meeting_ids: [1]
+					meeting_user_ids: [10]
+					
+				2:
+					meeting_user_ids: [20]
+
+			meeting_user:
+				10:
+					meeting_id: 1
+					user_id: 1
+					group_ids: [1]
+					vote_delegated_to_id: 20
+
+				20:
+					meeting_id: 1	
+					
+			`,
+			`{"user_id": 1, "value":"Y"}`,
+
+			1,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()

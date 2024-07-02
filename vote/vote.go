@@ -345,16 +345,30 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 		return MessageError(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
 	}
 
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching user enable vote delegation: %w", err)
+	}
+
+	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("getting users_forbid_delegator_to_vote: %w", err)
+	}
+
+	delegation, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching delegation : %w", err)
+	}
+
+	if delegationActivated && forbitDelegateToVote && !delegation.Null() && voteUser == requestUser {
+		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
+	}
+
 	if voteUser == requestUser {
 		return nil
 	}
 
 	log.Debug("Vote delegation")
-
-	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching user enable vote delegation: %w", err)
-	}
 
 	if !delegationActivated {
 		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.meetingID)
@@ -369,10 +383,6 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 		return MessageError(ErrNotAllowed, "You are not in the right meeting")
 	}
 
-	delegation, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching delegation : %w", err)
-	}
 	if id, ok := delegation.Value(); !ok || id != requestMeetingUserID {
 		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
@@ -398,9 +408,7 @@ func delegatedUserIDs(ctx context.Context, fetch *dsfetch.Fetch, userID int) ([]
 
 	var delegatedMeetingUserIDs []int
 	for i := range meetingUserDelegationsIDs {
-		for j := range meetingUserDelegationsIDs[i] {
-			delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, meetingUserDelegationsIDs[i][j])
-		}
+		delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, meetingUserDelegationsIDs[i]...)
 	}
 
 	userIDs := make([]int, len(delegatedMeetingUserIDs))
@@ -578,6 +586,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	ds.Meeting_UsersEnableVoteWeight(p.meetingID).Preload()
 	ds.Meeting_UsersEnableVoteDelegations(p.meetingID).Preload()
+	ds.Meeting_UsersForbidDelegatorToVote(p.meetingID).Preload()
 
 	meetingUserIDsList := make([][]int, len(p.groups))
 	for i, groupID := range p.groups {
@@ -744,7 +753,7 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format")
+			return "Your vote has a wrong format"
 		}
 
 	case "YN", "YNA":
@@ -770,11 +779,11 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format")
+			return "Your vote has a wrong format"
 		}
 
 	default:
-		return fmt.Sprintf("Your vote has a wrong format")
+		return "Your vote has a wrong format"
 	}
 }
 
