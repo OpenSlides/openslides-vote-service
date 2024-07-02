@@ -408,9 +408,7 @@ func delegatedUserIDs(ctx context.Context, fetch *dsfetch.Fetch, userID int) ([]
 
 	var delegatedMeetingUserIDs []int
 	for i := range meetingUserDelegationsIDs {
-		for j := range meetingUserDelegationsIDs[i] {
-			delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, meetingUserDelegationsIDs[i][j])
-		}
+		delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, meetingUserDelegationsIDs[i]...)
 	}
 
 	userIDs := make([]int, len(delegatedMeetingUserIDs))
@@ -755,7 +753,7 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format")
+			return "Your vote has a wrong format"
 		}
 
 	case "YN", "YNA":
@@ -781,11 +779,11 @@ func validate(poll pollConfig, v ballotValue) string {
 			return voteIsValid
 
 		default:
-			return fmt.Sprintf("Your vote has a wrong format")
+			return "Your vote has a wrong format"
 		}
 
 	default:
-		return fmt.Sprintf("Your vote has a wrong format")
+		return "Your vote has a wrong format"
 	}
 }
 

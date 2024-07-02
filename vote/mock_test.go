@@ -2,7 +2,6 @@ package vote_test
 
 import (
 	"context"
-	"testing"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dskey"
 )
@@ -30,12 +29,3 @@ func (g *StubGetter) Get(ctx context.Context, keys ...dskey.Key) (map[dskey.Key]
 }
 
 func (g *StubGetter) Update(context.Context, func(map[dskey.Key][]byte, error)) {}
-
-func (g *StubGetter) assertKeys(t *testing.T, keys ...dskey.Key) {
-	t.Helper()
-	for _, key := range keys {
-		if !g.requested[key] {
-			t.Errorf("Key %s is was not requested", key)
-		}
-	}
-}
