@@ -6,7 +6,7 @@
 // access to the redis database can see the vote results and how each user has
 // voted.
 //
-// It uses the keys `vote_state_X`, `vote_data_X` and `vote_polls` where X is a
+// It uses the keys `vote_state_X`, `vote_data_X`, vote_request_user and `vote_polls` where X is a
 // pollID.
 //
 // The key `vote_state_X` has type int. It is a number that tells the current
@@ -14,6 +14,8 @@
 //
 // The key `vote_data_X` has type hash. The key is a user id and the value the
 // vote of the user.
+//
+// The key `vote_request_user` TODO
 //
 // The key `vote_polls` has type set. It contains the pollIDs of all known polls.
 package redis
@@ -27,6 +29,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-vote-service/log"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 	"github.com/gomodule/redigo/redis"
 )
 
@@ -132,7 +135,7 @@ return 0`
 // Vote saves a vote in redis.
 //
 // It also checks, that the user did not vote before and that the poll is open.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+func (b *Backend) Vote(ctx context.Context, pollID int, voteUserID int, requestUserID, object []byte) error {
 	conn := b.pool.Get()
 	defer conn.Close()
 
@@ -140,7 +143,7 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	sKey := fmt.Sprintf(keyState, pollID)
 
 	log.Debug("Redis: lua script vote: '%s' 2 %s %s [userID] [vote]", luaVoteScript, sKey, vKey)
-	result, err := redis.Int(b.luaScriptVote.Do(conn, sKey, vKey, userID, object))
+	result, err := redis.Int(b.luaScriptVote.Do(conn, sKey, vKey, voteUserID, object))
 	if err != nil {
 		return fmt.Errorf("executing luaVoteScript: %w", err)
 	}
@@ -161,7 +164,7 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 // Stop ends a poll.
 //
 // It returns all vote objects.
-func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error) {
+func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []vote.UserTuple, error) {
 	conn := b.pool.Get()
 	defer conn.Close()
 

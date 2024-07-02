@@ -4,11 +4,15 @@
 package memory
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
+
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
 const (
@@ -20,15 +24,15 @@ const (
 // Backend is a vote backend that holds the data in memory.
 type Backend struct {
 	mu      sync.Mutex
-	voted   map[int]map[int]struct{}
-	objects map[int][][]byte
-	state   map[int]int
+	voted   map[int]map[int]int // poll_id -> vote_user_id -> request_user_id
+	objects map[int][][]byte    // poll_id -> list of vote objects
+	state   map[int]int         // poll_id -> poll state
 }
 
 // New initializes a new memory.Backend.
 func New() *Backend {
 	b := Backend{
-		voted:   make(map[int]map[int]struct{}),
+		voted:   make(map[int]map[int]int),
 		objects: make(map[int][][]byte),
 		state:   make(map[int]int),
 	}
@@ -52,7 +56,7 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 }
 
 // Stop stopps a poll.
-func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error) {
+func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []vote.UserTuple, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -62,16 +66,18 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 
 	b.state[pollID] = pollStateStopped
 
-	userIDs := make([]int, 0, len(b.voted[pollID]))
-	for id := range b.voted[pollID] {
-		userIDs = append(userIDs, id)
+	userIDs := make([]vote.UserTuple, 0, len(b.voted[pollID]))
+	for voteUserID, reqestUserID := range b.voted[pollID] {
+		userIDs = append(userIDs, vote.UserTuple{VoteUser: voteUserID, RequestUser: reqestUserID})
 	}
-	sort.Ints(userIDs)
+	slices.SortFunc(userIDs, func(a, b vote.UserTuple) int {
+		return cmp.Compare(a.VoteUser, b.VoteUser)
+	})
 	return b.objects[pollID], userIDs, nil
 }
 
 // Vote saves a vote.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+func (b *Backend) Vote(ctx context.Context, pollID int, voteUserID int, requestUserID int, object []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -84,14 +90,14 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 	}
 
 	if b.voted[pollID] == nil {
-		b.voted[pollID] = make(map[int]struct{})
+		b.voted[pollID] = make(map[int]int)
 	}
 
-	if _, ok := b.voted[pollID][userID]; ok {
+	if _, ok := b.voted[pollID][voteUserID]; ok {
 		return doubleVoteError{fmt.Errorf("user has already voted")}
 	}
 
-	b.voted[pollID][userID] = struct{}{}
+	b.voted[pollID][voteUserID] = requestUserID
 	b.objects[pollID] = append(b.objects[pollID], object)
 	return nil
 }
@@ -112,7 +118,7 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.voted = make(map[int]map[int]struct{})
+	b.voted = make(map[int]map[int]int)
 	b.objects = make(map[int][][]byte)
 	b.state = make(map[int]int)
 	return nil
