@@ -345,16 +345,30 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 		return MessageError(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
 	}
 
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching user enable vote delegation: %w", err)
+	}
+
+	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.meetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("getting users_forbid_delegator_to_vote: %w", err)
+	}
+
+	delegation, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching delegation : %w", err)
+	}
+
+	if delegationActivated && forbitDelegateToVote && !delegation.Null() && voteUser == requestUser {
+		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
+	}
+
 	if voteUser == requestUser {
 		return nil
 	}
 
 	log.Debug("Vote delegation")
-
-	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching user enable vote delegation: %w", err)
-	}
 
 	if !delegationActivated {
 		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.meetingID)
@@ -369,10 +383,6 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 		return MessageError(ErrNotAllowed, "You are not in the right meeting")
 	}
 
-	delegation, err := ds.MeetingUser_VoteDelegatedToID(voteMeetingUserID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching delegation : %w", err)
-	}
 	if id, ok := delegation.Value(); !ok || id != requestMeetingUserID {
 		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
@@ -578,6 +588,7 @@ func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, e
 func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
 	ds.Meeting_UsersEnableVoteWeight(p.meetingID).Preload()
 	ds.Meeting_UsersEnableVoteDelegations(p.meetingID).Preload()
+	ds.Meeting_UsersForbidDelegatorToVote(p.meetingID).Preload()
 
 	meetingUserIDsList := make([][]int, len(p.groups))
 	for i, groupID := range p.groups {
