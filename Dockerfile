@@ -27,11 +27,13 @@ FROM base as development
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
 
-COPY ./openslides-autoupdate-service /openslides-autoupdate-service
-RUN echo 'replace github.com/OpenSlides/openslides-autoupdate-service => /openslides-autoupdate-service' >> go.mod
-RUN go mod tidy
 CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
 
+FROM development as development-fullstack
+
+COPY --from=autoupdate / /openslides-autoupdate-service
+RUN echo 'replace github.com/OpenSlides/openslides-autoupdate-service => /openslides-autoupdate-service' >> go.mod && \
+    go mod tidy
 
 # Productive build
 FROM scratch
