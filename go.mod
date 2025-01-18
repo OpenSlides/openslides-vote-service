@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20240905125734-72c19825df6e
-	github.com/alecthomas/kong v1.4.0
+	github.com/alecthomas/kong v1.6.1
 	github.com/gomodule/redigo v1.9.2
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/ory/dockertest/v3 v3.11.0
