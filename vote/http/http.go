@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -90,7 +91,7 @@ type voteService interface {
 	stopper
 	clearer
 	clearAller
-	voteCounter
+	allVotedIDer
 	voter
 	haveIvoteder
 }
@@ -112,7 +113,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/stop", handleInternal(handleStop(service)))
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
-	mux.Handle(internal+"/vote_count", handleInternal(handleVoteCount(service, ticketProvider)))
+	mux.Handle(internal+"/all_voted_ids", handleInternal(handleAllVotedIDs(service, ticketProvider)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
@@ -280,13 +281,25 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 	}
 }
 
-type voteCounter interface {
-	VoteCount(ctx context.Context) map[int]int
+type allVotedIDer interface {
+	AllVotedIDs(ctx context.Context) map[int][]int
 }
 
-func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, func())) HandlerFunc {
+// handleAllVotedIDs opens an http connection, that the server never closes.
+//
+// When the connection is established, it returns for all active poll all users,
+// that have voted.
+//
+// Every second, it checks for new users, that have voted. If there is new data,
+// it returns an dictonary from poll id to all new user_ids.
+//
+// If an poll is not active anymore, it returns a `null`-value for it.
+//
+// This system can only add users. It can fail, if a poll is resettet and
+// started in less then a second.
+func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Time, func())) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving vote count request")
+		log.Info("Receiving all voted ids")
 		w.Header().Set("Content-Type", "application/json")
 
 		encoder := json.NewEncoder(w)
@@ -294,35 +307,40 @@ func handleVoteCount(voteCounter voteCounter, eventer func() (<-chan time.Time, 
 		event, cancel := eventer()
 		defer cancel()
 
-		var countMemory map[int]int
+		var voterMemory map[int][]int
 		firstData := true
 		for {
-			count := voteCounter.VoteCount(r.Context())
+			newAllVotedIDs := voteCounter.AllVotedIDs(r.Context())
+			diff := make(map[int][]int)
 
-			if countMemory == nil {
-				countMemory = count
+			if voterMemory == nil {
+				voterMemory = newAllVotedIDs
+				diff = newAllVotedIDs
 			} else {
-				for k := range countMemory {
-					if _, ok := count[k]; !ok {
-						count[k] = 0
+				for pollID, newUserIDs := range newAllVotedIDs {
+					if oldUserIDs, ok := voterMemory[pollID]; !ok {
+						voterMemory[pollID] = newUserIDs
+						diff[pollID] = newUserIDs
+					} else {
+						for _, newUserID := range newUserIDs {
+							if !slices.Contains(oldUserIDs, newUserID) {
+								voterMemory[pollID] = append(voterMemory[pollID], newUserID)
+								diff[pollID] = append(diff[pollID], newUserID)
+							}
+						}
 					}
-					if count[k] == countMemory[k] {
-						delete(count, k)
-						continue
-					}
-					countMemory[k] = count[k]
 				}
-
-				for k := range count {
-					if _, ok := countMemory[k]; !ok {
-						countMemory[k] = count[k]
+				for pollID := range voterMemory {
+					if _, ok := newAllVotedIDs[pollID]; !ok {
+						delete(voterMemory, pollID)
+						diff[pollID] = nil
 					}
 				}
 			}
 
-			if firstData || len(count) > 0 {
+			if firstData || len(diff) > 0 {
 				firstData = false
-				if err := encoder.Encode(count); err != nil {
+				if err := encoder.Encode(diff); err != nil {
 					return err
 				}
 			}

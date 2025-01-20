@@ -332,7 +332,7 @@ func TestVoteVote(t *testing.T) {
 			global_yes: true
 			backend: fast
 			type: pseudoanonymous
-		
+
 		meeting/1/id: 1
 
 		user/1:
@@ -551,7 +551,7 @@ func TestVoteNoRequests(t *testing.T) {
 				state: started
 				backend: fast
 				type: pseudoanonymous
-			
+
 			meeting/50:
 				users_enable_vote_weight: true
 				users_enable_vote_delegations: true
@@ -757,7 +757,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
-			
+
 			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
@@ -766,7 +766,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user/10:
 				group_ids: [1]
-				meeting_id: 1	
+				meeting_id: 1
 			`,
 			`{"user_id": 0, "value":"Y"}`,
 
@@ -793,7 +793,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -803,7 +803,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					user_id: 1
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 			`,
 			`{"user_id": 2, "value":"Y"}`,
 
@@ -827,7 +827,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -838,7 +838,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -863,7 +863,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -874,7 +874,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -899,7 +899,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -910,7 +910,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: []
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -935,7 +935,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -946,7 +946,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -973,7 +973,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -985,8 +985,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
+
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1012,7 +1012,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -1024,8 +1024,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
+
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1051,7 +1051,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -1063,8 +1063,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
+
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1273,7 +1273,7 @@ func TestItLikeBackend(t *testing.T) {
 		is_active_in_organization_id: 1
 		group_ids: [1]
 		meeting_user_ids: [11]
-	
+
 	projector_countdown/11:
 		default_time: 60
 		running: false
@@ -1289,7 +1289,7 @@ func TestItLikeBackend(t *testing.T) {
 		2:
 			meeting_id: 1
 			poll_id: 1
-	
+
 	user/1:
 		is_present_in_meeting_ids: [1]
 		meeting_user_ids: [11]
@@ -1298,12 +1298,12 @@ func TestItLikeBackend(t *testing.T) {
 		meeting_id: 1
 		user_id: 1
 		group_ids: [1]
-	
+
 	assignment/1:
 		title: test_assignment_tcLT59bmXrXif424Qw7K
 		open_posts: 1
 		meeting_id: 1
-	
+
 	poll/1:
 		content_object_id: assignment/1
 		title: test_title_04k0y4TwPLpJKaSvIGm1
@@ -1317,7 +1317,7 @@ func TestItLikeBackend(t *testing.T) {
 		backend: fast
 		pollmethod: YNA
 		type: named
-		
+
 	`))
 
 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -1382,7 +1382,7 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 			user_id: 6
 		12:
 			user_id: 7
-		
+
 	`))
 
 	backend.Start(ctx, 1)
@@ -1402,7 +1402,7 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 	}
 }
 
-func TestVoteCount(t *testing.T) {
+func TestAllVotedIDs(t *testing.T) {
 	ctx := context.Background()
 	backend1 := memory.New()
 	backend1.Start(ctx, 23)
@@ -1415,10 +1415,10 @@ func TestVoteCount(t *testing.T) {
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
-	count := v.VoteCount(ctx)
+	voted := v.AllVotedIDs(ctx)
 
-	expect := map[int]int{23: 1, 42: 2}
-	if !reflect.DeepEqual(count, expect) {
-		t.Errorf("Got %v, expected %v", count, expect)
+	expect := map[int][]int{23: {1}, 42: {1, 2}}
+	if !reflect.DeepEqual(voted, expect) {
+		t.Errorf("Got %v, expected %v", voted, expect)
 	}
 }

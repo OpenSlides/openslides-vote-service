@@ -595,29 +595,29 @@ func TestHandleVoted(t *testing.T) {
 	})
 }
 
-type voteCounterStub struct {
-	expectCount map[int]int
+type allVotedIDerStub struct {
+	expectCount map[int][]int
 }
 
-func (v *voteCounterStub) VoteCount(ctx context.Context) map[int]int {
+func (v *allVotedIDerStub) AllVotedIDs(ctx context.Context) map[int][]int {
 	return v.expectCount
 }
 
-func TestHandleVoteCountFirstData(t *testing.T) {
-	voteCounter := &voteCounterStub{}
+func Test_handleAllVotedIDs_first_data(t *testing.T) {
+	voteCounter := &allVotedIDerStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
 	}
 
-	mux := handleVoteCount(voteCounter, eventer)
+	mux := handleAllVotedIDs(voteCounter, eventer)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	url := "/vote/vote_count"
+	url := "/vote/all_voted_ids"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int]int{1: 10, 2: 20}
+	voteCounter.expectCount = map[int][]int{1: {1, 2, 3}, 2: {4, 5, 6}}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
@@ -627,7 +627,7 @@ func TestHandleVoteCountFirstData(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int]int
+	var got map[int][]int
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -637,21 +637,21 @@ func TestHandleVoteCountFirstData(t *testing.T) {
 	}
 }
 
-func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
-	voteCounter := &voteCounterStub{}
+func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
+	voteCounter := &allVotedIDerStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
 	}
 
-	mux := handleVoteCount(voteCounter, eventer)
+	mux := handleAllVotedIDs(voteCounter, eventer)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int]int{}
+	voteCounter.expectCount = map[int][]int{}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
@@ -661,7 +661,7 @@ func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int]int
+	var got map[int][]int
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -671,25 +671,25 @@ func TestHandleVoteCountFirstDataEmpty(t *testing.T) {
 	}
 }
 
-func TestHandleVoteCountSecondData(t *testing.T) {
-	voteCounter := &voteCounterStub{}
+func Test_handleAllVotedIDs_second_data(t *testing.T) {
+	voteCounter := &allVotedIDerStub{}
 
 	event := make(chan time.Time, 1)
 	eventer := func() (<-chan time.Time, func()) {
 		return event, func() {}
 	}
 
-	mux := handleVoteCount(voteCounter, eventer)
+	mux := handleAllVotedIDs(voteCounter, eventer)
 
 	ctx := context.Background()
 
-	data := []map[int]int{
-		{1: 10, 2: 20},
-		{1: 11, 2: 20}, // Change only 1
-		{1: 11, 2: 20}, // No Change
-		{1: 11},        // Remove 2
-		{1: 11, 3: 30}, // Add 3
-		{1: 11},        // Remove 3 (that was not there at the beginning)
+	data := []map[int][]int{
+		{1: {1, 2}, 2: {20}},
+		{1: {1, 2, 3}, 2: {20}}, // Change only 1
+		{1: {1, 2, 3}, 2: {20}}, // No Change
+		{1: {1, 2, 3}},          // Remove 2
+		{1: {1, 2, 3}, 3: {30}}, // Add 3
+		{1: {1, 2, 3}},          // Remove 3 (that was not there at the beginning)
 	}
 
 	url := "/vote/vote_count"
@@ -715,17 +715,17 @@ func TestHandleVoteCountSecondData(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	expect := []map[int]int{
-		{1: 10, 2: 20},
-		{1: 11},
-		{2: 0},
-		{3: 30},
-		{3: 0},
+	expect := []map[int][]int{
+		{1: {1, 2}, 2: {20}},
+		{1: {3}},
+		{2: nil},
+		{3: {30}},
+		{3: nil},
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	for i := range expect {
-		var got map[int]int
+		var got map[int][]int
 		if err := decoder.Decode(&got); err != nil {
 			if err == io.EOF {
 				t.Errorf("Got %d packages, expected %d", i, len(expect))
