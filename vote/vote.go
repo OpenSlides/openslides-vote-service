@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dskey"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
@@ -61,9 +60,9 @@ func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance
 }
 
 // backend returns the poll backend for a pollConfig object.
-func (v *Vote) backend(p pollConfig) Backend {
+func (v *Vote) backend(p dsfetch.Poll) Backend {
 	backend := v.longBackend
-	if p.backend == "fast" {
+	if p.Backend == "fast" {
 		backend = v.fastBackend
 	}
 	log.Debug("Used backend: %v", backend)
@@ -79,16 +78,20 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 	recorder := dsrecorder.New(v.flow)
 	ds := dsfetch.New(recorder)
 
-	poll, err := loadPoll(ctx, ds, pollID)
+	poll, err := ds.Poll(pollID).Value(ctx)
 	if err != nil {
+		var doesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &doesNotExist) {
+			return MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+		}
 		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	if poll.ptype == "analog" {
+	if poll.Type == "analog" {
 		return MessageError(ErrInvalid, "Analog poll can not be started")
 	}
 
-	if err := poll.preload(ctx, ds); err != nil {
+	if err := preload(ctx, ds, poll); err != nil {
 		return fmt.Errorf("preloading data: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
@@ -113,8 +116,12 @@ type StopResult struct {
 // the same data. Calling vote.Clear will stop this behavior.
 func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	ds := dsfetch.New(v.flow)
-	poll, err := loadPoll(ctx, ds, pollID)
+	poll, err := ds.Poll(pollID).Value(ctx)
 	if err != nil {
+		var doesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &doesNotExist) {
+			return StopResult{}, MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+		}
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
@@ -177,13 +184,17 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
 	ds := dsfetch.New(v.flow)
-	poll, err := loadPoll(ctx, ds, pollID)
+	poll, err := ds.Poll(pollID).Value(ctx)
 	if err != nil {
+		var doesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &doesNotExist) {
+			return MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+		}
 		return fmt.Errorf("loading poll: %w", err)
 	}
 	log.Debug("Poll config: %v", poll)
 
-	if err := ensurePresent(ctx, ds, poll.meetingID, requestUser); err != nil {
+	if err := ensurePresent(ctx, ds, poll.MeetingID, requestUser); err != nil {
 		return err
 	}
 
@@ -201,7 +212,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return MessageError(ErrNotAllowed, "Votes for anonymous user are not allowed")
 	}
 
-	voteMeetingUserID, found, err := getMeetingUser(ctx, ds, voteUser, poll.meetingID)
+	voteMeetingUserID, found, err := getMeetingUser(ctx, ds, voteUser, poll.MeetingID)
 	if err != nil {
 		return fmt.Errorf("get meeting user for vote user: %w", err)
 	}
@@ -222,7 +233,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	var voteWeightEnabled bool
 	var meetingUserVoteWeight string
 	var userDefaultVoteWeight string
-	ds.Meeting_UsersEnableVoteWeight(poll.meetingID).Lazy(&voteWeightEnabled)
+	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&voteWeightEnabled)
 	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
 	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
 
@@ -256,7 +267,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		voteWeight,
 	}
 
-	if poll.ptype != "named" {
+	if poll.Type != "named" {
 		voteData.RequestUser = 0
 		voteData.VoteUser = 0
 	}
@@ -335,22 +346,22 @@ func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) 
 // ensureVoteUser makes sure the user from the vote:
 // * the delegation is correct and
 // * is in the correct group
-func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, voteUser, voteMeetingUserID, requestUser int) error {
+func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll, voteUser, voteMeetingUserID, requestUser int) error {
 	groupIDs, err := ds.MeetingUser_GroupIDs(voteMeetingUserID).Value(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.meetingID, err)
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.MeetingID, err)
 	}
 
-	if !equalElement(groupIDs, poll.groups) {
+	if !equalElement(groupIDs, poll.EntitledGroupIDs) {
 		return MessageError(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
 	}
 
-	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.meetingID).Value(ctx)
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Value(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching user enable vote delegation: %w", err)
 	}
 
-	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.meetingID).Value(ctx)
+	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Value(ctx)
 	if err != nil {
 		return fmt.Errorf("getting users_forbid_delegator_to_vote: %w", err)
 	}
@@ -371,10 +382,10 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll pollConfig, vot
 	log.Debug("Vote delegation")
 
 	if !delegationActivated {
-		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.meetingID)
+		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
 	}
 
-	requestMeetingUserID, found, err := getMeetingUser(ctx, ds, requestUser, poll.meetingID)
+	requestMeetingUserID, found, err := getMeetingUser(ctx, ds, requestUser, poll.MeetingID)
 	if err != nil {
 		return fmt.Errorf("getting meeting_user for request user: %w", err)
 	}
@@ -537,59 +548,15 @@ type Backend interface {
 	fmt.Stringer
 }
 
-type pollConfig struct {
-	id                int
-	meetingID         int
-	backend           string
-	ptype             string
-	method            string
-	groups            []int
-	globalYes         bool
-	globalNo          bool
-	globalAbstain     bool
-	minAmount         int
-	maxAmount         int
-	maxVotesPerOption int
-	options           []int
-	state             string
-}
-
-func loadPoll(ctx context.Context, ds *dsfetch.Fetch, pollID int) (pollConfig, error) {
-	p := pollConfig{id: pollID}
-	ds.Poll_MeetingID(pollID).Lazy(&p.meetingID)
-	ds.Poll_Backend(pollID).Lazy(&p.backend)
-	ds.Poll_Type(pollID).Lazy(&p.ptype)
-	ds.Poll_Pollmethod(pollID).Lazy(&p.method)
-	ds.Poll_EntitledGroupIDs(pollID).Lazy(&p.groups)
-	ds.Poll_GlobalYes(pollID).Lazy(&p.globalYes)
-	ds.Poll_GlobalNo(pollID).Lazy(&p.globalNo)
-	ds.Poll_GlobalAbstain(pollID).Lazy(&p.globalAbstain)
-	ds.Poll_MinVotesAmount(pollID).Lazy(&p.minAmount)
-	ds.Poll_MaxVotesAmount(pollID).Lazy(&p.maxAmount)
-	ds.Poll_MaxVotesPerOption(pollID).Lazy(&p.maxVotesPerOption)
-	ds.Poll_OptionIDs(pollID).Lazy(&p.options)
-	ds.Poll_State(pollID).Lazy(&p.state)
-
-	if err := ds.Execute(ctx); err != nil {
-		var errDoesNotExist dsfetch.DoesNotExistError
-		if errors.As(err, &errDoesNotExist) && dskey.Key(errDoesNotExist).Collection() == "poll" && dskey.Key(errDoesNotExist).ID() == pollID {
-			return pollConfig{}, ErrNotExists
-		}
-		return pollConfig{}, fmt.Errorf("loading polldata from datastore: %w", err)
-	}
-
-	return p, nil
-}
-
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
-func (p pollConfig) preload(ctx context.Context, ds *dsfetch.Fetch) error {
-	ds.Meeting_UsersEnableVoteWeight(p.meetingID).Preload()
-	ds.Meeting_UsersEnableVoteDelegations(p.meetingID).Preload()
-	ds.Meeting_UsersForbidDelegatorToVote(p.meetingID).Preload()
+func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
+	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Preload()
+	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Preload()
+	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Preload()
 
-	meetingUserIDsList := make([][]int, len(p.groups))
-	for i, groupID := range p.groups {
+	meetingUserIDsList := make([][]int, len(poll.EntitledGroupIDs))
+	for i, groupID := range poll.EntitledGroupIDs {
 		ds.Group_MeetingUserIDs(groupID).Lazy(&meetingUserIDsList[i])
 	}
 
@@ -692,33 +659,33 @@ func (v ballot) String() string {
 	return string(bs)
 }
 
-func validate(poll pollConfig, v ballotValue) string {
-	if poll.minAmount == 0 {
-		poll.minAmount = 1
+func validate(poll dsfetch.Poll, v ballotValue) string {
+	if poll.MinVotesAmount == 0 {
+		poll.MinVotesAmount = 1
 	}
 
-	if poll.maxAmount == 0 {
-		poll.maxAmount = 1
+	if poll.MaxVotesAmount == 0 {
+		poll.MaxVotesAmount = 1
 	}
 
-	if poll.maxVotesPerOption == 0 {
-		poll.maxVotesPerOption = 1
+	if poll.MaxVotesPerOption == 0 {
+		poll.MaxVotesPerOption = 1
 	}
 
-	allowedOptions := make(map[int]bool, len(poll.options))
-	for _, o := range poll.options {
+	allowedOptions := make(map[int]bool, len(poll.OptionIDs))
+	for _, o := range poll.OptionIDs {
 		allowedOptions[o] = true
 	}
 
 	allowedGlobal := map[string]bool{
-		"Y": poll.globalYes,
-		"N": poll.globalNo,
-		"A": poll.globalAbstain,
+		"Y": poll.GlobalYes,
+		"N": poll.GlobalNo,
+		"A": poll.GlobalAbstain,
 	}
 
 	var voteIsValid string
 
-	switch poll.method {
+	switch poll.Pollmethod {
 	case "Y", "N":
 		switch v.Type() {
 		case ballotValueString:
@@ -735,8 +702,8 @@ func validate(poll pollConfig, v ballotValue) string {
 					return fmt.Sprintf("Your vote for option %d has to be >= 0", optionID)
 				}
 
-				if amount > poll.maxVotesPerOption {
-					return fmt.Sprintf("Your vote for option %d has to be <= %d", optionID, poll.maxVotesPerOption)
+				if amount > poll.MaxVotesPerOption {
+					return fmt.Sprintf("Your vote for option %d has to be <= %d", optionID, poll.MaxVotesPerOption)
 				}
 
 				if !allowedOptions[optionID] {
@@ -746,8 +713,8 @@ func validate(poll pollConfig, v ballotValue) string {
 				sumAmount += amount
 			}
 
-			if sumAmount < poll.minAmount || sumAmount > poll.maxAmount {
-				return fmt.Sprintf("The sum of your answers has to be between %d and %d", poll.minAmount, poll.maxAmount)
+			if sumAmount < poll.MinVotesAmount || sumAmount > poll.MaxVotesAmount {
+				return fmt.Sprintf("The sum of your answers has to be between %d and %d", poll.MinVotesAmount, poll.MaxVotesAmount)
 			}
 
 			return voteIsValid
@@ -771,7 +738,7 @@ func validate(poll pollConfig, v ballotValue) string {
 					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
 				}
 
-				if yna != "Y" && yna != "N" && (yna != "A" || poll.method != "YNA") {
+				if yna != "Y" && yna != "N" && (yna != "A" || poll.Pollmethod != "YNA") {
 					// Valid that given data matches poll method.
 					return fmt.Sprintf("Data for option %d does not fit the poll method.", optionID)
 				}

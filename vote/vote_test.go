@@ -39,6 +39,10 @@ func TestVoteStart(t *testing.T) {
 					backend: fast
 					type: pseudoanonymous
 					pollmethod: Y
+					content_object_id: some_field/1
+					sequential_number: 1
+					onehundred_percent_base: base
+					title: myPoll
 
 			user/1/is_present_in_meeting_ids: [1]
 			meeting/5/id: 5
@@ -73,6 +77,10 @@ func TestVoteStart(t *testing.T) {
 				state: started
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
@@ -95,6 +103,10 @@ func TestVoteStart(t *testing.T) {
 				state: started
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
@@ -121,6 +133,10 @@ func TestVoteStart(t *testing.T) {
 				state: started
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
@@ -143,6 +159,10 @@ func TestVoteStart(t *testing.T) {
 				state: created
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		meeting/5/id: 5
@@ -165,6 +185,10 @@ func TestVoteStart(t *testing.T) {
 				state: finished
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
@@ -187,6 +211,10 @@ func TestVoteStart(t *testing.T) {
 				state: published
 				backend: fast
 				pollmethod: Y
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 		user/1/is_present_in_meeting_ids: [1]
 		`)}
@@ -223,16 +251,28 @@ func TestVoteStop(t *testing.T) {
 			backend: fast
 			type: pseudoanonymous
 			pollmethod: Y
+			content_object_id: some_field/1
+			sequential_number: 1
+			onehundred_percent_base: base
+			title: myPoll
 		2:
 			meeting_id: 1
 			backend: fast
 			type: pseudoanonymous
 			pollmethod: Y
+			content_object_id: some_field/1
+			sequential_number: 1
+			onehundred_percent_base: base
+			title: myPoll
 		3:
 			meeting_id: 1
 			backend: fast
 			type: pseudoanonymous
 			pollmethod: Y
+			content_object_id: some_field/1
+			sequential_number: 1
+			onehundred_percent_base: base
+			title: myPoll
 	`)}
 
 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -332,7 +372,11 @@ func TestVoteVote(t *testing.T) {
 			global_yes: true
 			backend: fast
 			type: pseudoanonymous
-		
+			content_object_id: some_field/1
+			sequential_number: 1
+			onehundred_percent_base: base
+			title: myPoll
+
 		meeting/1/id: 1
 
 		user/1:
@@ -456,6 +500,10 @@ func TestVoteNoRequests(t *testing.T) {
 				state: started
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/50/users_enable_vote_delegations: true
 
@@ -483,6 +531,10 @@ func TestVoteNoRequests(t *testing.T) {
 				state: started
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/50/users_enable_vote_delegations: true
 
@@ -520,6 +572,10 @@ func TestVoteNoRequests(t *testing.T) {
 				state: started
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/50:
 				users_enable_vote_weight: true
@@ -551,7 +607,11 @@ func TestVoteNoRequests(t *testing.T) {
 				state: started
 				backend: fast
 				type: pseudoanonymous
-			
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
+
 			meeting/50:
 				users_enable_vote_weight: true
 				users_enable_vote_delegations: true
@@ -628,6 +688,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -654,6 +718,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -679,6 +747,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -705,6 +777,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -731,6 +807,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: false
 
@@ -757,7 +837,11 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
-			
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
+
 			meeting/1/users_enable_vote_delegations: true
 
 			user/1:
@@ -766,7 +850,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user/10:
 				group_ids: [1]
-				meeting_id: 1	
+				meeting_id: 1
 			`,
 			`{"user_id": 0, "value":"Y"}`,
 
@@ -783,6 +867,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -793,7 +881,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -803,7 +891,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					user_id: 1
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 			`,
 			`{"user_id": 2, "value":"Y"}`,
 
@@ -820,6 +908,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -827,7 +919,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -838,7 +930,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -856,6 +948,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: false
 
@@ -863,7 +959,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -874,7 +970,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -892,6 +988,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -899,7 +999,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -910,7 +1010,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: []
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -928,6 +1028,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_delegations: true
 
@@ -935,7 +1039,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -946,7 +1050,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 				20:
 					group_ids: [1]
-					meeting_id: 1	
+					meeting_id: 1
 					vote_delegated_to_id: 10
 			`,
 			`{"user_id": 2, "value":"Y"}`,
@@ -964,6 +1068,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1:
 				users_enable_vote_delegations: true
@@ -973,7 +1081,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -985,8 +1093,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
+
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1003,6 +1111,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1:
 				users_enable_vote_delegations: true
@@ -1012,7 +1124,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -1024,8 +1136,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1042,6 +1153,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1:
 				users_enable_vote_delegations: false
@@ -1051,7 +1166,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				1:
 					is_present_in_meeting_ids: [1]
 					meeting_user_ids: [10]
-					
+
 				2:
 					meeting_user_ids: [20]
 
@@ -1063,8 +1178,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					vote_delegated_to_id: 20
 
 				20:
-					meeting_id: 1	
-					
+					meeting_id: 1
+
 			`,
 			`{"user_id": 1, "value":"Y"}`,
 
@@ -1117,6 +1232,10 @@ func TestVoteWeight(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/id: 1
 
@@ -1139,6 +1258,10 @@ func TestVoteWeight(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -1161,6 +1284,10 @@ func TestVoteWeight(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -1184,6 +1311,10 @@ func TestVoteWeight(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -1208,6 +1339,10 @@ func TestVoteWeight(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -1273,7 +1408,7 @@ func TestItLikeBackend(t *testing.T) {
 		is_active_in_organization_id: 1
 		group_ids: [1]
 		meeting_user_ids: [11]
-	
+
 	projector_countdown/11:
 		default_time: 60
 		running: false
@@ -1289,7 +1424,7 @@ func TestItLikeBackend(t *testing.T) {
 		2:
 			meeting_id: 1
 			poll_id: 1
-	
+
 	user/1:
 		is_present_in_meeting_ids: [1]
 		meeting_user_ids: [11]
@@ -1298,12 +1433,12 @@ func TestItLikeBackend(t *testing.T) {
 		meeting_id: 1
 		user_id: 1
 		group_ids: [1]
-	
+
 	assignment/1:
 		title: test_assignment_tcLT59bmXrXif424Qw7K
 		open_posts: 1
 		meeting_id: 1
-	
+
 	poll/1:
 		content_object_id: assignment/1
 		title: test_title_04k0y4TwPLpJKaSvIGm1
@@ -1317,7 +1452,8 @@ func TestItLikeBackend(t *testing.T) {
 		backend: fast
 		pollmethod: YNA
 		type: named
-		
+		sequential_number: 1
+		onehundred_percent_base: base
 	`))
 
 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
@@ -1382,7 +1518,7 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 			user_id: 6
 		12:
 			user_id: 7
-		
+
 	`))
 
 	backend.Start(ctx, 1)
