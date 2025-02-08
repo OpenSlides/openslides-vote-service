@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/cache"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/datastore/cache"
+	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 	"github.com/OpenSlides/openslides-vote-service/backend/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )

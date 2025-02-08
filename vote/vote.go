@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsrecorder"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/flow"
+	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
+	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
@@ -551,9 +551,14 @@ type Backend interface {
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
 func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
-	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Preload()
-	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Preload()
-	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Preload()
+	var dummyBool bool
+	var dummyIntSlice []int
+	var dummyString string
+	var dummyManybeInt dsfetch.Maybe[int]
+	var dummyInt int
+	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Lazy(&dummyBool)
 
 	meetingUserIDsList := make([][]int, len(poll.EntitledGroupIDs))
 	for i, groupID := range poll.EntitledGroupIDs {
@@ -572,10 +577,10 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
 			var uid int
 			userIDs = append(userIDs, &uid)
 			ds.MeetingUser_UserID(muID).Lazy(&uid)
-			ds.MeetingUser_GroupIDs(muID).Preload()
-			ds.MeetingUser_VoteWeight(muID).Preload()
-			ds.MeetingUser_VoteDelegatedToID(muID).Preload()
-			ds.MeetingUser_MeetingID(muID).Preload()
+			ds.MeetingUser_GroupIDs(muID).Lazy(&dummyIntSlice)
+			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyString)
+			ds.MeetingUser_VoteDelegatedToID(muID).Lazy(&dummyManybeInt)
+			ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
 		}
 	}
 
@@ -602,7 +607,7 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
 	delegatedUserIDs := make([]int, len(delegatedMeetingUserIDs))
 	for i, muID := range delegatedMeetingUserIDs {
 		ds.MeetingUser_UserID(muID).Lazy(&delegatedUserIDs[i])
-		ds.MeetingUser_MeetingID(muID).Preload()
+		ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
 	}
 
 	// Third database request to get all delegated user ids. Only fetches data
@@ -612,13 +617,13 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
 	}
 
 	for _, uID := range userIDs {
-		ds.User_DefaultVoteWeight(*uID).Preload()
-		ds.User_MeetingUserIDs(*uID).Preload()
-		ds.User_IsPresentInMeetingIDs(*uID).Preload()
+		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyString)
+		ds.User_MeetingUserIDs(*uID).Lazy(&dummyIntSlice)
+		ds.User_IsPresentInMeetingIDs(*uID).Lazy(&dummyIntSlice)
 	}
 	for _, uID := range delegatedUserIDs {
-		ds.User_IsPresentInMeetingIDs(uID).Preload()
-		ds.User_MeetingUserIDs(uID).Preload()
+		ds.User_IsPresentInMeetingIDs(uID).Lazy(&dummyIntSlice)
+		ds.User_MeetingUserIDs(uID).Lazy(&dummyIntSlice)
 	}
 
 	// Thrid or forth database request to get is present_in_meeting for all users and delegates.

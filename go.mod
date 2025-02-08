@@ -1,16 +1,14 @@
 module github.com/OpenSlides/openslides-vote-service
 
-go 1.23
+go 1.23.6
 
 require (
-	github.com/OpenSlides/openslides-autoupdate-service v0.4.1-0.20240905125734-72c19825df6e
+	github.com/OpenSlides/openslides-go v0.0.0-20250208115145-224e32f4262d
 	github.com/alecthomas/kong v1.6.1
 	github.com/gomodule/redigo v1.9.2
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/ory/dockertest/v3 v3.11.0
 )
-
-replace github.com/OpenSlides/openslides-autoupdate-service => ../openslides-autoupdate-service
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -23,7 +21,7 @@ require (
 	github.com/docker/docker v27.1.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/goccy/go-yaml v1.15.15 // indirect
+	github.com/goccy/go-yaml v1.15.17 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
@@ -39,12 +37,13 @@ require (
 	github.com/opencontainers/runc v1.1.14 // indirect
 	github.com/ostcar/topic v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	golang.org/x/crypto v0.32.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
