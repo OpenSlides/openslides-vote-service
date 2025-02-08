@@ -105,6 +105,7 @@ func startPoll(ctx context.Context, db *postgresTestData, pollID int) error {
 			pollmethod: Y
 			entitled_group_ids: [1]
 			global_yes: true
+			content_object_id: some_field/1
 			sequential_number: 1
 			onehundred_percent_base: base
 			title: myPoll
