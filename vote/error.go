@@ -93,11 +93,17 @@ type messageError struct {
 }
 
 // MessageError creates an typed error with a message.
-func MessageError(t TypeError, format string, a ...any) error {
+func MessageError(t TypeError, msg string) error {
 	return messageError{
 		t,
-		fmt.Sprintf(format, a...),
+		msg,
 	}
+}
+
+// MessageError creates an typed error with a message from a formatted string.
+func MessageErrorf(t TypeError, format string, a ...any) error {
+	fmtStr := fmt.Sprintf(format, a...)
+	return MessageError(t, fmtStr)
 }
 
 // WrapError wrapps an error with an type.

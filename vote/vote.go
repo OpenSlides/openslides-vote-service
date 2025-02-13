@@ -82,7 +82,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
-			return MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
 		}
 		return fmt.Errorf("loading poll: %w", err)
 	}
@@ -120,7 +120,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
-			return StopResult{}, MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+			return StopResult{}, MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
 		}
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
@@ -130,7 +130,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	if err != nil {
 		var errNotExist interface{ DoesNotExist() }
 		if errors.As(err, &errNotExist) {
-			return StopResult{}, MessageError(ErrNotExists, "Poll %d does not exist in the backend", pollID)
+			return StopResult{}, MessageErrorf(ErrNotExists, "Poll %d does not exist in the backend", pollID)
 		}
 
 		return StopResult{}, fmt.Errorf("fetching vote objects: %w", err)
@@ -188,7 +188,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
-			return MessageError(ErrNotExists, "Poll %d does not exist", pollID)
+			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
 		}
 		return fmt.Errorf("loading poll: %w", err)
 	}
@@ -200,7 +200,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	var vote ballot
 	if err := json.NewDecoder(r).Decode(&vote); err != nil {
-		return MessageError(ErrInvalid, "decoding payload: %v", err)
+		return MessageErrorf(ErrInvalid, "decoding payload: %v", err)
 	}
 
 	voteUser, exist := vote.UserID.Value()
@@ -340,7 +340,7 @@ func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) 
 			return nil
 		}
 	}
-	return MessageError(ErrNotAllowed, "You have to be present in meeting %d", meetingID)
+	return MessageErrorf(ErrNotAllowed, "You have to be present in meeting %d", meetingID)
 }
 
 // ensureVoteUser makes sure the user from the vote:
@@ -353,7 +353,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll, v
 	}
 
 	if !equalElement(groupIDs, poll.EntitledGroupIDs) {
-		return MessageError(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
+		return MessageErrorf(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", voteUser)
 	}
 
 	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Value(ctx)
@@ -382,7 +382,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll, v
 	log.Debug("Vote delegation")
 
 	if !delegationActivated {
-		return MessageError(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
+		return MessageErrorf(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
 	}
 
 	requestMeetingUserID, found, err := getMeetingUser(ctx, ds, requestUser, poll.MeetingID)
@@ -395,7 +395,7 @@ func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll, v
 	}
 
 	if id, ok := delegation.Value(); !ok || id != requestMeetingUserID {
-		return MessageError(ErrNotAllowed, "You can not vote for user %d", voteUser)
+		return MessageErrorf(ErrNotAllowed, "You can not vote for user %d", voteUser)
 	}
 
 	return nil
