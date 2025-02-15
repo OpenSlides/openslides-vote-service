@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/OpenSlides/openslides-go v0.0.0-20250213170552-6283834ec60c
-	github.com/alecthomas/kong v1.8.0
+	github.com/alecthomas/kong v1.8.1
 	github.com/gomodule/redigo v1.9.2
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/ory/dockertest/v3 v3.11.0
