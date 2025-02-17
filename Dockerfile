@@ -1,5 +1,5 @@
 FROM golang:1.24.0-alpine as base
-WORKDIR /root
+WORKDIR /root/openslides-vote-service
 
 RUN apk add git
 
@@ -27,7 +27,8 @@ FROM base as development
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012
 
-CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
+WORKDIR /root
+CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
 
 
 # Productive build
@@ -38,7 +39,7 @@ LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles 
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
-COPY --from=builder /root/openslides-vote-service .
+COPY --from=builder /root/openslides-vote-service/openslides-vote-service .
 EXPOSE 9013
 
 ENTRYPOINT ["/openslides-vote-service"]
