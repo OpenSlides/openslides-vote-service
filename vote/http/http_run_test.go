@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
+	"github.com/OpenSlides/openslides-go/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-vote-service/backend/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 	votehttp "github.com/OpenSlides/openslides-vote-service/vote/http"

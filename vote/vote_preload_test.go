@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsfetch"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 )
 
 func TestPreload(t *testing.T) {
@@ -31,6 +31,10 @@ func TestPreload(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			group/30/meeting_user_ids: [500]
 
@@ -56,6 +60,10 @@ func TestPreload(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			group/30/meeting_user_ids: [500]
 			group/31/meeting_user_ids: [500]
@@ -83,6 +91,10 @@ func TestPreload(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			group/30/meeting_user_ids: [500,510]
 
@@ -115,6 +127,10 @@ func TestPreload(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			group/30/meeting_user_ids: [500]
 			group/31/meeting_user_ids: [510]
@@ -148,6 +164,10 @@ func TestPreload(t *testing.T) {
 				global_yes: true
 				backend: fast
 				type: pseudoanonymous
+				content_object_id: some_field/1
+				sequential_number: 1
+				onehundred_percent_base: base
+				title: myPoll
 
 			group/30/meeting_user_ids: [500]
 			group/31/meeting_user_ids: [510]
@@ -187,15 +207,16 @@ func TestPreload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
+			fetcher := dsfetch.New(ds)
 
-			poll, err := loadPoll(ctx, dsfetch.New(ds), 1)
+			poll, err := fetcher.Poll(1).Value(ctx)
 			if err != nil {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
 
 			dsCount.(*dsmock.Counter).Reset()
 
-			if err := poll.preload(ctx, dsfetch.New(ds)); err != nil {
+			if err := preload(ctx, dsfetch.New(ds), poll); err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 

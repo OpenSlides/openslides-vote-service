@@ -8,9 +8,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/environment"
-	messageBusRedis "github.com/OpenSlides/openslides-autoupdate-service/pkg/redis"
+	"github.com/OpenSlides/openslides-go/auth"
+	"github.com/OpenSlides/openslides-go/environment"
+	messageBusRedis "github.com/OpenSlides/openslides-go/redis"
 	"github.com/OpenSlides/openslides-vote-service/backend"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/auth/authtest"
-	"github.com/OpenSlides/openslides-autoupdate-service/pkg/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/auth/authtest"
+	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 )
 
 const (
@@ -45,7 +45,7 @@ func TestStartVoteStopClear(t *testing.T) {
 	}
 	defer db.Close(ctx)
 	defer func() {
-		if err := clearVoteService(ctx); err != nil {
+		if err := clearVoteService(); err != nil {
 			t.Fatalf("clear vote service: %v", err)
 		}
 	}()
@@ -54,11 +54,11 @@ func TestStartVoteStopClear(t *testing.T) {
 		t.Fatalf("Start poll: %v", err)
 	}
 
-	if err := vote(ctx, db, 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
+	if err := vote(1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
 		t.Fatalf("Vote: %v", err)
 	}
 
-	stopBody, err := stopPoll(ctx, db, 1)
+	stopBody, err := stopPoll(1)
 	if err != nil {
 		t.Fatalf("Stop poll: %v", err)
 	}
@@ -68,12 +68,12 @@ func TestStartVoteStopClear(t *testing.T) {
 		t.Fatalf("Got != expect\n%s\n%s", stopBody, expectBody)
 	}
 
-	if err := clearPoll(ctx, db, 1); err != nil {
+	if err := clearPoll(1); err != nil {
 		t.Fatalf("Clear poll: %v", err)
 	}
 }
 
-func clearVoteService(ctx context.Context) error {
+func clearVoteService() error {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/vote/clear_all", addr), nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -105,6 +105,10 @@ func startPoll(ctx context.Context, db *postgresTestData, pollID int) error {
 			pollmethod: Y
 			entitled_group_ids: [1]
 			global_yes: true
+			content_object_id: some_field/1
+			sequential_number: 1
+			onehundred_percent_base: base
+			title: myPoll
 
 		group/1/meeting_user_ids: [10]
 		meeting_user/10:
@@ -139,7 +143,7 @@ func startPoll(ctx context.Context, db *postgresTestData, pollID int) error {
 	return nil
 }
 
-func vote(ctx context.Context, db *postgresTestData, pollID, userID int, body io.Reader) error {
+func vote(pollID, userID int, body io.Reader) error {
 	cookie, headerName, headerValue, err := authtest.ValidTokens([]byte("openslides"), []byte("openslides"), userID)
 	if err != nil {
 		return fmt.Errorf("creating user tokens: %w", err)
@@ -169,7 +173,7 @@ func vote(ctx context.Context, db *postgresTestData, pollID, userID int, body io
 	return nil
 }
 
-func stopPoll(ctx context.Context, db *postgresTestData, pollID int) ([]byte, error) {
+func stopPoll(pollID int) ([]byte, error) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/vote/stop?id=%d", addr, pollID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -196,7 +200,7 @@ func stopPoll(ctx context.Context, db *postgresTestData, pollID int) ([]byte, er
 	return body, nil
 }
 
-func clearPoll(ctx context.Context, db *postgresTestData, pollID int) error {
+func clearPoll(pollID int) error {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/vote/clear?id=%d", addr, pollID), nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
