@@ -478,17 +478,12 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 	return out, nil
 }
 
-// VoteCount returns how many users have voted for all polls.
-func (v *Vote) VoteCount(ctx context.Context) map[int]int {
+// AllVotedIDs returns the user_id of each user, that has voted for every active
+// poll.
+func (v *Vote) AllVotedIDs(ctx context.Context) map[int][]int {
 	v.votedMu.Lock()
 	defer v.votedMu.Unlock()
-
-	count := make(map[int]int)
-	for pollID, userIDs := range v.voted {
-		count[pollID] = len(userIDs)
-	}
-
-	return count
+	return v.voted
 }
 
 // loadVoted creates the value for v.voted by the backends.

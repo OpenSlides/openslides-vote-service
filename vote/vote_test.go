@@ -377,6 +377,7 @@ func TestVoteVote(t *testing.T) {
 			onehundred_percent_base: base
 			title: myPoll
 
+
 		meeting/1/id: 1
 
 		user/1:
@@ -1538,7 +1539,7 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 	}
 }
 
-func TestVoteCount(t *testing.T) {
+func TestAllVotedIDs(t *testing.T) {
 	ctx := context.Background()
 	backend1 := memory.New()
 	backend1.Start(ctx, 23)
@@ -1551,10 +1552,10 @@ func TestVoteCount(t *testing.T) {
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
-	count := v.VoteCount(ctx)
+	voted := v.AllVotedIDs(ctx)
 
-	expect := map[int]int{23: 1, 42: 2}
-	if !reflect.DeepEqual(count, expect) {
-		t.Errorf("Got %v, expected %v", count, expect)
+	expect := map[int][]int{23: {1}, 42: {1, 2}}
+	if !reflect.DeepEqual(voted, expect) {
+		t.Errorf("Got %v, expected %v", voted, expect)
 	}
 }
