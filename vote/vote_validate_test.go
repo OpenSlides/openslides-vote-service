@@ -284,6 +284,46 @@ func TestVoteValidate(t *testing.T) {
 			`{"1":1}`,
 			false,
 		},
+		{
+			"Method YNA with to low selected",
+			dsfetch.Poll{
+				Pollmethod:     "YNA",
+				OptionIDs:      []int{1, 2, 3},
+				MinVotesAmount: 2,
+			},
+			`{"1":"Y"}`,
+			false,
+		},
+		{
+			"Method YNA with enough selected",
+			dsfetch.Poll{
+				Pollmethod:     "YNA",
+				OptionIDs:      []int{1, 2, 3},
+				MinVotesAmount: 2,
+			},
+			`{"1":"Y", "2":"N"}`,
+			true,
+		},
+		{
+			"Method YNA with to many selected",
+			dsfetch.Poll{
+				Pollmethod:     "YNA",
+				OptionIDs:      []int{1, 2, 3},
+				MaxVotesAmount: 2,
+			},
+			`{"1":"Y", "2":"N", "3":"A"}`,
+			false,
+		},
+		{
+			"Method YNA with not to many selected",
+			dsfetch.Poll{
+				Pollmethod:     "YNA",
+				OptionIDs:      []int{1, 2, 3},
+				MaxVotesAmount: 2,
+			},
+			`{"1":"Y", "2":"N"}`,
+			true,
+		},
 
 		// Unknown method
 		{
