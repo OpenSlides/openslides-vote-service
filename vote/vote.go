@@ -664,10 +664,6 @@ func validate(poll dsfetch.Poll, v ballotValue) string {
 		poll.MinVotesAmount = 1
 	}
 
-	if poll.MaxVotesAmount == 0 {
-		poll.MaxVotesAmount = 1
-	}
-
 	if poll.MaxVotesPerOption == 0 {
 		poll.MaxVotesPerOption = 1
 	}
@@ -696,6 +692,10 @@ func validate(poll dsfetch.Poll, v ballotValue) string {
 			return voteIsValid
 
 		case ballotValueOptionAmount:
+			if poll.MaxVotesAmount == 0 {
+				poll.MaxVotesAmount = 1
+			}
+
 			var sumAmount int
 			for optionID, amount := range v.optionAmount {
 				if amount < 0 {
@@ -724,6 +724,9 @@ func validate(poll dsfetch.Poll, v ballotValue) string {
 		}
 
 	case "YN", "YNA":
+		if poll.MaxVotesAmount == 0 {
+			poll.MaxVotesAmount = len(poll.OptionIDs)
+		}
 		switch v.Type() {
 		case ballotValueString:
 			// The user answered with Y, N or A (or another invalid string).
@@ -733,6 +736,10 @@ func validate(poll dsfetch.Poll, v ballotValue) string {
 			return voteIsValid
 
 		case ballotValueOptionString:
+			if len(v.optionYNA) < poll.MinVotesAmount || len(v.optionYNA) > poll.MaxVotesAmount {
+				return fmt.Sprintf("You have to select between %d and %d options", poll.MinVotesAmount, poll.MaxVotesAmount)
+			}
+
 			for optionID, yna := range v.optionYNA {
 				if !allowedOptions[optionID] {
 					return fmt.Sprintf("Option_id %d does not belong to the poll", optionID)
