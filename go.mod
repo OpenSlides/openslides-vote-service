@@ -6,7 +6,7 @@ require (
 	github.com/OpenSlides/openslides-go v0.0.0-20250319153021-24df3dacf2b6
 	github.com/alecthomas/kong v1.9.0
 	github.com/gomodule/redigo v1.9.2
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.7.3
 	github.com/ory/dockertest/v3 v3.11.0
 )
 
