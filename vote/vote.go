@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
@@ -60,7 +61,7 @@ func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance
 }
 
 // backend returns the poll backend for a pollConfig object.
-func (v *Vote) backend(p dsfetch.Poll) Backend {
+func (v *Vote) backend(p dsmodels.Poll) Backend {
 	backend := v.longBackend
 	if p.Backend == "fast" {
 		backend = v.fastBackend
@@ -76,9 +77,9 @@ func (v *Vote) backend(p dsfetch.Poll) Backend {
 // not throw an error.
 func (v *Vote) Start(ctx context.Context, pollID int) error {
 	recorder := dsrecorder.New(v.flow)
-	ds := dsfetch.New(recorder)
+	ds := dsmodels.New(recorder)
 
-	poll, err := ds.Poll(pollID).Value(ctx)
+	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
@@ -91,7 +92,7 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return MessageError(ErrInvalid, "Analog poll can not be started")
 	}
 
-	if err := preload(ctx, ds, poll); err != nil {
+	if err := preload(ctx, &ds.Fetch, poll); err != nil {
 		return fmt.Errorf("preloading data: %w", err)
 	}
 	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
@@ -115,8 +116,8 @@ type StopResult struct {
 // This method is idempotence. Many requests with the same pollID will return
 // the same data. Calling vote.Clear will stop this behavior.
 func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
-	ds := dsfetch.New(v.flow)
-	poll, err := ds.Poll(pollID).Value(ctx)
+	ds := dsmodels.New(v.flow)
+	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
@@ -183,8 +184,8 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
-	ds := dsfetch.New(v.flow)
-	poll, err := ds.Poll(pollID).Value(ctx)
+	ds := dsmodels.New(v.flow)
+	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
@@ -194,7 +195,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 	log.Debug("Poll config: %v", poll)
 
-	if err := ensurePresent(ctx, ds, poll.MeetingID, requestUser); err != nil {
+	if err := ensurePresent(ctx, &ds.Fetch, poll.MeetingID, requestUser); err != nil {
 		return err
 	}
 
@@ -212,7 +213,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return MessageError(ErrNotAllowed, "Votes for anonymous user are not allowed")
 	}
 
-	voteMeetingUserID, found, err := getMeetingUser(ctx, ds, voteUser, poll.MeetingID)
+	voteMeetingUserID, found, err := getMeetingUser(ctx, &ds.Fetch, voteUser, poll.MeetingID)
 	if err != nil {
 		return fmt.Errorf("get meeting user for vote user: %w", err)
 	}
@@ -221,7 +222,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return MessageError(ErrNotAllowed, "You are not in the right meeting")
 	}
 
-	if err := ensureVoteUser(ctx, ds, poll, voteUser, voteMeetingUserID, requestUser); err != nil {
+	if err := ensureVoteUser(ctx, &ds.Fetch, poll, voteUser, voteMeetingUserID, requestUser); err != nil {
 		return err
 	}
 
@@ -346,7 +347,7 @@ func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) 
 // ensureVoteUser makes sure the user from the vote:
 // * the delegation is correct and
 // * is in the correct group
-func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll, voteUser, voteMeetingUserID, requestUser int) error {
+func ensureVoteUser(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll, voteUser, voteMeetingUserID, requestUser int) error {
 	groupIDs, err := ds.MeetingUser_GroupIDs(voteMeetingUserID).Value(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", voteUser, poll.MeetingID, err)
@@ -545,7 +546,7 @@ type Backend interface {
 
 // preload loads all data in the cache, that is needed later for the vote
 // requests.
-func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsfetch.Poll) error {
+func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	var dummyBool bool
 	var dummyIntSlice []int
 	var dummyString string
@@ -659,7 +660,7 @@ func (v ballot) String() string {
 	return string(bs)
 }
 
-func validate(poll dsfetch.Poll, v ballotValue) string {
+func validate(poll dsmodels.Poll, v ballotValue) string {
 	if poll.MinVotesAmount == 0 {
 		poll.MinVotesAmount = 1
 	}
