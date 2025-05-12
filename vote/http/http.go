@@ -365,8 +365,7 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 func copyVoteIDs(in map[int][]int) map[int][]int {
 	out := make(map[int][]int, len(in))
 	for k, v := range in {
-		out[k] = make([]int, len(v))
-		copy(out[k], v)
+		out[k] = slices.Clone(v)
 	}
 	return out
 }
