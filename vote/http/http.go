@@ -314,12 +314,12 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 			diff := make(map[int][]int)
 
 			if voterMemory == nil {
-				voterMemory = copyVoteIDs(newAllVotedIDs)
+				voterMemory = newAllVotedIDs
 				diff = newAllVotedIDs
 			} else {
 				for pollID, newUserIDs := range newAllVotedIDs {
 					if oldUserIDs, ok := voterMemory[pollID]; !ok {
-						voterMemory[pollID] = slices.Clone(newUserIDs)
+						voterMemory[pollID] = newUserIDs
 						diff[pollID] = newUserIDs
 					} else {
 						for _, newUserID := range newUserIDs {
@@ -360,14 +360,6 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 			}
 		}
 	}
-}
-
-func copyVoteIDs(in map[int][]int) map[int][]int {
-	out := make(map[int][]int, len(in))
-	for k, v := range in {
-		out[k] = slices.Clone(v)
-	}
-	return out
 }
 
 func handleHealth() HandlerFunc {
