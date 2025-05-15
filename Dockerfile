@@ -12,7 +12,6 @@ COPY . .
 FROM base as builder
 RUN go build
 
-
 # Test build.
 FROM base as testing
 
