@@ -18,6 +18,9 @@ build-dev:
 #	docker build . --target development --tag openslides-vote-dev
 
 run-tests:
+	bash dev/run-tests.sh
+
+run-test:
 	make build-aio context=tests submodule=vote
 	docker run openslides-vote-tests
 #   docker build . --target testing --tag openslides-vote-test
