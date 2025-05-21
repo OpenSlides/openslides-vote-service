@@ -4,20 +4,20 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 )
 
 func TestVoteValidate(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
-		poll        dsfetch.Poll
+		poll        dsmodels.Poll
 		vote        string
 		expectValid bool
 	}{
 		// Test Method Y and N.
 		{
 			"Method Y, Global Y, Vote Y",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				GlobalYes:  true,
 			},
@@ -26,7 +26,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote Y",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				GlobalYes:  false,
 			},
@@ -35,7 +35,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote N",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				GlobalNo:   false,
 			},
@@ -45,7 +45,7 @@ func TestVoteValidate(t *testing.T) {
 		{
 			// The poll config is invalid. A poll with method Y should not allow global_no.
 			"Method Y, Global N, Vote N",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				GlobalNo:   true,
 			},
@@ -54,7 +54,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method N, Global N, Vote N",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "N",
 				GlobalNo:   true,
 			},
@@ -63,7 +63,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				OptionIDs:  []int{1, 2},
 			},
@@ -72,7 +72,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on to many Options",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				OptionIDs:  []int{1, 2},
 			},
@@ -81,7 +81,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on one option with to high amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				OptionIDs:  []int{1, 2},
 			},
@@ -90,7 +90,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on many option with to high amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2},
 				MaxVotesAmount:    2,
@@ -101,7 +101,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on one option with correct amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2},
 				MaxVotesAmount:    5,
@@ -112,7 +112,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on one option with to less amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2},
 				MinVotesAmount:    10,
@@ -124,7 +124,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on many options with to less amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:     "Y",
 				OptionIDs:      []int{1, 2},
 				MinVotesAmount: 10,
@@ -134,7 +134,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote on one option with -1 amount",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				OptionIDs:  []int{1, 2},
 			},
@@ -143,7 +143,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y, Vote wrong option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "Y",
 				OptionIDs:  []int{1, 2},
 			},
@@ -152,7 +152,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y and maxVotesPerOption>1, Correct vote",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2, 3, 4},
 				MaxVotesAmount:    6,
@@ -163,7 +163,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y and maxVotesPerOption>1, Too many votes on one option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2},
 				MaxVotesAmount:    4,
@@ -174,7 +174,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method Y and maxVotesPerOption>1, Too many votes in total",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:        "Y",
 				OptionIDs:         []int{1, 2},
 				MaxVotesAmount:    3,
@@ -187,7 +187,7 @@ func TestVoteValidate(t *testing.T) {
 		// Test Method YN and YNA
 		{
 			"Method YN, Global Y, Vote Y",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YN",
 				GlobalYes:  true,
 			},
@@ -196,7 +196,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YN, Not Global Y, Vote Y",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YN",
 				GlobalYes:  false,
 			},
@@ -205,7 +205,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, Global N, Vote N",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				GlobalNo:   true,
 			},
@@ -214,7 +214,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, Not Global N, Vote N",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				GlobalYes:  false,
 			},
@@ -223,7 +223,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, Y on Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				OptionIDs:  []int{1, 2},
 			},
@@ -232,7 +232,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, N on Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				OptionIDs:  []int{1, 2},
 			},
@@ -241,7 +241,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, A on Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				OptionIDs:  []int{1, 2},
 			},
@@ -250,7 +250,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YN, A on Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YN",
 				OptionIDs:  []int{1, 2},
 			},
@@ -259,7 +259,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YN, Y on wrong Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YN",
 				OptionIDs:  []int{1, 2},
 			},
@@ -268,7 +268,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, Vote on many Options",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				OptionIDs:  []int{1, 2, 3},
 			},
@@ -277,7 +277,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA, Amount on Option",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "YNA",
 				OptionIDs:  []int{1, 2, 3},
 			},
@@ -286,7 +286,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA with to low selected",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:     "YNA",
 				OptionIDs:      []int{1, 2, 3},
 				MinVotesAmount: 2,
@@ -296,7 +296,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA with enough selected",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:     "YNA",
 				OptionIDs:      []int{1, 2, 3},
 				MinVotesAmount: 2,
@@ -306,7 +306,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA with to many selected",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:     "YNA",
 				OptionIDs:      []int{1, 2, 3},
 				MaxVotesAmount: 2,
@@ -316,7 +316,7 @@ func TestVoteValidate(t *testing.T) {
 		},
 		{
 			"Method YNA with not to many selected",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod:     "YNA",
 				OptionIDs:      []int{1, 2, 3},
 				MaxVotesAmount: 2,
@@ -328,7 +328,7 @@ func TestVoteValidate(t *testing.T) {
 		// Unknown method
 		{
 			"Method Unknown",
-			dsfetch.Poll{
+			dsmodels.Poll{
 				Pollmethod: "XXX",
 			},
 			`"Y"`,

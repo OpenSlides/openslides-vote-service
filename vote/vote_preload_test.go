@@ -8,6 +8,7 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 )
 
 func TestPreload(t *testing.T) {
@@ -207,9 +208,9 @@ func TestPreload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
-			fetcher := dsfetch.New(ds)
+			fetcher := dsmodels.New(ds)
 
-			poll, err := fetcher.Poll(1).Value(ctx)
+			poll, err := fetcher.Poll(1).First(ctx)
 			if err != nil {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
