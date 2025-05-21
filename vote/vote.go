@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"time"
 
@@ -484,7 +485,12 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 func (v *Vote) AllVotedIDs(ctx context.Context) map[int][]int {
 	v.votedMu.Lock()
 	defer v.votedMu.Unlock()
-	return v.voted
+
+	out := make(map[int][]int, len(v.voted))
+	for k, v := range v.voted {
+		out[k] = slices.Clone(v)
+	}
+	return out
 }
 
 // loadVoted creates the value for v.voted by the backends.
