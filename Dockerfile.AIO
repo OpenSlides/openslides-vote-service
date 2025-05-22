@@ -23,6 +23,7 @@ LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles 
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
+HEALTHCHECK CMD ["/openslides-vote-service", "health"]
 
 # Development Image
 
@@ -33,9 +34,6 @@ EXPOSE 9012
 
 WORKDIR /root
 CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
-
-HEALTHCHECK CMD ["/openslides-vote-service", "health"]
-
 
 
 # Testing Image
@@ -65,4 +63,3 @@ COPY --from=builder /root/openslides-vote-service/openslides-vote-service .
 EXPOSE 9013
 
 ENTRYPOINT ["/openslides-vote-service"]
-HEALTHCHECK CMD ["/openslides-vote-service", "health"]
