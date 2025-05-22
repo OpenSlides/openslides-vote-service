@@ -1,5 +1,3 @@
-# Question: Warum sind die Expose Ports wieder unterschiedlich?
-
 ARG CONTEXT=prod
 ARG GO_IMAGE_VERSION=1.24.2
 
@@ -23,6 +21,7 @@ LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles 
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
+EXPOSE 9013
 HEALTHCHECK CMD ["/openslides-vote-service", "health"]
 
 # Development Image
@@ -30,7 +29,6 @@ HEALTHCHECK CMD ["/openslides-vote-service", "health"]
 FROM base as dev
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
-EXPOSE 9012
 
 WORKDIR /root
 CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
@@ -50,7 +48,6 @@ CMD go test -test.short -race -timeout 12s ./...
 
 FROM base as builder
 RUN go build
-
 
 FROM scratch as prod
 
