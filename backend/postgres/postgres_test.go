@@ -42,7 +42,7 @@ func startPostgres(t *testing.T) (string, func()) {
 
 func TestImplementBackendInterface(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Postgres Test")
+		t.Skip("Skip Postgres Test")
 	}
 	
 	ctx := context.Background()

@@ -31,7 +31,7 @@ func startRedis(t *testing.T) (string, func()) {
 
 func TestImplementBackendInterface(t *testing.T) {
 	if testing.Short() {
-		t.Skip("Postgres Test")
+		t.Skip("Skip Redis Test")
 	}
 	
 	port, close := startRedis(t)
