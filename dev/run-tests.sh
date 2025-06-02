@@ -6,11 +6,11 @@ echo "########################################################################"
 echo "###################### Start full system tests #########################"
 echo "########################################################################"
 
-IMAGE_TAG=openslides-voting-tests
+IMAGE_TAG=openslides-vote-tests
 CATCH=0
 PERSIST_CONTAINERS=$1
 
-docker build -f ./Dockerfile.AIO ./ --tag ${IMAGE_TAG} --build-arg CONTEXT=tests --target tests || CATCH=1
+make build-test || CATCH=1
 docker run -v /var/run/docker.sock:/var/run/docker.sock ${IMAGE_TAG} || CATCH=1
 
 if [ -z $PERSIST_CONTAINERS ]; then docker stop $(docker ps -a -q --filter ancestor=${IMAGE_TAG} --format="{{.ID}}") || CATCH=1; fi
