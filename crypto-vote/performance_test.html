@@ -1,0 +1,570 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Crypto Vote Test</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            .form-group {
+                margin-bottom: 15px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+            }
+            input[type="number"] {
+                width: 100%;
+                padding: 8px;
+                box-sizing: border-box;
+            }
+            button {
+                background-color: #4caf50;
+                color: white;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+            #logContainer {
+                margin-top: 20px;
+                border: 1px solid #ddd;
+                padding: 10px;
+                height: 300px;
+                overflow-y: auto;
+                background-color: #f9f9f9;
+                font-family: monospace;
+            }
+            .log-info {
+                color: #333;
+            }
+            .log-success {
+                color: #4caf50;
+            }
+            .log-error {
+                color: #f44336;
+            }
+            .log-warning {
+                color: #ff9800;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Crypto Vote Test</h1>
+
+        <div class="form-group">
+            <label for="mixnetCount"
+                >Anzahl der Teilnehmer im Mixnet (mindestens 2):</label
+            >
+            <input type="number" id="mixnetCount" min="2" value="3" />
+        </div>
+
+        <div class="form-group">
+            <label for="trusteeCount"
+                >Anzahl der Treuhänder (mindestens 2):</label
+            >
+            <input type="number" id="trusteeCount" min="2" value="2" />
+        </div>
+
+        <div class="form-group">
+            <label for="messageSize">Größe einer Nachricht (Bytes):</label>
+            <input type="number" id="messageSize" min="1" value="64" />
+        </div>
+
+        <div class="form-group">
+            <label for="messageCount">Anzahl der Nachrichten:</label>
+            <input type="number" id="messageCount" min="1" value="10" />
+        </div>
+
+        <button id="startButton">Test starten</button>
+
+        <h2>Log</h2>
+        <div id="logContainer"></div>
+        <div class="form-group">
+            <button id="clearLogButton" style="background-color: #f44336">
+                Log leeren
+            </button>
+            <button id="copyLogButton" style="background-color: #2196f3">
+                Log kopieren
+            </button>
+        </div>
+
+        <!-- Load the wrapper script -->
+        <script src="./wrapper/performance_test.js"></script>
+        <script>
+            // Log functions
+            function log(message, type = "info") {
+                const logContainer = document.getElementById("logContainer");
+                const logEntry = document.createElement("div");
+                logEntry.className = `log-${type}`;
+
+                const timestamp = new Date().toISOString().substring(11, 23);
+                logEntry.textContent = `[${timestamp}] ${message}`;
+
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            // Helper function to generate a message with exact UTF-8 byte size
+            function generateRandomMessage(size) {
+                // Dictionary of words to use for random message generation
+                const wordList = [
+                    "lorem",
+                    "ipsum",
+                    "dolor",
+                    "sit",
+                    "amet",
+                    "consectetur",
+                    "adipiscing",
+                    "elit",
+                    "sed",
+                    "eiusmod",
+                    "tempor",
+                    "incididunt",
+                    "labore",
+                    "magna",
+                    "aliqua",
+                    "enim",
+                    "minim",
+                    "veniam",
+                    "quis",
+                    "nostrud",
+                    "exercitation",
+                    "ullamco",
+                    "laboris",
+                    "nisi",
+                    "aliquip",
+                    "commodo",
+                    "consequat",
+                    "duis",
+                    "aute",
+                    "irure",
+                    "reprehenderit",
+                    "voluptate",
+                    "velit",
+                    "esse",
+                    "cillum",
+                    "fugiat",
+                    "nulla",
+                    "pariatur",
+                    "excepteur",
+                    "sint",
+                    "occaecat",
+                    "cupidatat",
+                    "non",
+                    "proident",
+                    "sunt",
+                    "culpa",
+                    "qui",
+                    "officia",
+                    "deserunt",
+                    "mollit",
+                    "anim",
+                    "est",
+                    "laborum",
+                    "vitae",
+                    "viverra",
+                    "integer",
+                    "egestas",
+                    "facilisis",
+                    "lectus",
+                    "morbi",
+                    "tincidunt",
+                    "ornare",
+                    "massa",
+                    "eget",
+                    "volutpat",
+                    "semper",
+                    "risus",
+                    "cursus",
+                    "mattis",
+                    "rhoncus",
+                    "urna",
+                    "neque",
+                    "viverra",
+                    "justo",
+                ];
+
+                // Generate a random message by selecting random words
+                let message = "";
+                const encoder = new TextEncoder();
+
+                // Add random words until we have enough bytes
+                while (encoder.encode(message).length < size) {
+                    const randomWord =
+                        wordList[Math.floor(Math.random() * wordList.length)];
+                    // Add a space before words (except the first one)
+                    if (message.length > 0) {
+                        message += " ";
+                    }
+                    message += randomWord;
+                }
+
+                // Trim the message to get exactly the right size in UTF-8 bytes
+                let encodedMessage = encoder.encode(message);
+                while (encodedMessage.length > size) {
+                    message = message.slice(0, -1);
+                    encodedMessage = encoder.encode(message);
+                }
+
+                // If the message is exactly the right size, return it
+                if (encodedMessage.length === size) {
+                    return message;
+                }
+
+                // If we need to add more bytes, pad with spaces or characters
+                // This can happen if we remove a multi-byte character and drop below the size
+                if (encodedMessage.length < size) {
+                    const bytesNeeded = size - encodedMessage.length;
+                    // Pad with spaces (each space is 1 byte in UTF-8)
+                    message += " ".repeat(bytesNeeded);
+                    // Verify the size is now correct
+                    encodedMessage = encoder.encode(message);
+                }
+
+                // Final check
+                if (encoder.encode(message).length !== size) {
+                    log(
+                        `Warnung: Anpassung der Nachrichtengröße erforderlich (${encoder.encode(message).length} vs ${size})`,
+                        "warning",
+                    );
+                }
+
+                return message;
+            }
+
+            // Helper function to compare messages
+            function compareMessages(original, decrypted) {
+                return original === decrypted;
+            }
+
+            // Helper function to find a matching message in an array
+            function findMatchingMessage(originalMessage, decryptedMessages) {
+                return decryptedMessages.includes(originalMessage);
+            }
+
+            // Main test function
+            async function runMixnetTest() {
+                try {
+                    // 1. Get parameters from the form
+                    const mixnetCount = parseInt(
+                        document.getElementById("mixnetCount").value,
+                    );
+                    const trusteeCount = parseInt(
+                        document.getElementById("trusteeCount").value,
+                    );
+                    const messageSize = parseInt(
+                        document.getElementById("messageSize").value,
+                    );
+                    const messageCount = parseInt(
+                        document.getElementById("messageCount").value,
+                    );
+
+                    // 2. Validate parameters
+                    if (mixnetCount < 2) {
+                        log(
+                            "Es müssen mindestens 2 Teilnehmer im Mixnet sein!",
+                            "error",
+                        );
+                        return;
+                    }
+
+                    if (trusteeCount < 2) {
+                        log("Es müssen mindestens 2 Treuhänder sein!", "error");
+                        return;
+                    }
+
+                    // 3. Load WASM module using the wrapper
+                    log("Initialisiere WASM-Modul...");
+                    const wasmModule = await loadPerformanceTest(
+                        "./zig-out/bin/performance.wasm",
+                    );
+                    log("WASM-Modul erfolgreich geladen!", "success");
+
+                    // 4. Generate key pairs for mixnet participants
+                    log("Generiere Schlüsselpaare für Mixnet-Teilnehmer...");
+                    const mixnetKeys = [];
+                    for (let i = 0; i < mixnetCount; i++) {
+                        try {
+                            const keyPair = wasmModule.gen_mixnet_key_pair();
+                            mixnetKeys.push(keyPair);
+                            log(
+                                `Mixnet-Teilnehmer ${i + 1} Schlüsselpaar generiert`,
+                            );
+                        } catch (error) {
+                            log(
+                                `Fehler bei Mixnet-Teilnehmer ${i + 1}: ${error.message}`,
+                                "error",
+                            );
+                            throw error;
+                        }
+                    }
+
+                    // 5. Generate key pairs for trustees
+                    log("Generiere Schlüsselpaare für Treuhänder...");
+                    const trusteeKeys = [];
+                    for (let i = 0; i < trusteeCount; i++) {
+                        try {
+                            const keyPair = wasmModule.gen_trustee_key_pair();
+                            trusteeKeys.push(keyPair);
+                            log(`Treuhänder ${i + 1} Schlüsselpaar generiert`);
+                        } catch (error) {
+                            log(
+                                `Fehler bei Treuhänder ${i + 1}: ${error.message}`,
+                                "error",
+                            );
+                            throw error;
+                        }
+                    }
+
+                    // 6. Generate and encrypt messages
+                    log(
+                        `Generiere und verschlüssele ${messageCount} Nachrichten...`,
+                    );
+
+                    // Collect all original and encrypted messages
+                    const originalMessages = [];
+                    const encryptedMessages = [];
+
+                    // Measure encryption time
+                    const encryptStartTime = performance.now();
+
+                    for (let i = 0; i < messageCount; i++) {
+                        // Generate a random message
+                        const message = generateRandomMessage(messageSize);
+                        originalMessages.push(message);
+
+                        try {
+                            // Encrypt the message
+                            log(`Verschlüssele Nachricht ${i + 1}...`);
+                            const encrypted = wasmModule.encrypt(
+                                mixnetKeys.map((k) => k.publicKey),
+                                trusteeKeys.map((k) => k.publicKey),
+                                message,
+                            );
+
+                            log(
+                                `Nachricht ${i + 1} erfolgreich verschlüsselt (${encrypted.length} Bytes)`,
+                                "success",
+                            );
+                            encryptedMessages.push(encrypted);
+                        } catch (error) {
+                            log(
+                                `Fehler bei Nachricht ${i + 1}: ${error.message}`,
+                                "error",
+                            );
+                            throw error;
+                        }
+                    }
+
+                    const encryptEndTime = performance.now();
+                    const encryptTotalTime = encryptEndTime - encryptStartTime;
+                    const avgEncryptTime = encryptTotalTime / messageCount;
+
+                    log(
+                        `Verschlüsselung abgeschlossen: ${messageCount} Nachrichten in ${encryptTotalTime.toFixed(2)}ms (durchschnittlich ${avgEncryptTime.toFixed(2)}ms pro Nachricht)`,
+                        "success",
+                    );
+
+                    // 7. Decrypt messages in stages with each mixnet key
+                    // First, we need to combine all encrypted messages into a single block
+                    let combinedEncryptedData = new Uint8Array(
+                        encryptedMessages.reduce(
+                            (total, msg) => total + msg.length,
+                            0,
+                        ),
+                    );
+                    let offset = 0;
+                    for (const msg of encryptedMessages) {
+                        combinedEncryptedData.set(msg, offset);
+                        offset += msg.length;
+                    }
+
+                    // Initialize a variable to track the current encrypted block
+                    let currentEncryptedBlock = combinedEncryptedData;
+
+                    // Track total mixnet decryption time for summary
+                    let totalMixnetDecryptTime = 0;
+
+                    // Process each mixnet level
+                    for (let i = 0; i < mixnetCount; i++) {
+                        const mixnetIndex = i;
+                        log(
+                            `Entschlüsselungsstufe ${i + 1}: Entschlüssele mit Schlüssel von Mixnet-Teilnehmer ${mixnetIndex + 1}...`,
+                        );
+
+                        try {
+                            const mixnetDecryptStartTime = performance.now();
+
+                            // Decrypt the entire block with the current mixnet key
+                            const decryptedBlock = wasmModule.decrypt_mixnet(
+                                mixnetKeys[mixnetIndex].secretKey,
+                                currentEncryptedBlock,
+                                messageCount, // Number of messages in the block
+                            );
+
+                            const mixnetDecryptEndTime = performance.now();
+                            const mixnetDecryptTime =
+                                mixnetDecryptEndTime - mixnetDecryptStartTime;
+                            totalMixnetDecryptTime += mixnetDecryptTime;
+
+                            log(
+                                `Stufe ${i + 1}: ${messageCount} Nachrichten erfolgreich als Block entschlüsselt in ${mixnetDecryptTime.toFixed(2)}ms (durchschnittlich ${(mixnetDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`,
+                            );
+
+                            // Set decrypted block for the next stage
+                            currentEncryptedBlock = decryptedBlock;
+                        } catch (error) {
+                            log(
+                                `Fehler bei Entschlüsselungsstufe ${i + 1}: ${error.message}`,
+                                "error",
+                            );
+                            throw error;
+                        }
+                    }
+
+                    // 8. Final trustee decryption
+                    log(
+                        "Führe finale Entschlüsselung mit Treuhänder-Schlüsseln durch...",
+                    );
+
+                    try {
+                        const trusteeDecryptStartTime = performance.now();
+
+                        // Decrypt with all trustee keys - pass the entire block
+                        const finalDecryptedMessages =
+                            wasmModule.decrypt_trustee(
+                                trusteeKeys.map((k) => k.secretKey),
+                                currentEncryptedBlock, // Pass the entire block from the last mixnet stage
+                                messageCount,
+                            );
+
+                        const trusteeDecryptEndTime = performance.now();
+                        const trusteeDecryptTime =
+                            trusteeDecryptEndTime - trusteeDecryptStartTime;
+
+                        log(
+                            `Treuhänder-Entschlüsselung: ${finalDecryptedMessages.length} Nachrichten in ${trusteeDecryptTime.toFixed(2)}ms (durchschnittlich ${(trusteeDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`,
+                        );
+
+                        // Verify messages
+                        log(
+                            "Vergleiche ursprüngliche Nachrichten mit entschlüsselten Nachrichten...",
+                        );
+
+                        let matchCount = 0;
+                        for (let j = 0; j < originalMessages.length; j++) {
+                            const originalMessage = originalMessages[j];
+                            if (
+                                finalDecryptedMessages.includes(originalMessage)
+                            ) {
+                                matchCount++;
+                            }
+                        }
+
+                        if (matchCount === originalMessages.length) {
+                            log(
+                                `Alle ${matchCount} Nachrichten wurden korrekt entschlüsselt!`,
+                                "success",
+                            );
+                        } else {
+                            log(
+                                `Nur ${matchCount} von ${originalMessages.length} Nachrichten wurden korrekt entschlüsselt!`,
+                                "warning",
+                            );
+                        }
+
+                        // Log summary of timing information
+                        log(`Zusammenfassung der Zeitmessungen:`, "info");
+                        log(
+                            `- Verschlüsselung: ${avgEncryptTime.toFixed(2)}ms pro Nachricht`,
+                            "info",
+                        );
+                        log(
+                            `- Mixnet-Entschlüsselung: Insgesamt ${totalMixnetDecryptTime.toFixed(2)}ms. Durchschnittlich): ${(totalMixnetDecryptTime / mixnetCount).toFixed(2)}ms pro Stufe`,
+                            "info",
+                        );
+                        log(
+                            `- Treuhänder-Entschlüsselung: Insgesamt ${trusteeDecryptTime.toFixed(2)}ms`,
+                            "info",
+                        );
+                    } catch (error) {
+                        log(
+                            `Fehler bei Treuhänder-Entschlüsselung: ${error.message}`,
+                            "error",
+                        );
+                        throw error;
+                    }
+                } catch (error) {
+                    log(`Fehler beim Test: ${error.message}`, "error");
+                    console.error("Error in mixnet test:", error);
+                }
+            }
+
+            // Event listener for the start button
+            document
+                .getElementById("startButton")
+                .addEventListener("click", async function () {
+                    try {
+                        await runMixnetTest();
+                    } catch (error) {
+                        log(
+                            `Test konnte nicht gestartet werden: ${error.message}`,
+                            "error",
+                        );
+                        console.error("Failed to start test:", error);
+                    }
+                });
+
+            // Initial message
+            // Event listener for clear log button
+            document
+                .getElementById("clearLogButton")
+                .addEventListener("click", function () {
+                    const logContainer =
+                        document.getElementById("logContainer");
+                    logContainer.innerHTML = "";
+                    log("Log wurde geleert.");
+                });
+
+            // Event listener for copy log button
+            document
+                .getElementById("copyLogButton")
+                .addEventListener("click", function () {
+                    const logContainer =
+                        document.getElementById("logContainer");
+                    const logText = Array.from(logContainer.children)
+                        .map((entry) => entry.textContent)
+                        .join("\n");
+
+                    navigator.clipboard
+                        .writeText(logText)
+                        .then(() => {
+                            log(
+                                "Log wurde in die Zwischenablage kopiert.",
+                                "success",
+                            );
+                        })
+                        .catch((err) => {
+                            log(`Fehler beim Kopieren: ${err}`, "error");
+                            console.error("Failed to copy log:", err);
+                        });
+                });
+
+            document.addEventListener("DOMContentLoaded", function () {
+                log(
+                    "Seite geladen. Klicken Sie auf 'Test starten' um zu beginnen.",
+                );
+            });
+        </script>
+    </body>
+</html>
