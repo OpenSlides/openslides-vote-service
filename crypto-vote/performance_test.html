@@ -252,28 +252,33 @@
                 return decryptedMessages.includes(originalMessage);
             }
 
-            // Main test function
+            // Helper function to yield control back to the browser
+            function yieldToUI() {
+                return new Promise(resolve => setTimeout(resolve, 0));
+            }
+            
+            // Main test function - now non-blocking with yields to UI
             async function runMixnetTest() {
                 try {
                     // 1. Get parameters from the form
                     const mixnetCount = parseInt(
-                        document.getElementById("mixnetCount").value,
+                        document.getElementById("mixnetCount").value
                     );
                     const trusteeCount = parseInt(
-                        document.getElementById("trusteeCount").value,
+                        document.getElementById("trusteeCount").value
                     );
                     const messageSize = parseInt(
-                        document.getElementById("messageSize").value,
+                        document.getElementById("messageSize").value
                     );
                     const messageCount = parseInt(
-                        document.getElementById("messageCount").value,
+                        document.getElementById("messageCount").value
                     );
 
                     // 2. Validate parameters
                     if (mixnetCount < 2) {
                         log(
                             "Es müssen mindestens 2 Teilnehmer im Mixnet sein!",
-                            "error",
+                            "error"
                         );
                         return;
                     }
@@ -285,25 +290,29 @@
 
                     // 3. Load WASM module using the wrapper
                     log("Initialisiere WASM-Modul...");
-                    const wasmModule = await loadPerformanceTest(
-                        "./zig-out/bin/performance.wasm",
-                    );
+                    await yieldToUI(); // Yield to update UI
+                    
+                    const wasmModule = await loadPerformanceTest("./zig-out/bin/performance.wasm");
                     log("WASM-Modul erfolgreich geladen!", "success");
+                    await yieldToUI();
 
                     // 4. Generate key pairs for mixnet participants
                     log("Generiere Schlüsselpaare für Mixnet-Teilnehmer...");
+                    await yieldToUI();
+                    
                     const mixnetKeys = [];
                     for (let i = 0; i < mixnetCount; i++) {
                         try {
                             const keyPair = wasmModule.gen_mixnet_key_pair();
                             mixnetKeys.push(keyPair);
                             log(
-                                `Mixnet-Teilnehmer ${i + 1} Schlüsselpaar generiert`,
+                                `Mixnet-Teilnehmer ${i + 1} Schlüsselpaar generiert`
                             );
+                            await yieldToUI(); // Yield after each key pair generation
                         } catch (error) {
                             log(
                                 `Fehler bei Mixnet-Teilnehmer ${i + 1}: ${error.message}`,
-                                "error",
+                                "error"
                             );
                             throw error;
                         }
@@ -311,16 +320,19 @@
 
                     // 5. Generate key pairs for trustees
                     log("Generiere Schlüsselpaare für Treuhänder...");
+                    await yieldToUI();
+                    
                     const trusteeKeys = [];
                     for (let i = 0; i < trusteeCount; i++) {
                         try {
                             const keyPair = wasmModule.gen_trustee_key_pair();
                             trusteeKeys.push(keyPair);
                             log(`Treuhänder ${i + 1} Schlüsselpaar generiert`);
+                            await yieldToUI(); // Yield after each key pair generation
                         } catch (error) {
                             log(
                                 `Fehler bei Treuhänder ${i + 1}: ${error.message}`,
-                                "error",
+                                "error"
                             );
                             throw error;
                         }
@@ -328,16 +340,17 @@
 
                     // 6. Generate and encrypt messages
                     log(
-                        `Generiere und verschlüssele ${messageCount} Nachrichten...`,
+                        `Generiere und verschlüssele ${messageCount} Nachrichten...`
                     );
-
+                    await yieldToUI();
+                    
                     // Collect all original and encrypted messages
                     const originalMessages = [];
                     const encryptedMessages = [];
-
+                    
                     // Measure encryption time
                     const encryptStartTime = performance.now();
-
+                    
                     for (let i = 0; i < messageCount; i++) {
                         // Generate a random message
                         const message = generateRandomMessage(messageSize);
@@ -346,87 +359,90 @@
                         try {
                             // Encrypt the message
                             log(`Verschlüssele Nachricht ${i + 1}...`);
+                            await yieldToUI(); // Yield before encryption
+                            
                             const encrypted = wasmModule.encrypt(
-                                mixnetKeys.map((k) => k.publicKey),
-                                trusteeKeys.map((k) => k.publicKey),
-                                message,
+                                mixnetKeys.map(k => k.publicKey),
+                                trusteeKeys.map(k => k.publicKey),
+                                message
                             );
 
                             log(
                                 `Nachricht ${i + 1} erfolgreich verschlüsselt (${encrypted.length} Bytes)`,
-                                "success",
+                                "success"
                             );
                             encryptedMessages.push(encrypted);
+                            await yieldToUI(); // Yield after encryption
                         } catch (error) {
                             log(
                                 `Fehler bei Nachricht ${i + 1}: ${error.message}`,
-                                "error",
+                                "error"
                             );
                             throw error;
                         }
                     }
-
+                    
                     const encryptEndTime = performance.now();
                     const encryptTotalTime = encryptEndTime - encryptStartTime;
                     const avgEncryptTime = encryptTotalTime / messageCount;
-
+                    
                     log(
                         `Verschlüsselung abgeschlossen: ${messageCount} Nachrichten in ${encryptTotalTime.toFixed(2)}ms (durchschnittlich ${avgEncryptTime.toFixed(2)}ms pro Nachricht)`,
-                        "success",
+                        "success"
                     );
+                    await yieldToUI();
 
                     // 7. Decrypt messages in stages with each mixnet key
+                    log("Bereite Daten für die Entschlüsselung vor...");
+                    await yieldToUI();
+                    
                     // First, we need to combine all encrypted messages into a single block
-                    let combinedEncryptedData = new Uint8Array(
-                        encryptedMessages.reduce(
-                            (total, msg) => total + msg.length,
-                            0,
-                        ),
-                    );
+                    let combinedEncryptedData = new Uint8Array(encryptedMessages.reduce((total, msg) => total + msg.length, 0));
                     let offset = 0;
                     for (const msg of encryptedMessages) {
                         combinedEncryptedData.set(msg, offset);
                         offset += msg.length;
                     }
-
+                    
                     // Initialize a variable to track the current encrypted block
                     let currentEncryptedBlock = combinedEncryptedData;
-
+                    
                     // Track total mixnet decryption time for summary
                     let totalMixnetDecryptTime = 0;
-
+                    
                     // Process each mixnet level
                     for (let i = 0; i < mixnetCount; i++) {
                         const mixnetIndex = i;
                         log(
-                            `Entschlüsselungsstufe ${i + 1}: Entschlüssele mit Schlüssel von Mixnet-Teilnehmer ${mixnetIndex + 1}...`,
+                            `Entschlüsselungsstufe ${i + 1}: Entschlüssele mit Schlüssel von Mixnet-Teilnehmer ${mixnetIndex + 1}...`
                         );
+                        await yieldToUI(); // Yield before each mixnet stage
 
                         try {
                             const mixnetDecryptStartTime = performance.now();
-
+                            
                             // Decrypt the entire block with the current mixnet key
                             const decryptedBlock = wasmModule.decrypt_mixnet(
                                 mixnetKeys[mixnetIndex].secretKey,
                                 currentEncryptedBlock,
-                                messageCount, // Number of messages in the block
+                                messageCount // Number of messages in the block
                             );
-
+                            
                             const mixnetDecryptEndTime = performance.now();
-                            const mixnetDecryptTime =
-                                mixnetDecryptEndTime - mixnetDecryptStartTime;
+                            const mixnetDecryptTime = mixnetDecryptEndTime - mixnetDecryptStartTime;
                             totalMixnetDecryptTime += mixnetDecryptTime;
-
+                            
                             log(
-                                `Stufe ${i + 1}: ${messageCount} Nachrichten erfolgreich als Block entschlüsselt in ${mixnetDecryptTime.toFixed(2)}ms (durchschnittlich ${(mixnetDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`,
+                                `Stufe ${i + 1}: ${messageCount} Nachrichten erfolgreich als Block entschlüsselt in ${mixnetDecryptTime.toFixed(2)}ms (durchschnittlich ${(mixnetDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`
                             );
-
+                            
                             // Set decrypted block for the next stage
                             currentEncryptedBlock = decryptedBlock;
+                            await yieldToUI(); // Yield after mixnet stage
                         } catch (error) {
                             log(
                                 `Fehler bei Entschlüsselungsstufe ${i + 1}: ${error.message}`,
-                                "error",
+                                "error"
                             );
                             throw error;
                         }
@@ -434,40 +450,44 @@
 
                     // 8. Final trustee decryption
                     log(
-                        "Führe finale Entschlüsselung mit Treuhänder-Schlüsseln durch...",
+                        "Führe finale Entschlüsselung mit Treuhänder-Schlüsseln durch..."
                     );
-
+                    await yieldToUI(); // Yield before trustee decryption
+                    
                     try {
                         const trusteeDecryptStartTime = performance.now();
-
+                        
                         // Decrypt with all trustee keys - pass the entire block
-                        const finalDecryptedMessages =
-                            wasmModule.decrypt_trustee(
-                                trusteeKeys.map((k) => k.secretKey),
-                                currentEncryptedBlock, // Pass the entire block from the last mixnet stage
-                                messageCount,
-                            );
-
-                        const trusteeDecryptEndTime = performance.now();
-                        const trusteeDecryptTime =
-                            trusteeDecryptEndTime - trusteeDecryptStartTime;
-
-                        log(
-                            `Treuhänder-Entschlüsselung: ${finalDecryptedMessages.length} Nachrichten in ${trusteeDecryptTime.toFixed(2)}ms (durchschnittlich ${(trusteeDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`,
+                        const finalDecryptedMessages = wasmModule.decrypt_trustee(
+                            trusteeKeys.map(k => k.secretKey),
+                            currentEncryptedBlock, // Pass the entire block from the last mixnet stage
+                            messageCount
                         );
-
+                        
+                        const trusteeDecryptEndTime = performance.now();
+                        const trusteeDecryptTime = trusteeDecryptEndTime - trusteeDecryptStartTime;
+                        
+                        log(
+                            `Treuhänder-Entschlüsselung: ${finalDecryptedMessages.length} Nachrichten in ${trusteeDecryptTime.toFixed(2)}ms (durchschnittlich ${(trusteeDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`
+                        );
+                        await yieldToUI(); // Yield after trustee decryption
+                        
                         // Verify messages
                         log(
-                            "Vergleiche ursprüngliche Nachrichten mit entschlüsselten Nachrichten...",
+                            "Vergleiche ursprüngliche Nachrichten mit entschlüsselten Nachrichten..."
                         );
+                        await yieldToUI();
 
                         let matchCount = 0;
                         for (let j = 0; j < originalMessages.length; j++) {
                             const originalMessage = originalMessages[j];
-                            if (
-                                finalDecryptedMessages.includes(originalMessage)
-                            ) {
+                            if (finalDecryptedMessages.includes(originalMessage)) {
                                 matchCount++;
+                            }
+                            
+                            // Yield periodically during verification for large message counts
+                            if (j % 100 === 0 && j > 0) {
+                                await yieldToUI();
                             }
                         }
 
@@ -497,13 +517,16 @@
                             `- Treuhänder-Entschlüsselung: Insgesamt ${trusteeDecryptTime.toFixed(2)}ms`,
                             "info",
                         );
+                        await yieldToUI();
+                        
                     } catch (error) {
                         log(
                             `Fehler bei Treuhänder-Entschlüsselung: ${error.message}`,
-                            "error",
+                            "error"
                         );
                         throw error;
                     }
+                    
                 } catch (error) {
                     log(`Fehler beim Test: ${error.message}`, "error");
                     console.error("Error in mixnet test:", error);
@@ -515,13 +538,20 @@
                 .getElementById("startButton")
                 .addEventListener("click", async function () {
                     try {
+                        this.disabled = true;
+                        this.textContent = "Test läuft...";
+                        log("Test gestartet...", "info");
                         await runMixnetTest();
+                        this.disabled = false;
+                        this.textContent = "Test starten";
                     } catch (error) {
                         log(
                             `Test konnte nicht gestartet werden: ${error.message}`,
-                            "error",
+                            "error"
                         );
                         console.error("Failed to start test:", error);
+                        this.disabled = false;
+                        this.textContent = "Test starten";
                     }
                 });
 
