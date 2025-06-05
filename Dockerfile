@@ -1,10 +1,8 @@
 ARG CONTEXT=prod
-ARG GO_IMAGE_VERSION=1.24.2
 
-FROM golang:${GO_IMAGE_VERSION}-alpine as base
+FROM golang:1.24.2-alpine as base
 
 ARG CONTEXT
-ARG GO_IMAGE_VERSION
 
 WORKDIR /root/openslides-vote-service
 
