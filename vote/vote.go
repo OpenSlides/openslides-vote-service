@@ -13,6 +13,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
@@ -26,6 +27,9 @@ type Vote struct {
 
 	votedMu sync.Mutex
 	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
+
+	boardMu sync.RWMutex
+	boards  map[int]bulletin_board.BulletinBoard
 }
 
 // New creates an initializes vote service.
@@ -34,6 +38,7 @@ func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance
 		fastBackend: fast,
 		longBackend: long,
 		flow:        flow,
+		boards:      make(map[int]bulletin_board.BulletinBoard),
 	}
 
 	if err := v.loadVoted(ctx); err != nil {
@@ -101,6 +106,15 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 	if err := backend.Start(ctx, pollID); err != nil {
 		return fmt.Errorf("starting poll in the backend: %w", err)
 	}
+
+	// TODO: Only if crypto-vote
+	message, err := bulletin_board.MessageCreate(poll)
+	if err != nil {
+		return fmt.Errorf("creating create message for bulletin board: %w", err)
+	}
+	v.boardMu.Lock()
+	v.boards[poll.ID] = bulletin_board.New(message)
+	v.boardMu.Unlock()
 
 	return nil
 }
@@ -177,6 +191,7 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 
 	v.votedMu.Lock()
 	v.voted = make(map[int][]int)
+	v.boards = make(map[int]bulletin_board.BulletinBoard)
 	v.votedMu.Unlock()
 
 	return nil
@@ -477,6 +492,18 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 	}
 
 	return out, nil
+}
+
+func (v *Vote) Board(pollID int) (bulletin_board.BulletinBoard, error) {
+	v.boardMu.RLock()
+	board, ok := v.boards[pollID]
+	v.boardMu.RUnlock()
+
+	if !ok {
+		return bulletin_board.BulletinBoard{}, fmt.Errorf("unknown board")
+	}
+
+	return board, nil
 }
 
 // AllVotedIDs returns the user_id of each user, that has voted for every active
