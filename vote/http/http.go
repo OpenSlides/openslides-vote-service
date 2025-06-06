@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-go/environment"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
@@ -94,6 +95,7 @@ type voteService interface {
 	allVotedIDer
 	voter
 	haveIvoteder
+	boarder
 }
 
 type authenticater interface {
@@ -117,6 +119,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
+	mux.Handle(external+"/board", handleExternal(handleBoard(service, auth)))
 
 	return mux
 }
@@ -359,6 +362,48 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 				return nil
 			}
 		}
+	}
+}
+
+type boarder interface {
+	Board(pollID int) (bulletin_board.BulletinBoard, error)
+}
+
+func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, err := auth.Authenticate(w, r)
+		if err != nil {
+			return err
+		}
+
+		// TODO: Who can see the board?
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return fmt.Errorf("getting poll id from request: %w", err)
+		}
+
+		board, err := bordProvider.Board(pollID)
+		if err != nil {
+			return fmt.Errorf("getting board")
+		}
+
+		var tid uint64
+		for {
+			newTID, eventList, err := board.Receive(ctx, tid)
+			if err != nil {
+				return fmt.Errorf("receiving next message: %w", err)
+			}
+			tid = newTID
+
+			for _, event := range eventList {
+				if err := json.NewEncoder(w).Encode(event); err != nil {
+					return fmt.Errorf("encode data: %w", err)
+				}
+			}
+			w.(http.Flusher).Flush()
+		}
+
 	}
 }
 
