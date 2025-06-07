@@ -1,4 +1,4 @@
-FROM golang:1.24.3-alpine as base
+FROM golang:1.24.3-alpine AS base
 WORKDIR /root/openslides-vote-service
 
 RUN apk add git

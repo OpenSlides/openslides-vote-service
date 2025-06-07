@@ -1,1 +1,444 @@
-// TODO: Implement me
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Poll Worker - Crypto Vote</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 30px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+                color: #555;
+            }
+            input[type="text"], input[type="url"] {
+                width: 100%;
+                padding: 10px;
+                border: 2px solid #ddd;
+                border-radius: 4px;
+                box-sizing: border-box;
+                font-size: 14px;
+            }
+            input[type="text"]:focus, input[type="url"]:focus {
+                border-color: #4caf50;
+                outline: none;
+            }
+            button {
+                background-color: #4caf50;
+                color: white;
+                padding: 12px 20px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-right: 10px;
+                margin-bottom: 10px;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+            button:disabled {
+                background-color: #cccccc;
+                cursor: not-allowed;
+            }
+            .button-connect {
+                background-color: #2196f3;
+            }
+            .button-connect:hover {
+                background-color: #1976d2;
+            }
+            .button-disconnect {
+                background-color: #f44336;
+            }
+            .button-disconnect:hover {
+                background-color: #d32f2f;
+            }
+            .button-clear {
+                background-color: #ff9800;
+            }
+            .button-clear:hover {
+                background-color: #f57c00;
+            }
+            #logContainer {
+                margin-top: 20px;
+                border: 2px solid #ddd;
+                padding: 15px;
+                height: 400px;
+                overflow-y: auto;
+                background-color: #f9f9f9;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .log-info {
+                color: #333;
+                margin-bottom: 5px;
+            }
+            .log-success {
+                color: #4caf50;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .log-error {
+                color: #f44336;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .log-warning {
+                color: #ff9800;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .status {
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 20px;
+                font-weight: bold;
+            }
+            .status-disconnected {
+                background-color: #ffebee;
+                color: #c62828;
+                border: 1px solid #ffcdd2;
+            }
+            .status-connecting {
+                background-color: #fff3e0;
+                color: #ef6c00;
+                border: 1px solid #ffcc02;
+            }
+            .status-connected {
+                background-color: #e8f5e8;
+                color: #2e7d32;
+                border: 1px solid #c8e6c9;
+            }
+            .keys-section {
+                margin-top: 30px;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 4px;
+                border: 1px solid #dee2e6;
+            }
+            .key-display {
+                margin-top: 10px;
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                word-break: break-all;
+                max-height: 60px;
+                overflow-y: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Poll Worker - Crypto Vote</h1>
+            
+            <div id="status" class="status status-disconnected">
+                Status: Nicht verbunden
+            </div>
+
+            <div class="form-group">
+                <label for="serverDomain">Server Domain:</label>
+                <input type="url" id="serverDomain" value="https://localhost:8000" />
+            </div>
+
+            <div class="form-group">
+                <label for="pollId">Poll ID:</label>
+                <input type="text" id="pollId" value="1" />
+            </div>
+
+            <div class="form-group">
+                <button id="connectButton" class="button-connect">Verbinden</button>
+                <button id="disconnectButton" class="button-disconnect" disabled>Trennen</button>
+                <button id="clearLogButton" class="button-clear">Log leeren</button>
+            </div>
+
+            <div class="keys-section">
+                <h3>Schlüssel-Management</h3>
+                <button id="generateKeysButton" disabled>Erstelle und Veröffentliche Schlüssel</button>
+                
+                <div style="margin-top: 15px;">
+                    <label>Mixnet Public Key:</label>
+                    <div id="mixnetPublicKey" class="key-display">Noch nicht generiert</div>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <label>Trustee Public Key:</label>
+                    <div id="trusteePublicKey" class="key-display">Noch nicht generiert</div>
+                </div>
+            </div>
+
+            <h3>Server Events Log</h3>
+            <div id="logContainer"></div>
+        </div>
+
+        <!-- Load the WASM wrapper script -->
+        <script src="./wrapper/crypto_vote.js"></script>
+        <script>
+            // Global variables
+            let eventSource = null;
+            let cryptoVote = null;
+            let isConnected = false;
+            let hasReceivedFirstMessage = false;
+            let mixnetKeyPair = null;
+            let trusteeKeyPair = null;
+
+            // DOM elements
+            const serverDomainInput = document.getElementById('serverDomain');
+            const pollIdInput = document.getElementById('pollId');
+            const connectButton = document.getElementById('connectButton');
+            const disconnectButton = document.getElementById('disconnectButton');
+            const clearLogButton = document.getElementById('clearLogButton');
+            const generateKeysButton = document.getElementById('generateKeysButton');
+            const statusDiv = document.getElementById('status');
+            const logContainer = document.getElementById('logContainer');
+            const mixnetPublicKeyDiv = document.getElementById('mixnetPublicKey');
+            const trusteePublicKeyDiv = document.getElementById('trusteePublicKey');
+
+            // Initialize WASM module
+            async function initWasm() {
+                try {
+                    log('Lade WASM-Modul...', 'info');
+                    cryptoVote = await loadCryptoVote('./zig-out/bin/crypto_vote.wasm');
+                    log('WASM-Modul erfolgreich geladen', 'success');
+                } catch (error) {
+                    log(`Fehler beim Laden des WASM-Moduls: ${error.message}`, 'error');
+                    console.error('WASM loading error:', error);
+                }
+            }
+
+            // Logging function
+            function log(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-${type}`;
+                
+                const timestamp = new Date().toISOString().substring(11, 23);
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            // Update status display
+            function updateStatus(status, className) {
+                statusDiv.textContent = `Status: ${status}`;
+                statusDiv.className = `status ${className}`;
+            }
+
+            // Convert Uint8Array to hex string for display
+            function uint8ArrayToHex(array) {
+                return Array.from(array)
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+            }
+
+            // Connect to server
+            function connectToServer() {
+                if (isConnected) {
+                    log('Bereits verbunden', 'warning');
+                    return;
+                }
+
+                const domain = serverDomainInput.value.trim();
+                const pollId = pollIdInput.value.trim();
+
+                if (!domain || !pollId) {
+                    log('Bitte Domain und Poll-ID eingeben', 'error');
+                    return;
+                }
+
+                const url = `${domain}/system/vote/board?id=${pollId}`;
+                log(`Verbinde mit: ${url}`, 'info');
+
+                updateStatus('Verbinde...', 'status-connecting');
+
+                try {
+                    eventSource = new EventSource(url);
+                    
+                    eventSource.onopen = function() {
+                        isConnected = true;
+                        updateStatus('Verbunden', 'status-connected');
+                        log('Verbindung erfolgreich hergestellt', 'success');
+                        
+                        connectButton.disabled = true;
+                        disconnectButton.disabled = false;
+                        serverDomainInput.disabled = true;
+                        pollIdInput.disabled = true;
+                    };
+
+                    eventSource.onmessage = function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            log(`Server Event: ${JSON.stringify(data)}`, 'info');
+                            
+                            // Enable key generation after first message
+                            if (!hasReceivedFirstMessage) {
+                                hasReceivedFirstMessage = true;
+                                if (cryptoVote) {
+                                    generateKeysButton.disabled = false;
+                                    log('Schlüssel-Generierung verfügbar', 'success');
+                                }
+                            }
+                        } catch (error) {
+                            log(`Fehler beim Parsen der Server-Nachricht: ${error.message}`, 'error');
+                            log(`Rohdaten: ${event.data}`, 'info');
+                        }
+                    };
+
+                    eventSource.onerror = function(event) {
+                        log('Verbindungsfehler aufgetreten', 'error');
+                        console.error('EventSource error:', event);
+                        
+                        if (eventSource.readyState === EventSource.CLOSED) {
+                            disconnectFromServer();
+                        }
+                    };
+
+                } catch (error) {
+                    log(`Fehler beim Verbinden: ${error.message}`, 'error');
+                    updateStatus('Verbindungsfehler', 'status-disconnected');
+                }
+            }
+
+            // Disconnect from server
+            function disconnectFromServer() {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                isConnected = false;
+                hasReceivedFirstMessage = false;
+                updateStatus('Nicht verbunden', 'status-disconnected');
+                log('Verbindung getrennt', 'info');
+
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                generateKeysButton.disabled = true;
+                serverDomainInput.disabled = false;
+                pollIdInput.disabled = false;
+            }
+
+            // Generate and publish keys
+            async function generateAndPublishKeys() {
+                if (!cryptoVote) {
+                    log('WASM-Modul nicht verfügbar', 'error');
+                    return;
+                }
+
+                if (!isConnected) {
+                    log('Nicht mit Server verbunden', 'error');
+                    return;
+                }
+
+                try {
+                    generateKeysButton.disabled = true;
+                    log('Generiere Schlüsselpaare...', 'info');
+
+                    // Generate mixnet key pair
+                    mixnetKeyPair = cryptoVote.gen_mixnet_key_pair();
+                    log('Mixnet-Schlüsselpaar generiert', 'success');
+                    
+                    // Generate trustee key pair
+                    trusteeKeyPair = cryptoVote.gen_trustee_key_pair();
+                    log('Trustee-Schlüsselpaar generiert', 'success');
+
+                    // Display public keys
+                    mixnetPublicKeyDiv.textContent = uint8ArrayToHex(mixnetKeyPair.publicKey);
+                    trusteePublicKeyDiv.textContent = uint8ArrayToHex(trusteeKeyPair.publicKey);
+
+                    // Publish keys to server
+                    const domain = serverDomainInput.value.trim();
+                    const pollId = pollIdInput.value.trim();
+                    const publishUrl = `${domain}/system/vote/board/publish_public_key?id=${pollId}`;
+
+                    log(`Veröffentliche Schlüssel an: ${publishUrl}`, 'info');
+
+                    const response = await fetch(publishUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            KeyMixnet: Array.from(mixnetKeyPair.publicKey),
+                            KeyTrustee: Array.from(trusteeKeyPair.publicKey)
+                        })
+                    });
+
+                    if (response.ok) {
+                        log('Schlüssel erfolgreich veröffentlicht', 'success');
+                    } else {
+                        const errorText = await response.text();
+                        log(`Fehler beim Veröffentlichen der Schlüssel: ${response.status} - ${errorText}`, 'error');
+                    }
+
+                } catch (error) {
+                    log(`Fehler bei der Schlüssel-Operation: ${error.message}`, 'error');
+                    console.error('Key generation/publishing error:', error);
+                } finally {
+                    generateKeysButton.disabled = false;
+                }
+            }
+
+            // Clear log
+            function clearLog() {
+                logContainer.innerHTML = '';
+                log('Log geleert', 'info');
+            }
+
+            // Event listeners
+            connectButton.addEventListener('click', connectToServer);
+            disconnectButton.addEventListener('click', disconnectFromServer);
+            generateKeysButton.addEventListener('click', generateAndPublishKeys);
+            clearLogButton.addEventListener('click', clearLog);
+
+            // Allow connecting with Enter key
+            serverDomainInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !isConnected) {
+                    connectToServer();
+                }
+            });
+
+            pollIdInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !isConnected) {
+                    connectToServer();
+                }
+            });
+
+            // Initialize the application
+            document.addEventListener('DOMContentLoaded', function() {
+                log('Poll Worker gestartet', 'info');
+                initWasm();
+            });
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', function() {
+                if (isConnected) {
+                    disconnectFromServer();
+                }
+            });
+        </script>
+    </body>
+</html>

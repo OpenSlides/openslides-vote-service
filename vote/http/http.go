@@ -387,7 +387,13 @@ type boarder interface {
 
 func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
+		log.Info("request board")
 		ctx := r.Context()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
 		// TODO: Deactivate auth for the moment for an easier demo.
 		// ctx, err := auth.Authenticate(w, r)
 		// if err != nil {
@@ -406,6 +412,10 @@ func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 			return fmt.Errorf("getting board: %w", err)
 		}
 
+		// TODO: Maybe make sse optional, so the page can be requested without
+		// the data prefixes.
+		sseWriter := NewSSEWriter(w)
+
 		var tid uint64
 		for {
 			newTID, eventList, err := board.Receive(ctx, tid)
@@ -420,7 +430,7 @@ func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 				// TODO: Think about the event.time format and if message should
 				// be a string or part of the json object. Also make sure, that
 				// the hash fits.
-				if err := json.NewEncoder(w).Encode(event); err != nil {
+				if err := json.NewEncoder(sseWriter).Encode(event); err != nil {
 					return fmt.Errorf("encode data: %w", err)
 				}
 			}
@@ -563,4 +573,29 @@ type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
+}
+
+type SSEWriter struct {
+	writer io.Writer
+}
+
+func NewSSEWriter(w io.Writer) *SSEWriter {
+	return &SSEWriter{writer: w}
+}
+
+func (s *SSEWriter) Write(p []byte) (n int, err error) {
+	if _, err := s.writer.Write([]byte("data: ")); err != nil {
+		return 0, err
+	}
+
+	written, err := s.writer.Write(p)
+	if err != nil {
+		return written, err
+	}
+
+	if _, err := s.writer.Write([]byte("\n")); err != nil {
+		return written, err
+	}
+
+	return written, nil
 }
