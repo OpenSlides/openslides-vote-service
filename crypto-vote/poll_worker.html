@@ -231,6 +231,9 @@
             let myWorkerIndex = -1;
             let isDecrypting = false;
             let currentMixedDataIndex = 0;
+            let totalWorkerCount = 0;
+            let mixedDataCount = 0;
+            let hasSubmittedTrusteeKey = false;
 
             // DOM elements
             const serverDomainInput = document.getElementById("serverDomain");
@@ -386,6 +389,9 @@
                 mixnetWorkerOrder = [];
                 myWorkerIndex = -1;
                 currentMixedDataIndex = 0;
+                totalWorkerCount = 0;
+                mixedDataCount = 0;
+                hasSubmittedTrusteeKey = false;
                 updateStatus("Nicht verbunden", "status-disconnected");
                 log("Verbindung getrennt", "info");
 
@@ -494,6 +500,18 @@
                                 );
                             }
                         }
+
+                        // Count total workers (both mixnet and trustee keys from same worker)
+                        if (
+                            message.key_public_mixnet &&
+                            message.key_public_trustee
+                        ) {
+                            totalWorkerCount = mixnetWorkerOrder.length;
+                            log(
+                                `Insgesamt ${totalWorkerCount} Worker erkannt`,
+                                "info",
+                            );
+                        }
                     } else if (
                         message &&
                         message.type === "stop" &&
@@ -509,12 +527,21 @@
                         message.type === "mixed_data" &&
                         isDecrypting
                     ) {
+                        mixedDataCount++;
                         log(
-                            `Mixed Data Event empfangen (Index: ${currentMixedDataIndex})`,
+                            `Mixed Data Event empfangen (${mixedDataCount}/${totalWorkerCount})`,
                             "info",
                         );
                         processMixedDataEvent(eventData);
-                        currentMixedDataIndex++;
+
+                        // Check if this was the last mixed_data event
+                        if (mixedDataCount >= totalWorkerCount) {
+                            log(
+                                "Letztes Mixed Data Event empfangen - sende Trustee Secret Key",
+                                "warning",
+                            );
+                            submitTrusteeSecretKey();
+                        }
                     }
                 } catch (error) {
                     log(
@@ -657,7 +684,8 @@
                     const message = eventData.message;
 
                     // Check if this is the mixed data we're waiting for
-                    if (currentMixedDataIndex + 1 !== myWorkerIndex) {
+                    console.log(mixedDataCount, myWorkerIndex);
+                    if (mixedDataCount !== myWorkerIndex) {
                         return; // Not our turn yet
                     }
 
@@ -694,8 +722,6 @@
 
                     // Send to server
                     await sendMixedDataToServer(encodedResult, amount);
-
-                    currentMixedDataIndex++;
                 } catch (error) {
                     log(
                         `Fehler bei der Mixed-Data-Verarbeitung: ${error.message}`,
@@ -740,6 +766,59 @@
                         "error",
                     );
                     console.error("Send mixed data error:", error);
+                }
+            }
+
+            // Submit trustee secret key to server
+            async function submitTrusteeSecretKey() {
+                if (!trusteeKeyPair || !trusteeKeyPair.secretKey) {
+                    log("Kein Trustee-Schlüsselpaar verfügbar", "error");
+                    return;
+                }
+
+                if (hasSubmittedTrusteeKey) {
+                    log("Trustee Secret Key bereits gesendet", "warning");
+                    return;
+                }
+
+                try {
+                    hasSubmittedTrusteeKey = true;
+
+                    const domain = serverDomainInput.value.trim();
+                    const pollId = pollIdInput.value.trim();
+                    const url = `${domain}/system/vote/board/publish_secred_key?id=${pollId}`;
+
+                    log(`Sende Trustee Secret Key an: ${url}`, "info");
+
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            key_secred: trusteeKeyPair.secretKey,
+                        }),
+                    });
+
+                    if (response.ok) {
+                        log(
+                            "Trustee Secret Key erfolgreich gesendet",
+                            "success",
+                        );
+                    } else {
+                        const errorText = await response.text();
+                        log(
+                            `Fehler beim Senden des Trustee Secret Keys: ${response.status} - ${errorText}`,
+                            "error",
+                        );
+                        hasSubmittedTrusteeKey = false; // Allow retry
+                    }
+                } catch (error) {
+                    log(
+                        `Fehler beim Senden des Trustee Secret Keys: ${error.message}`,
+                        "error",
+                    );
+                    hasSubmittedTrusteeKey = false; // Allow retry
                 }
             }
 

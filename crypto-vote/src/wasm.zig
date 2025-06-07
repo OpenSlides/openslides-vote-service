@@ -178,6 +178,7 @@ export fn decrypt_mixnet(
         consoleLog("decrypt data: {}", .{err});
         return null;
     };
+
     return successSizedBuffer(decrypted);
 }
 

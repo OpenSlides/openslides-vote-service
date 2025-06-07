@@ -1,6 +1,7 @@
 package cryptovote
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	_ "embed"
@@ -250,10 +251,10 @@ func (cv *CryptoVote) copyKeysToWasm(keys []string) (uint32, uint32, error) {
 	}
 
 	for i, keyBase64 := range keys {
-		keyBytes, err := base64.StdEncoding.DecodeString(keyBase64)
+		keyBytes, err := base64.RawStdEncoding.DecodeString(keyBase64)
 		if err != nil {
 			cv.free(ptr, totalSize)
-			return 0, 0, fmt.Errorf("failed to decode key %d from base64: %w", i, err)
+			return 0, 0, fmt.Errorf("failed to decode key %s from base64: %w", keyBase64, err)
 		}
 
 		if len(keyBytes) != 32 {
@@ -294,8 +295,8 @@ func (cv *CryptoVote) GenMixnetKeyPair() (*KeyPair, error) {
 		return nil, err
 	}
 
-	secretKey := base64.StdEncoding.EncodeToString(keyData[:32])
-	publicKey := base64.StdEncoding.EncodeToString(keyData[32:64])
+	secretKey := base64.RawStdEncoding.EncodeToString(keyData[:32])
+	publicKey := base64.RawStdEncoding.EncodeToString(keyData[32:64])
 
 	return &KeyPair{
 		SecretKey: secretKey,
@@ -326,8 +327,8 @@ func (cv *CryptoVote) GenTrusteeKeyPair() (*KeyPair, error) {
 		return nil, err
 	}
 
-	secretKey := base64.StdEncoding.EncodeToString(keyData[:32])
-	publicKey := base64.StdEncoding.EncodeToString(keyData[32:64])
+	secretKey := base64.RawStdEncoding.EncodeToString(keyData[:32])
+	publicKey := base64.RawStdEncoding.EncodeToString(keyData[32:64])
 
 	return &KeyPair{
 		SecretKey: secretKey,
@@ -393,7 +394,7 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 // DecryptMixnet decrypts a block of ciphers with a mixnet private key
 func (cv *CryptoVote) DecryptMixnet(secretKey string, cypherBlock []byte, cypherCount uint32) ([]byte, error) {
 	// Decode secret key from base64
-	keyBytes, err := base64.StdEncoding.DecodeString(secretKey)
+	keyBytes, err := base64.RawStdEncoding.DecodeString(secretKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode secret key from base64: %w", err)
 	}
@@ -484,8 +485,15 @@ func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cy
 	for i := range cypherCount {
 		start := int(i) * messageSize
 		end := start + messageSize
-		messages[i] = decryptedData[start:end]
+		messages[i] = truncateAtNull(decryptedData[start:end])
 	}
 
 	return messages, nil
+}
+
+func truncateAtNull(data []byte) []byte {
+	if index := bytes.IndexByte(data, 0); index != -1 {
+		return data[:index]
+	}
+	return data
 }

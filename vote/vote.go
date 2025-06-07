@@ -198,8 +198,11 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 		}
 
 		var lastMixedData struct {
-			MixedData []byte `json:"mixed_data"`
-			Amount    int    `json:"amount"`
+			Message struct {
+				Type      string `json:"type"`
+				MixedData []byte `json:"mixed_data"`
+				Amount    int    `json:"amount"`
+			} `json:"message"`
 		}
 		for _, event := range events {
 			if err := json.Unmarshal([]byte(event), &lastMixedData); err != nil {
@@ -207,7 +210,11 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 			}
 		}
 
-		votes, err := v.cryptoVoteWasm.DecryptTrustee(skc.keys, lastMixedData.MixedData, lastMixedData.Amount)
+		if lastMixedData.Message.MixedData == nil {
+			return StopResult{}, fmt.Errorf("can not find mixed data in bulletin board")
+		}
+
+		votes, err := v.cryptoVoteWasm.DecryptTrustee(skc.keys, lastMixedData.Message.MixedData, lastMixedData.Message.Amount)
 		if err != nil {
 			return StopResult{}, fmt.Errorf("decrypt votes: %w", err)
 		}
@@ -217,7 +224,11 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 			//UserIDs: []int,
 		}
 
-		return sr, fmt.Errorf("crypto vote: Can not return data here right now")
+		for _, vote := range sr.Votes {
+			fmt.Println(string(vote))
+		}
+
+		return sr, nil
 	}
 
 	backend := v.backend(poll)
