@@ -54,9 +54,7 @@ func MessageVote(userID int, voteList [][]byte, controllHashes [][]byte) (json.R
 
 func MessageStop() (json.RawMessage, error) {
 	data := struct {
-		Type           string
-		UserID         int
-		ControllHashes [][]byte
+		Type string
 	}{
 		Type: "stop",
 	}

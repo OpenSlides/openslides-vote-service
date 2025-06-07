@@ -144,6 +144,24 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
+	cryptoVote := true
+	if cryptoVote {
+		v.boardMu.RLock()
+		board := v.boards[pollID]
+		v.boardMu.RUnlock()
+
+		message, err := bulletin_board.MessageStop()
+		if err != nil {
+			return StopResult{}, fmt.Errorf("creating stop message for bulletin board: %w", err)
+		}
+
+		if err := board.Add(message); err != nil {
+			return StopResult{}, fmt.Errorf("add stop message to bulletin board: %w", err)
+		}
+
+		return StopResult{}, fmt.Errorf("crypto vote: Can not return data here right now")
+	}
+
 	backend := v.backend(poll)
 	ballots, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
