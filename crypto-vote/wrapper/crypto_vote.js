@@ -1,4 +1,4 @@
-async function loadPerformanceTest(wasmFile) {
+async function loadCryptoVote(wasmFile) {
   const importObject = {
     env: {
       console_log: (ptr, len) => {
