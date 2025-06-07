@@ -193,7 +193,6 @@ export fn decrypt_trustee(
     cypher_block_ptr: [*]const u8,
     cypher_block_size: u32,
 ) ?[*]u8 {
-    consoleLog("cypher_block_size: {}, cypher_count: {}", .{ cypher_block_size, cypher_count });
     defer allocator.free(key_secred_list[0..trustee_count]);
     defer allocator.free(cypher_block_ptr[0..cypher_block_size]);
 
@@ -204,8 +203,6 @@ export fn decrypt_trustee(
         return null;
     };
     defer allocator.free(buf);
-
-    consoleLog("Hello World3", .{});
 
     const decrypted = crypto.decrypt_trustee(
         key_secred_list[0..trustee_count],

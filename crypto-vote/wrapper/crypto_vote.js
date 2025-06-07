@@ -110,7 +110,8 @@ async function loadCryptoVote(wasmFile) {
       // Copy each key to WASM memory
       const memoryView = new Uint8Array(memory.buffer);
       for (let i = 0; i < keyList.length; i++) {
-        const key = keyList[i];
+        const key = new Uint8Array(32);
+        key.setFromBase64(keyList[i]);
         if (!key || key.length !== 32) {
           throw new Error(
             `Key at index ${i} must be 32 bytes, got ${key ? key.length : "undefined"}`,
@@ -152,8 +153,8 @@ async function loadCryptoVote(wasmFile) {
         free(keypairPtr, 64);
 
         return {
-          secretKey: result.slice(0, 32),
-          publicKey: result.slice(32, 64),
+          secretKey: result.slice(0, 32).toBase64({ omitPadding: true }),
+          publicKey: result.slice(32, 64).toBase64({ omitPadding: true }),
         };
       } catch (error) {
         console.error("Error generating mixnet key pair:", error);
@@ -175,8 +176,8 @@ async function loadCryptoVote(wasmFile) {
         free(keypairPtr, 64);
 
         return {
-          secretKey: result.slice(0, 32),
-          publicKey: result.slice(32, 64),
+          secretKey: result.slice(0, 32).toBase64({ omitPadding: true }),
+          publicKey: result.slice(32, 64).toBase64({ omitPadding: true }),
         };
       } catch (error) {
         console.error("Error generating trustee key pair:", error);
@@ -229,10 +230,6 @@ async function loadCryptoVote(wasmFile) {
     },
 
     decrypt_mixnet: (secretKey, cypherBlock, cypherCount) => {
-      if (secretKey.length !== 32) {
-        throw new Error("Secret key must be 32 bytes");
-      }
-
       // Allocate and copy the secret key
       const keyPtr = alloc(32);
       if (!keyPtr) {
@@ -240,7 +237,9 @@ async function loadCryptoVote(wasmFile) {
       }
 
       const keyView = new Uint8Array(memory.buffer, keyPtr, 32);
-      keyView.set(secretKey);
+      const key = new Uint8Array(32);
+      key.setFromBase64(secretKey);
+      keyView.set(key);
 
       // Copy the cypher block
       const cypherData = copyToWasm(cypherBlock);
@@ -299,9 +298,6 @@ async function loadCryptoVote(wasmFile) {
           return [uint8ArrayToString(decryptedData)];
         }
 
-        // For multiple messages, we need to determine the message boundaries
-        // This implementation assumes equal-sized messages for simplicity
-        // You might need to adjust this based on your actual data format
         const messageSize = decryptedData.length / cypherCount;
         const messages = [];
 
