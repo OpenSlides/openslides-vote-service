@@ -38,12 +38,12 @@ func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (j
 	return json.Marshal(data)
 }
 
-func MessageVote(userID int, voteList [][]byte, controlHasheList [][]byte) (json.RawMessage, error) {
+func MessageVote(userID int, voteList []string, controlHasheList []string) (json.RawMessage, error) {
 	data := struct {
 		Type             string   `json:"type"`
 		UserID           int      `json:"user_id"`
-		VoteList         [][]byte `json:"vote_list"`
-		ControlHasheList [][]byte `json:"contol_hash_list"`
+		VoteList         []string `json:"vote_list"`
+		ControlHasheList []string `json:"contol_hash_list"`
 	}{
 		Type:             "vote",
 		UserID:           userID,
@@ -64,11 +64,11 @@ func MessageStop() (json.RawMessage, error) {
 	return json.Marshal(data)
 }
 
-func MessageMixed(userID int, mixedVotes []byte) (json.RawMessage, error) {
+func MessageMixed(userID int, mixedVotes string) (json.RawMessage, error) {
 	data := struct {
 		Type   string `json:"type"`
 		UserID int    `json:"user_id"`
-		Data   []byte `json:"data"`
+		Data   string `json:"data"`
 	}{
 		Type:   "mix",
 		UserID: userID,

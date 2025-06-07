@@ -458,8 +458,8 @@ func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc
 		}
 
 		var body struct {
-			KeyMixnet  string
-			KeyTrustee string
+			KeyMixnet  string `json:"key_mixnet"`
+			KeyTrustee string `json:"key_trustee"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			return fmt.Errorf("invalid body: %w", err)

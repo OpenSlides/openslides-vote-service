@@ -15,7 +15,7 @@
                 background-color: white;
                 padding: 30px;
                 border-radius: 8px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             }
             h1 {
                 color: #333;
@@ -31,7 +31,9 @@
                 font-weight: bold;
                 color: #555;
             }
-            input[type="text"], input[type="url"], textarea {
+            input[type="text"],
+            input[type="url"],
+            textarea {
                 width: 100%;
                 padding: 10px;
                 border: 2px solid #ddd;
@@ -39,7 +41,9 @@
                 box-sizing: border-box;
                 font-size: 14px;
             }
-            input[type="text"]:focus, input[type="url"]:focus, textarea:focus {
+            input[type="text"]:focus,
+            input[type="url"]:focus,
+            textarea:focus {
                 border-color: #4caf50;
                 outline: none;
             }
@@ -97,7 +101,7 @@
                 height: 300px;
                 overflow-y: auto;
                 background-color: #f9f9f9;
-                font-family: 'Courier New', monospace;
+                font-family: "Courier New", monospace;
                 font-size: 12px;
                 line-height: 1.4;
             }
@@ -162,7 +166,7 @@
                 background-color: white;
                 border: 1px solid #ddd;
                 border-radius: 4px;
-                font-family: 'Courier New', monospace;
+                font-family: "Courier New", monospace;
                 font-size: 11px;
                 max-height: 120px;
                 overflow-y: auto;
@@ -178,14 +182,18 @@
     <body>
         <div class="container">
             <h1>Vote - Crypto Vote</h1>
-            
+
             <div id="status" class="status status-disconnected">
                 Status: Nicht verbunden
             </div>
 
             <div class="form-group">
                 <label for="serverDomain">Server Domain:</label>
-                <input type="url" id="serverDomain" value="https://localhost:8000" />
+                <input
+                    type="url"
+                    id="serverDomain"
+                    value="https://localhost:8000"
+                />
             </div>
 
             <div class="form-group">
@@ -194,21 +202,38 @@
             </div>
 
             <div class="form-group">
-                <button id="connectButton" class="button-connect">Verbinden</button>
-                <button id="disconnectButton" class="button-disconnect" disabled>Trennen</button>
-                <button id="clearLogButton" class="button-clear">Log leeren</button>
+                <button id="connectButton" class="button-connect">
+                    Verbinden
+                </button>
+                <button
+                    id="disconnectButton"
+                    class="button-disconnect"
+                    disabled
+                >
+                    Trennen
+                </button>
+                <button id="clearLogButton" class="button-clear">
+                    Log leeren
+                </button>
             </div>
 
             <div class="vote-section">
                 <h3>Abstimmung</h3>
-                
+
                 <div class="form-group">
-                    <label for="messageInput">Nachricht zu verschlüsseln:</label>
-                    <textarea id="messageInput" placeholder="Geben Sie Ihre Abstimmung ein..."></textarea>
+                    <label for="messageInput"
+                        >Nachricht zu verschlüsseln:</label
+                    >
+                    <textarea
+                        id="messageInput"
+                        placeholder="Geben Sie Ihre Abstimmung ein..."
+                    ></textarea>
                 </div>
-                
-                <button id="encryptVoteButton" class="button-encrypt" disabled>Nachricht verschlüsseln und senden</button>
-                
+
+                <button id="encryptVoteButton" class="button-encrypt" disabled>
+                    Nachricht verschlüsseln und senden
+                </button>
+
                 <div class="keys-status">
                     <div><strong>Verfügbare Schlüssel:</strong></div>
                     <div id="keyStatus">Warten auf Schlüssel...</div>
@@ -229,19 +254,22 @@
             let isConnected = false;
             let mixnetPublicKeys = [];
             let trusteePublicKeys = [];
+            let maxSize = null;
 
             // DOM elements
-            const serverDomainInput = document.getElementById('serverDomain');
-            const pollIdInput = document.getElementById('pollId');
-            const connectButton = document.getElementById('connectButton');
-            const disconnectButton = document.getElementById('disconnectButton');
-            const clearLogButton = document.getElementById('clearLogButton');
-            const encryptVoteButton = document.getElementById('encryptVoteButton');
-            const messageInput = document.getElementById('messageInput');
-            const statusDiv = document.getElementById('status');
-            const logContainer = document.getElementById('logContainer');
-            const keyStatus = document.getElementById('keyStatus');
-            const keysList = document.getElementById('keysList');
+            const serverDomainInput = document.getElementById("serverDomain");
+            const pollIdInput = document.getElementById("pollId");
+            const connectButton = document.getElementById("connectButton");
+            const disconnectButton =
+                document.getElementById("disconnectButton");
+            const clearLogButton = document.getElementById("clearLogButton");
+            const encryptVoteButton =
+                document.getElementById("encryptVoteButton");
+            const messageInput = document.getElementById("messageInput");
+            const statusDiv = document.getElementById("status");
+            const logContainer = document.getElementById("logContainer");
+            const keyStatus = document.getElementById("keyStatus");
+            const keysList = document.getElementById("keysList");
 
             // Function to generate default message - can be customized later
             function getDefaultMessage() {
@@ -249,30 +277,35 @@
             }
 
             // Initialize default message
-            document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener("DOMContentLoaded", function () {
                 messageInput.value = getDefaultMessage();
             });
 
             // Initialize WASM module
             async function initWasm() {
                 try {
-                    log('Lade WASM-Modul...', 'info');
-                    cryptoVote = await loadCryptoVote('./zig-out/bin/crypto_vote.wasm');
-                    log('WASM-Modul erfolgreich geladen', 'success');
+                    log("Lade WASM-Modul...", "info");
+                    cryptoVote = await loadCryptoVote(
+                        "./zig-out/bin/crypto_vote.wasm",
+                    );
+                    log("WASM-Modul erfolgreich geladen", "success");
                 } catch (error) {
-                    log(`Fehler beim Laden des WASM-Moduls: ${error.message}`, 'error');
-                    console.error('WASM loading error:', error);
+                    log(
+                        `Fehler beim Laden des WASM-Moduls: ${error.message}`,
+                        "error",
+                    );
+                    console.error("WASM loading error:", error);
                 }
             }
 
             // Logging function
-            function log(message, type = 'info') {
-                const logEntry = document.createElement('div');
+            function log(message, type = "info") {
+                const logEntry = document.createElement("div");
                 logEntry.className = `log-${type}`;
-                
+
                 const timestamp = new Date().toISOString().substring(11, 23);
                 logEntry.textContent = `[${timestamp}] ${message}`;
-                
+
                 logContainer.appendChild(logEntry);
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
@@ -287,80 +320,127 @@
             function updateKeysStatus() {
                 const mixnetCount = mixnetPublicKeys.length;
                 const trusteeCount = trusteePublicKeys.length;
-                
+
                 keyStatus.textContent = `Mixnet Schlüssel: ${mixnetCount}, Trustee Schlüssel: ${trusteeCount}`;
-                
+
                 // Update keys list display
-                keysList.innerHTML = '';
-                
+                keysList.innerHTML = "";
+
                 if (mixnetCount > 0) {
-                    const mixnetTitle = document.createElement('div');
-                    mixnetTitle.innerHTML = '<strong>Mixnet Schlüssel:</strong>';
+                    const mixnetTitle = document.createElement("div");
+                    mixnetTitle.innerHTML =
+                        "<strong>Mixnet Schlüssel:</strong>";
                     keysList.appendChild(mixnetTitle);
-                    
+
                     mixnetPublicKeys.forEach((key, index) => {
-                        const keyEntry = document.createElement('div');
-                        keyEntry.className = 'key-entry';
-                        keyEntry.textContent = `${index + 1}: ${key.substring(0, 16)}...`;
-                        keysList.appendChild(keyEntry);
-                    });
-                }
-                
-                if (trusteeCount > 0) {
-                    const trusteeTitle = document.createElement('div');
-                    trusteeTitle.innerHTML = '<strong>Trustee Schlüssel:</strong>';
-                    trusteeTitle.style.marginTop = '10px';
-                    keysList.appendChild(trusteeTitle);
-                    
-                    trusteePublicKeys.forEach((key, index) => {
-                        const keyEntry = document.createElement('div');
-                        keyEntry.className = 'key-entry';
+                        const keyEntry = document.createElement("div");
+                        keyEntry.className = "key-entry";
                         keyEntry.textContent = `${index + 1}: ${key.substring(0, 16)}...`;
                         keysList.appendChild(keyEntry);
                     });
                 }
 
-                // Enable encrypt button if we have at least 2 of each key type
-                const canEncrypt = mixnetCount >= 2 && trusteeCount >= 2 && cryptoVote && isConnected;
+                if (trusteeCount > 0) {
+                    const trusteeTitle = document.createElement("div");
+                    trusteeTitle.innerHTML =
+                        "<strong>Trustee Schlüssel:</strong>";
+                    trusteeTitle.style.marginTop = "10px";
+                    keysList.appendChild(trusteeTitle);
+
+                    trusteePublicKeys.forEach((key, index) => {
+                        const keyEntry = document.createElement("div");
+                        keyEntry.className = "key-entry";
+                        keyEntry.textContent = `${index + 1}: ${key.substring(0, 16)}...`;
+                        keysList.appendChild(keyEntry);
+                    });
+                }
+
+                // Enable encrypt button if we have at least 2 of each key type and maxSize is known
+                const canEncrypt =
+                    mixnetCount >= 2 &&
+                    trusteeCount >= 2 &&
+                    cryptoVote &&
+                    isConnected &&
+                    maxSize !== null;
                 encryptVoteButton.disabled = !canEncrypt;
-                
+
                 if (canEncrypt) {
-                    log(`Verschlüsselung verfügbar: ${mixnetCount} Mixnet, ${trusteeCount} Trustee Schlüssel`, 'success');
+                    log(
+                        `Verschlüsselung verfügbar: ${mixnetCount} Mixnet, ${trusteeCount} Trustee Schlüssel, max_size: ${maxSize}`,
+                        "success",
+                    );
                 } else if (mixnetCount > 0 || trusteeCount > 0) {
-                    log(`Warten auf mehr Schlüssel: ${mixnetCount} Mixnet, ${trusteeCount} Trustee (mindestens 2 von jedem benötigt)`, 'warning');
+                    log(
+                        `Warten auf mehr Schlüssel: ${mixnetCount} Mixnet, ${trusteeCount} Trustee (mindestens 2 von jedem benötigt)`,
+                        "warning",
+                    );
+                } else if (maxSize === null) {
+                    log("Warten auf Poll-Erstellung (max_size)", "warning");
                 }
             }
 
             // Process incoming server events
             function processServerEvent(eventData) {
                 try {
-                    if (eventData.message && eventData.message.Type === 'publish_public_key') {
-                        const message = eventData.message;
-                        
-                        log(`Neuer Schlüssel empfangen von Benutzer ${message.UserID}`, 'info');
-                        
+                    const message = eventData.message;
+
+                    if (message && message.type === "created") {
+                        maxSize = message.max_size;
+                        log(
+                            `Poll erstellt mit max_size: ${maxSize}`,
+                            "success",
+                        );
+                        updateKeysStatus();
+                    } else if (
+                        message &&
+                        message.type === "publish_public_key"
+                    ) {
+                        log(
+                            `Neuer Schlüssel empfangen von Benutzer ${message.user_id}`,
+                            "info",
+                        );
+
                         // Add keys to our lists
-                        if (message.KeyPublicMixnet && !mixnetPublicKeys.includes(message.KeyPublicMixnet)) {
-                            mixnetPublicKeys.push(message.KeyPublicMixnet);
-                            log(`Mixnet Schlüssel hinzugefügt: ${message.KeyPublicMixnet.substring(0, 16)}...`, 'success');
+                        if (
+                            message.key_public_mixnet &&
+                            !mixnetPublicKeys.includes(
+                                message.key_public_mixnet,
+                            )
+                        ) {
+                            mixnetPublicKeys.push(message.key_public_mixnet);
+                            log(
+                                `Mixnet Schlüssel hinzugefügt: ${message.key_public_mixnet.substring(0, 16)}...`,
+                                "success",
+                            );
                         }
-                        
-                        if (message.KeyPublicTrustee && !trusteePublicKeys.includes(message.KeyPublicTrustee)) {
-                            trusteePublicKeys.push(message.KeyPublicTrustee);
-                            log(`Trustee Schlüssel hinzugefügt: ${message.KeyPublicTrustee.substring(0, 16)}...`, 'success');
+
+                        if (
+                            message.key_public_trustee &&
+                            !trusteePublicKeys.includes(
+                                message.key_public_trustee,
+                            )
+                        ) {
+                            trusteePublicKeys.push(message.key_public_trustee);
+                            log(
+                                `Trustee Schlüssel hinzugefügt: ${message.key_public_trustee.substring(0, 16)}...`,
+                                "success",
+                            );
                         }
-                        
+
                         updateKeysStatus();
                     }
                 } catch (error) {
-                    log(`Fehler beim Verarbeiten des Server-Events: ${error.message}`, 'error');
+                    log(
+                        `Fehler beim Verarbeiten des Server-Events: ${error.message}`,
+                        "error",
+                    );
                 }
             }
 
             // Connect to server
             function connectToServer() {
                 if (isConnected) {
-                    log('Bereits verbunden', 'warning');
+                    log("Bereits verbunden", "warning");
                     return;
                 }
 
@@ -368,54 +448,59 @@
                 const pollId = pollIdInput.value.trim();
 
                 if (!domain || !pollId) {
-                    log('Bitte Domain und Poll-ID eingeben', 'error');
+                    log("Bitte Domain und Poll-ID eingeben", "error");
                     return;
                 }
 
                 const url = `${domain}/system/vote/board?id=${pollId}`;
-                log(`Verbinde mit: ${url}`, 'info');
+                log(`Verbinde mit: ${url}`, "info");
 
-                updateStatus('Verbinde...', 'status-connecting');
+                updateStatus("Verbinde...", "status-connecting");
 
                 try {
                     eventSource = new EventSource(url);
-                    
-                    eventSource.onopen = function() {
+
+                    eventSource.onopen = function () {
                         isConnected = true;
-                        updateStatus('Verbunden', 'status-connected');
-                        log('Verbindung erfolgreich hergestellt', 'success');
-                        
+                        updateStatus("Verbunden", "status-connected");
+                        log("Verbindung erfolgreich hergestellt", "success");
+
                         connectButton.disabled = true;
                         disconnectButton.disabled = false;
                         serverDomainInput.disabled = true;
                         pollIdInput.disabled = true;
-                        
+
                         updateKeysStatus(); // Update encrypt button state
                     };
 
-                    eventSource.onmessage = function(event) {
+                    eventSource.onmessage = function (event) {
                         try {
                             const data = JSON.parse(event.data);
-                            log(`Server Event: ${JSON.stringify(data)}`, 'info');
+                            log(
+                                `Server Event: ${JSON.stringify(data)}`,
+                                "info",
+                            );
                             processServerEvent(data);
                         } catch (error) {
-                            log(`Fehler beim Parsen der Server-Nachricht: ${error.message}`, 'error');
-                            log(`Rohdaten: ${event.data}`, 'info');
+                            log(
+                                `Fehler beim Parsen der Server-Nachricht: ${error.message}`,
+                                "error",
+                            );
+                            log(`Rohdaten: ${event.data}`, "info");
                         }
                     };
 
-                    eventSource.onerror = function(event) {
-                        log('Verbindungsfehler aufgetreten', 'error');
-                        console.error('EventSource error:', event);
-                        
+                    eventSource.onerror = function (event) {
+                        log("Verbindungsfehler aufgetreten", "error");
+                        console.error("EventSource error:", event);
+
                         if (eventSource.readyState === EventSource.CLOSED) {
                             disconnectFromServer();
                         }
                     };
-
                 } catch (error) {
-                    log(`Fehler beim Verbinden: ${error.message}`, 'error');
-                    updateStatus('Verbindungsfehler', 'status-disconnected');
+                    log(`Fehler beim Verbinden: ${error.message}`, "error");
+                    updateStatus("Verbindungsfehler", "status-disconnected");
                 }
             }
 
@@ -427,8 +512,8 @@
                 }
 
                 isConnected = false;
-                updateStatus('Nicht verbunden', 'status-disconnected');
-                log('Verbindung getrennt', 'info');
+                updateStatus("Nicht verbunden", "status-disconnected");
+                log("Verbindung getrennt", "info");
 
                 connectButton.disabled = false;
                 disconnectButton.disabled = true;
@@ -440,42 +525,62 @@
             // Encrypt and send vote
             async function encryptAndSendVote() {
                 if (!cryptoVote) {
-                    log('WASM-Modul nicht verfügbar', 'error');
+                    log("WASM-Modul nicht verfügbar", "error");
                     return;
                 }
 
                 if (!isConnected) {
-                    log('Nicht mit Server verbunden', 'error');
+                    log("Nicht mit Server verbunden", "error");
                     return;
                 }
 
-                if (mixnetPublicKeys.length < 2 || trusteePublicKeys.length < 2) {
-                    log('Nicht genügend Schlüssel verfügbar', 'error');
+                if (
+                    mixnetPublicKeys.length < 2 ||
+                    trusteePublicKeys.length < 2
+                ) {
+                    log("Nicht genügend Schlüssel verfügbar", "error");
                     return;
                 }
 
                 const message = messageInput.value.trim();
                 if (!message) {
-                    log('Bitte eine Nachricht eingeben', 'error');
+                    log("Bitte eine Nachricht eingeben", "error");
                     return;
                 }
 
                 try {
                     encryptVoteButton.disabled = true;
-                    log(`Verschlüssele Nachricht: "${message}"`, 'info');
-                    log(`Verwende ${mixnetPublicKeys.length} Mixnet und ${trusteePublicKeys.length} Trustee Schlüssel`, 'info');
+                    log(`Verschlüssele Nachricht: "${message}"`, "info");
+                    log(
+                        `Verwende ${mixnetPublicKeys.length} Mixnet und ${trusteePublicKeys.length} Trustee Schlüssel mit max_size: ${maxSize}`,
+                        "info",
+                    );
+
+                    // Check message length
+                    if (message.length > maxSize) {
+                        log(
+                            `Nachricht zu lang: ${message.length} Zeichen, maximal ${maxSize} erlaubt`,
+                            "error",
+                        );
+                        return;
+                    }
 
                     // Encrypt the message
-                    const encryptedData = cryptoVote.encrypt(mixnetPublicKeys, trusteePublicKeys, message);
-                    log('Nachricht erfolgreich verschlüsselt', 'success');
+                    const encryptedData = cryptoVote.encrypt(
+                        mixnetPublicKeys,
+                        trusteePublicKeys,
+                        message,
+                        maxSize,
+                    );
+                    log("Nachricht erfolgreich verschlüsselt", "success");
 
-                    // Convert encrypted data to array for JSON serialization
-                    const encryptedArray = Array.from(encryptedData);
+                    // Convert encrypted to base64
+                    const encryptedArray = encryptedData.toBase64();
 
                     // Prepare the vote data according to Go struct requirements
                     const voteData = {
                         encrypted_vote_list: [encryptedArray],
-                        controll_hash_list: [] // Empty for now as specified
+                        controll_hash_list: [], // Empty for now as specified
                     };
 
                     // Send to server
@@ -483,27 +588,32 @@
                     const pollId = pollIdInput.value.trim();
                     const voteUrl = `${domain}/system/vote?id=${pollId}`;
 
-                    log(`Sende verschlüsselte Stimme an: ${voteUrl}`, 'info');
+                    log(`Sende verschlüsselte Stimme an: ${voteUrl}`, "info");
 
                     const response = await fetch(voteUrl, {
-                        method: 'POST',
+                        method: "POST",
                         headers: {
-                            'Content-Type': 'application/json',
+                            "Content-Type": "application/json",
                         },
-                        body: JSON.stringify(voteData)
+                        body: JSON.stringify(voteData),
                     });
 
                     if (response.ok) {
-                        log('Stimme erfolgreich gesendet', 'success');
+                        log("Stimme erfolgreich gesendet", "success");
                         messageInput.value = getDefaultMessage(); // Reset to default
                     } else {
                         const errorText = await response.text();
-                        log(`Fehler beim Senden der Stimme: ${response.status} - ${errorText}`, 'error');
+                        log(
+                            `Fehler beim Senden der Stimme: ${response.status} - ${errorText}`,
+                            "error",
+                        );
                     }
-
                 } catch (error) {
-                    log(`Fehler bei der Verschlüsselung/Sendung: ${error.message}`, 'error');
-                    console.error('Encryption/sending error:', error);
+                    log(
+                        `Fehler bei der Verschlüsselung/Sendung: ${error.message}`,
+                        "error",
+                    );
+                    console.error("Encryption/sending error:", error);
                 } finally {
                     encryptVoteButton.disabled = false;
                     updateKeysStatus(); // Re-evaluate button state
@@ -512,44 +622,48 @@
 
             // Clear log
             function clearLog() {
-                logContainer.innerHTML = '';
-                log('Log geleert', 'info');
+                logContainer.innerHTML = "";
+                log("Log geleert", "info");
             }
 
             // Event listeners
-            connectButton.addEventListener('click', connectToServer);
-            disconnectButton.addEventListener('click', disconnectFromServer);
-            encryptVoteButton.addEventListener('click', encryptAndSendVote);
-            clearLogButton.addEventListener('click', clearLog);
+            connectButton.addEventListener("click", connectToServer);
+            disconnectButton.addEventListener("click", disconnectFromServer);
+            encryptVoteButton.addEventListener("click", encryptAndSendVote);
+            clearLogButton.addEventListener("click", clearLog);
 
             // Allow connecting with Enter key
-            serverDomainInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && !isConnected) {
+            serverDomainInput.addEventListener("keypress", function (e) {
+                if (e.key === "Enter" && !isConnected) {
                     connectToServer();
                 }
             });
 
-            pollIdInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && !isConnected) {
+            pollIdInput.addEventListener("keypress", function (e) {
+                if (e.key === "Enter" && !isConnected) {
                     connectToServer();
                 }
             });
 
             // Allow encrypting with Ctrl+Enter in message input
-            messageInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && e.ctrlKey && !encryptVoteButton.disabled) {
+            messageInput.addEventListener("keypress", function (e) {
+                if (
+                    e.key === "Enter" &&
+                    e.ctrlKey &&
+                    !encryptVoteButton.disabled
+                ) {
                     encryptAndSendVote();
                 }
             });
 
             // Initialize the application
-            document.addEventListener('DOMContentLoaded', function() {
-                log('Vote-System gestartet', 'info');
+            document.addEventListener("DOMContentLoaded", function () {
+                log("Vote-System gestartet", "info");
                 initWasm();
             });
 
             // Cleanup on page unload
-            window.addEventListener('beforeunload', function() {
+            window.addEventListener("beforeunload", function () {
                 if (isConnected) {
                     disconnectFromServer();
                 }
