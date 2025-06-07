@@ -38,17 +38,17 @@ func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (j
 	return json.Marshal(data)
 }
 
-func MessageVote(userID int, voteList []string, controlHasheList []string) (json.RawMessage, error) {
+func MessageVote(userID int, voteList []string, controlHashList []string) (json.RawMessage, error) {
 	data := struct {
-		Type             string   `json:"type"`
-		UserID           int      `json:"user_id"`
-		VoteList         []string `json:"vote_list"`
-		ControlHasheList []string `json:"contol_hash_list"`
+		Type            string   `json:"type"`
+		UserID          int      `json:"user_id"`
+		VoteList        []string `json:"vote_list"`
+		ControlHashList []string `json:"contol_hash_list"`
 	}{
-		Type:             "vote",
-		UserID:           userID,
-		VoteList:         voteList,
-		ControlHasheList: controlHasheList,
+		Type:            "vote",
+		UserID:          userID,
+		VoteList:        voteList,
+		ControlHashList: controlHashList,
 	}
 
 	return json.Marshal(data)
