@@ -382,12 +382,12 @@ func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 
 		pollID, err := pollID(r)
 		if err != nil {
-			return fmt.Errorf("getting poll id from request: %w", err)
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
 		}
 
 		board, err := bordProvider.Board(pollID)
 		if err != nil {
-			return fmt.Errorf("getting board")
+			return fmt.Errorf("getting board: %w", err)
 		}
 
 		var tid uint64
@@ -398,7 +398,12 @@ func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 			}
 			tid = newTID
 
+			fmt.Printf("newTTID: %d, events: %v\n", newTID, eventList)
+
 			for _, event := range eventList {
+				// TODO: Think about the event.time format and if message should
+				// be a string or part of the json object. Also make sure, that
+				// the hash fits.
 				if err := json.NewEncoder(w).Encode(event); err != nil {
 					return fmt.Errorf("encode data: %w", err)
 				}

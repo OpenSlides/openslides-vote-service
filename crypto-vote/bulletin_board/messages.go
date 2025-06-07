@@ -3,10 +3,10 @@ package bulletin_board
 import (
 	"encoding/json"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 )
 
-func MessageCreate(poll dsfetch.Poll) (json.RawMessage, error) {
+func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 	data := struct {
 		Type string
 		ID   int
