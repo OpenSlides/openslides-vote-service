@@ -371,10 +371,12 @@ type boarder interface {
 
 func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		ctx, err := auth.Authenticate(w, r)
-		if err != nil {
-			return err
-		}
+		ctx := r.Context()
+		// TODO: Deactivate auth for the moment for an easier demo.
+		// ctx, err := auth.Authenticate(w, r)
+		// if err != nil {
+		// 	return err
+		// }
 
 		// TODO: Who can see the board?
 
