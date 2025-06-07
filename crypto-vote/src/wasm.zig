@@ -163,7 +163,10 @@ export fn decrypt_mixnet(
     defer allocator.free(cypher_block_ptr[0..cypher_block_size]);
 
     const buf_size = crypto.decrypt_mixnet_buf_size(cypher_block_size, cypher_count);
-    const buf = allocator.alloc(u8, buf_size) catch return null;
+    const buf = allocator.alloc(u8, buf_size) catch |err| {
+        consoleLog("allocate buffer: {}", .{err});
+        return null;
+    };
     defer allocator.free(buf);
 
     const decrypted = crypto.decrypt_mixnet(
@@ -171,7 +174,10 @@ export fn decrypt_mixnet(
         cypher_count,
         cypher_block_ptr[0..cypher_block_size],
         buf,
-    ) catch return null;
+    ) catch |err| {
+        consoleLog("decrypt data: {}", .{err});
+        return null;
+    };
     return successSizedBuffer(decrypted);
 }
 

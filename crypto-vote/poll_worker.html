@@ -226,6 +226,11 @@
             let hasReceivedFirstMessage = false;
             let mixnetKeyPair = null;
             let trusteeKeyPair = null;
+            let allEvents = [];
+            let mixnetWorkerOrder = [];
+            let myWorkerIndex = -1;
+            let isDecrypting = false;
+            let currentMixedDataIndex = 0;
 
             // DOM elements
             const serverDomainInput = document.getElementById("serverDomain");
@@ -327,6 +332,12 @@
                                 "info",
                             );
 
+                            // Store all events for later processing
+                            allEvents.push(data);
+
+                            // Process different types of events
+                            processServerEvent(data);
+
                             // Enable key generation after first message
                             if (!hasReceivedFirstMessage) {
                                 hasReceivedFirstMessage = true;
@@ -370,6 +381,11 @@
 
                 isConnected = false;
                 hasReceivedFirstMessage = false;
+                isDecrypting = false;
+                allEvents = [];
+                mixnetWorkerOrder = [];
+                myWorkerIndex = -1;
+                currentMixedDataIndex = 0;
                 updateStatus("Nicht verbunden", "status-disconnected");
                 log("Verbindung getrennt", "info");
 
@@ -443,6 +459,287 @@
                     console.error("Key generation/publishing error:", error);
                 } finally {
                     generateKeysButton.disabled = false;
+                }
+            }
+
+            // Process different types of server events
+            function processServerEvent(eventData) {
+                try {
+                    const message = eventData.message;
+
+                    if (message && message.type === "publish_public_key") {
+                        // Track the order of mixnet workers
+                        if (
+                            message.key_public_mixnet &&
+                            !mixnetWorkerOrder.includes(
+                                message.key_public_mixnet,
+                            )
+                        ) {
+                            mixnetWorkerOrder.push(message.key_public_mixnet);
+                            log(
+                                `Mixnet Worker ${mixnetWorkerOrder.length}: ${message.key_public_mixnet.substring(0, 16)}...`,
+                                "info",
+                            );
+
+                            // Check if this is our worker
+                            if (
+                                mixnetKeyPair &&
+                                mixnetKeyPair.publicKey ===
+                                    message.key_public_mixnet
+                            ) {
+                                myWorkerIndex = mixnetWorkerOrder.length - 1;
+                                log(
+                                    `Ich bin Mixnet Worker #${myWorkerIndex + 1}`,
+                                    "success",
+                                );
+                            }
+                        }
+                    } else if (
+                        message &&
+                        message.type === "stop" &&
+                        !isDecrypting
+                    ) {
+                        log(
+                            "Stop-Event empfangen - starte Entschlüsselung",
+                            "warning",
+                        );
+                        startDecryption();
+                    } else if (
+                        message &&
+                        message.type === "mixed_data" &&
+                        isDecrypting
+                    ) {
+                        log(
+                            `Mixed Data Event empfangen (Index: ${currentMixedDataIndex})`,
+                            "info",
+                        );
+                        processMixedDataEvent(eventData);
+                    }
+                } catch (error) {
+                    log(
+                        `Fehler beim Verarbeiten des Server-Events: ${error.message}`,
+                        "error",
+                    );
+                }
+            }
+
+            // Start decryption process after stop event
+            async function startDecryption() {
+                if (!mixnetKeyPair || myWorkerIndex === -1) {
+                    log(
+                        "Kann nicht entschlüsseln: Kein Schlüsselpaar oder Worker-Index unbekannt",
+                        "error",
+                    );
+                    return;
+                }
+
+                isDecrypting = true;
+                log(
+                    `Starte Entschlüsselung als Worker #${myWorkerIndex + 1}`,
+                    "info",
+                );
+
+                if (myWorkerIndex === 0) {
+                    // First worker: collect and process all votes
+                    await processVotesAsFirstWorker();
+                } else {
+                    // Other workers: wait for mixed data from previous worker
+                    log(
+                        `Warte auf Mixed Data von Worker #${myWorkerIndex}`,
+                        "info",
+                    );
+                    // Will be handled by processMixedDataEvent when the event arrives
+                }
+            }
+
+            // Process votes as the first mixnet worker
+            async function processVotesAsFirstWorker() {
+                try {
+                    log("Sammle alle Votes aus dem Event-Log", "info");
+
+                    // Collect all votes from vote events
+                    const allVotes = [];
+                    for (const event of allEvents) {
+                        if (
+                            event.message &&
+                            event.message.type === "vote" &&
+                            event.message.vote_list
+                        ) {
+                            allVotes.push(...event.message.vote_list);
+                        }
+                    }
+
+                    if (allVotes.length === 0) {
+                        log("Keine Votes gefunden", "warning");
+                        return;
+                    }
+
+                    log(`Gefunden: ${allVotes.length} Votes`, "info");
+
+                    // Decode all votes from base64
+                    const decodedVotes = [];
+                    for (let i = 0; i < allVotes.length; i++) {
+                        try {
+                            const decoded = Uint8Array.fromBase64(allVotes[i]);
+                            decodedVotes.push(decoded);
+                        } catch (error) {
+                            log(
+                                `Fehler beim Dekodieren von Vote ${i}: ${error.message}`,
+                                "error",
+                            );
+                            return;
+                        }
+                    }
+
+                    // Check that all votes have the same length
+                    const firstVoteLength = decodedVotes[0].length;
+                    for (let i = 1; i < decodedVotes.length; i++) {
+                        if (decodedVotes[i].length !== firstVoteLength) {
+                            log(
+                                `Vote-Längen inkonsistent: Vote 0 hat ${firstVoteLength} Bytes, Vote ${i} hat ${decodedVotes[i].length} Bytes`,
+                                "error",
+                            );
+                            return;
+                        }
+                    }
+
+                    log(
+                        `Alle ${decodedVotes.length} Votes haben konsistente Länge: ${firstVoteLength} Bytes`,
+                        "success",
+                    );
+
+                    // Combine all votes into one block
+                    const combinedVotes = new Uint8Array(
+                        firstVoteLength * decodedVotes.length,
+                    );
+                    for (let i = 0; i < decodedVotes.length; i++) {
+                        combinedVotes.set(decodedVotes[i], i * firstVoteLength);
+                    }
+
+                    log(
+                        "Alle Votes zusammengefügt, starte Mixnet-Entschlüsselung",
+                        "info",
+                    );
+
+                    // Decrypt using mixnet
+                    const decryptedData = cryptoVote.decrypt_mixnet(
+                        mixnetKeyPair.secretKey,
+                        combinedVotes,
+                        decodedVotes.length,
+                    );
+
+                    // Encode result to base64
+                    const encodedResult = decryptedData.toBase64();
+
+                    log(
+                        "Mixnet-Entschlüsselung abgeschlossen, sende Ergebnis an Server",
+                        "success",
+                    );
+
+                    // Send to server
+                    await sendMixedDataToServer(
+                        encodedResult,
+                        decodedVotes.length,
+                    );
+                } catch (error) {
+                    log(
+                        `Fehler bei der Entschlüsselung: ${error.message}`,
+                        "error",
+                    );
+                    console.error("Decryption error:", error);
+                }
+            }
+
+            // Process mixed data event for subsequent workers
+            async function processMixedDataEvent(eventData) {
+                try {
+                    const message = eventData.message;
+
+                    // Check if this is the mixed data we're waiting for
+                    if (currentMixedDataIndex !== myWorkerIndex) {
+                        currentMixedDataIndex++;
+                        return; // Not our turn yet
+                    }
+
+                    log(
+                        `Verarbeite Mixed Data als Worker #${myWorkerIndex + 1}`,
+                        "info",
+                    );
+
+                    // Decode the mixed data
+                    const mixedDataDecoded = Uint8Array.fromBase64(
+                        message.mixed_data,
+                    );
+                    const amount = message.amount;
+
+                    log(
+                        `Dekodiert: ${mixedDataDecoded.length} Bytes für ${amount} Votes`,
+                        "info",
+                    );
+
+                    // Decrypt using our mixnet key
+                    const decryptedData = cryptoVote.decrypt_mixnet(
+                        mixnetKeyPair.secretKey,
+                        mixedDataDecoded,
+                        amount,
+                    );
+
+                    // Encode result to base64
+                    const encodedResult = decryptedData.toBase64();
+
+                    log(
+                        "Mixnet-Entschlüsselung abgeschlossen, sende Ergebnis an Server",
+                        "success",
+                    );
+
+                    // Send to server
+                    await sendMixedDataToServer(encodedResult, amount);
+
+                    currentMixedDataIndex++;
+                } catch (error) {
+                    log(
+                        `Fehler bei der Mixed-Data-Verarbeitung: ${error.message}`,
+                        "error",
+                    );
+                    console.error("Mixed data processing error:", error);
+                }
+            }
+
+            // Send mixed data to server
+            async function sendMixedDataToServer(mixedData, amount) {
+                try {
+                    const domain = serverDomainInput.value.trim();
+                    const pollId = pollIdInput.value.trim();
+                    const url = `${domain}/system/vote/board/publish_mixed_data?id=${pollId}`;
+
+                    log(`Sende Mixed Data an: ${url}`, "info");
+
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            mixed_data: mixedData,
+                            amount: amount,
+                        }),
+                    });
+
+                    if (response.ok) {
+                        log("Mixed Data erfolgreich gesendet", "success");
+                    } else {
+                        const errorText = await response.text();
+                        log(
+                            `Fehler beim Senden der Mixed Data: ${response.status} - ${errorText}`,
+                            "error",
+                        );
+                    }
+                } catch (error) {
+                    log(
+                        `Fehler beim Senden der Mixed Data: ${error.message}`,
+                        "error",
+                    );
+                    console.error("Send mixed data error:", error);
                 }
             }
 
