@@ -96,6 +96,7 @@ type voteService interface {
 	voter
 	haveIvoteder
 	boarder
+	keySecredReceiver
 }
 
 type authenticater interface {
@@ -122,6 +123,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(external+"/board", enableCORS(handleExternal(handleBoard(service, auth))))
 	mux.Handle(external+"/board/publish_public_key", enableCORS(handleExternal(handleBoardPublishKey(service, auth))))
 	mux.Handle(external+"/board/publish_mixed_data", enableCORS(handleExternal(handleBoardPublishMixedData(service, auth))))
+	mux.Handle(external+"/board/publish_secred_key", enableCORS(handleExternal(handleReceivePrivateKey(service, auth))))
 
 	return mux
 }
@@ -511,6 +513,35 @@ func handleBoardPublishMixedData(bordProvider boarder, auth authenticater) Handl
 		// TODO: make the message functions methods of board, so they get published automaticly
 		if err := board.Add(message); err != nil {
 			return fmt.Errorf("publishing message: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type keySecredReceiver interface {
+	ReceiveKeySecred(pollID int, userID int, keySecred string) error
+}
+
+func handleReceivePrivateKey(service keySecredReceiver, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		// TODO: Auth
+		//
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		var body struct {
+			KeySecred string `json:"key_secred"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid body: %w", err)
+		}
+
+		if err := service.ReceiveKeySecred(pollID, 0, body.KeySecred); err != nil {
+			return fmt.Errorf("send private key to service: %w", err)
 		}
 
 		return nil

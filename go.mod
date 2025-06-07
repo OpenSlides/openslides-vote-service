@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/ostcar/topic v0.4.1
+	github.com/tetratelabs/wazero v1.9.0
 )
 
 require (
