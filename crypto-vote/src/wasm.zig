@@ -102,7 +102,13 @@ export fn encrypt(
     trustee_key_public_ptr: [*]const [32]u8,
     msg_ptr: [*]const u8,
     msg_len: u32,
+    max_size: u32,
 ) ?[*]u8 {
+    if (max_size < msg_len) {
+        consoleLog("message is bigger then max_size", .{});
+        return null;
+    }
+
     const message = msg_ptr[0..msg_len];
     defer allocator.free(message);
 
@@ -111,9 +117,14 @@ export fn encrypt(
     const trustee_key_public_list: []const [32]u8 = trustee_key_public_ptr[0..trustee_count];
     defer allocator.free(trustee_key_public_list);
 
-    const buf = allocator.alloc(u8, crypto.encrypt_full_buf_size(message.len, mixnet_count, trustee_count)) catch return null;
+    // This makes sure, that the message has a len of `max_size` and that the padding is only 0.
+    const message_with_buffer = allocator.alloc(u8, max_size) catch return null;
+    @memset(message_with_buffer, 0);
+    @memcpy(message_with_buffer, message);
+
+    const buf = allocator.alloc(u8, crypto.encrypt_full_buf_size(max_size, mixnet_count, trustee_count)) catch return null;
     defer allocator.free(buf);
-    const cypher = crypto.encrypt_full(mixnet_key_public_list, trustee_key_public_list, message, buf) catch return null;
+    const cypher = crypto.encrypt_full(mixnet_key_public_list, trustee_key_public_list, message_with_buffer, buf) catch return null;
 
     return successSizedBuffer(cypher);
 }

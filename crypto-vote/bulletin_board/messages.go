@@ -10,11 +10,13 @@ import (
 
 func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 	data := struct {
-		Type string
-		ID   int
+		Type    string `json:"type"`
+		ID      int    `json:"id"`
+		MaxSize int    `json:"max_size"`
 	}{
-		Type: "created",
-		ID:   poll.ID,
+		Type:    "created",
+		ID:      poll.ID,
+		MaxSize: 1024,
 	}
 
 	return json.Marshal(data)
@@ -22,10 +24,10 @@ func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 
 func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (json.RawMessage, error) {
 	data := struct {
-		Type             string
-		UserID           int
-		KeyPublicMixnet  string
-		KeyPublicTrustee string
+		Type             string `json:"type"`
+		UserID           int    `json:"user_id"`
+		KeyPublicMixnet  string `json:"key_public_mixnet"`
+		KeyPublicTrustee string `json:"key_public_trustee"`
 	}{
 		Type:             "publish_public_key",
 		UserID:           userID,
@@ -36,17 +38,17 @@ func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (j
 	return json.Marshal(data)
 }
 
-func MessageVote(userID int, voteList [][]byte, controllHashes [][]byte) (json.RawMessage, error) {
+func MessageVote(userID int, voteList [][]byte, controlHasheList [][]byte) (json.RawMessage, error) {
 	data := struct {
-		Type           string
-		UserID         int
-		Votes          [][]byte
-		ControllHashes [][]byte
+		Type             string   `json:"type"`
+		UserID           int      `json:"user_id"`
+		VoteList         [][]byte `json:"vote_list"`
+		ControlHasheList [][]byte `json:"contol_hash_list"`
 	}{
-		Type:           "vote",
-		UserID:         userID,
-		Votes:          voteList,
-		ControllHashes: controllHashes,
+		Type:             "vote",
+		UserID:           userID,
+		VoteList:         voteList,
+		ControlHasheList: controlHasheList,
 	}
 
 	return json.Marshal(data)
@@ -54,7 +56,7 @@ func MessageVote(userID int, voteList [][]byte, controllHashes [][]byte) (json.R
 
 func MessageStop() (json.RawMessage, error) {
 	data := struct {
-		Type string
+		Type string `json:"stop"`
 	}{
 		Type: "stop",
 	}
@@ -64,9 +66,9 @@ func MessageStop() (json.RawMessage, error) {
 
 func MessageMixed(userID int, mixedVotes []byte) (json.RawMessage, error) {
 	data := struct {
-		Type   string
-		UserID int
-		Data   []byte
+		Type   string `json:"type"`
+		UserID int    `json:"user_id"`
+		Data   []byte `json:"data"`
 	}{
 		Type:   "mix",
 		UserID: userID,
@@ -78,9 +80,9 @@ func MessageMixed(userID int, mixedVotes []byte) (json.RawMessage, error) {
 
 func MessagePublishResult(keys [][]byte, result []byte) (json.RawMessage, error) {
 	data := struct {
-		Type          string
-		KeySecredList [][]byte
-		Result        []byte
+		Type          string   `json:"type"`
+		KeySecredList [][]byte `json:"key_secred_list"`
+		Result        []byte   `json:"result"`
 	}{
 		Type:          "mix",
 		KeySecredList: keys,

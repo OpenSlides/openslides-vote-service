@@ -187,10 +187,14 @@ async function loadCryptoVote(wasmFile) {
       }
     },
 
-    encrypt: (mixnetPublicKeyList, trusteePublicKeyList, message) => {
+    encrypt: (mixnetPublicKeyList, trusteePublicKeyList, message, maxSize) => {
       try {
         if (!message || typeof message !== "string" || message.length === 0) {
           throw new Error("Message must be a non-empty string");
+        }
+
+        if (message.length > maxSize) {
+          throw new Error("Message is bigger then max_size");
         }
 
         // Convert string message to Uint8Array
@@ -213,6 +217,7 @@ async function loadCryptoVote(wasmFile) {
           trusteeKeys.ptr,
           messageData.ptr,
           messageData.size,
+          maxSize,
         );
 
         // The WASM function deallocates the inputs
