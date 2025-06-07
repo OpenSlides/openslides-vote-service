@@ -5,7 +5,7 @@ async function loadCryptoVote(wasmFile) {
         const memory = instance.exports.memory;
         const bytes = new Uint8Array(memory.buffer, ptr, len);
         const message = new TextDecoder().decode(bytes);
-        console.log(message);
+        console.log(`Wasm CryptoVote Module: ${message}`);
       },
       get_random: (ptr, amount) => {
         const memory = instance.exports.memory;
@@ -110,8 +110,7 @@ async function loadCryptoVote(wasmFile) {
       // Copy each key to WASM memory
       const memoryView = new Uint8Array(memory.buffer);
       for (let i = 0; i < keyList.length; i++) {
-        const key = new Uint8Array(32);
-        key.setFromBase64(keyList[i]);
+        const key = Uint8Array.fromBase64(keyList[i]);
         if (!key || key.length !== 32) {
           throw new Error(
             `Key at index ${i} must be 32 bytes, got ${key ? key.length : "undefined"}`,
@@ -242,8 +241,7 @@ async function loadCryptoVote(wasmFile) {
       }
 
       const keyView = new Uint8Array(memory.buffer, keyPtr, 32);
-      const key = new Uint8Array(32);
-      key.setFromBase64(secretKey);
+      const key = Uint8Array.fromBase64(secretKey);
       keyView.set(key);
 
       // Copy the cypher block

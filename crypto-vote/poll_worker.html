@@ -514,6 +514,7 @@
                             "info",
                         );
                         processMixedDataEvent(eventData);
+                        currentMixedDataIndex++;
                     }
                 } catch (error) {
                     log(
@@ -656,8 +657,7 @@
                     const message = eventData.message;
 
                     // Check if this is the mixed data we're waiting for
-                    if (currentMixedDataIndex !== myWorkerIndex) {
-                        currentMixedDataIndex++;
+                    if (currentMixedDataIndex + 1 !== myWorkerIndex) {
                         return; // Not our turn yet
                     }
 
