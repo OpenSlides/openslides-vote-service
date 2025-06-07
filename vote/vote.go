@@ -114,8 +114,11 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return fmt.Errorf("creating create message for bulletin board: %w", err)
 	}
 	v.boardMu.Lock()
-	v.boards[poll.ID] = bulletin_board.New(message)
+	v.boards[poll.ID], err = bulletin_board.New(message)
 	v.boardMu.Unlock()
+	if err != nil {
+		return fmt.Errorf("creating bulletin board: %w", err)
+	}
 
 	return nil
 }

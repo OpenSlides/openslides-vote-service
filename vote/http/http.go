@@ -424,13 +424,12 @@ func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
 			}
 			tid = newTID
 
-			fmt.Printf("newTTID: %d, events: %v\n", newTID, eventList)
-
 			for _, event := range eventList {
+				eventJson := json.RawMessage(event)
 				// TODO: Think about the event.time format and if message should
 				// be a string or part of the json object. Also make sure, that
 				// the hash fits.
-				if err := json.NewEncoder(sseWriter).Encode(event); err != nil {
+				if err := json.NewEncoder(sseWriter).Encode(eventJson); err != nil {
 					return fmt.Errorf("encode data: %w", err)
 				}
 			}
@@ -455,8 +454,8 @@ func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc
 		}
 
 		var body struct {
-			KeyMixnet  []byte
-			KeyTrustee []byte
+			KeyMixnet  string
+			KeyTrustee string
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			return fmt.Errorf("invalid body: %w", err)

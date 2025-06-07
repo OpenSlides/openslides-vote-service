@@ -3,6 +3,7 @@ package bulletin_board
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -11,22 +12,28 @@ import (
 )
 
 type BulletinBoard struct {
-	events *topic.Topic[Event]
+	events *topic.Topic[string]
 }
 
-func New(message json.RawMessage) BulletinBoard {
+func New(message json.RawMessage) (BulletinBoard, error) {
 	now := time.Now() // TODO: Add a way to set the time for testing.
 	event := Event{
 		Time:    now,
-		Message: string(message),
-		Hash:    [32]byte{},
+		Message: message,
+		Hash:    "",
 	}
-	topic := topic.New[Event]()
-	topic.Publish(event)
+
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		return BulletinBoard{}, fmt.Errorf("convert event: %w", err)
+	}
+
+	topic := topic.New[string]()
+	topic.Publish(string(encoded))
 
 	return BulletinBoard{
 		events: topic,
-	}
+	}, nil
 }
 
 func (bb *BulletinBoard) Add(message json.RawMessage) error {
@@ -40,35 +47,34 @@ func (bb *BulletinBoard) Add(message json.RawMessage) error {
 	}
 	lastEvent := eventList[0]
 
-	hash, err := lastEvent.createHash()
-	if err != nil {
-		return fmt.Errorf("create hash over last event: %w", err)
-	}
+	hash := createEventHash(lastEvent)
 
 	event := Event{
 		Time:    now,
-		Message: string(message),
+		Message: message,
 		Hash:    hash,
 	}
-	bb.events.Publish(event)
+
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("convert event: %w", err)
+	}
+
+	bb.events.Publish(string(encoded))
 	return nil
 }
 
-func (bb *BulletinBoard) Receive(ctx context.Context, id uint64) (uint64, []Event, error) {
+func (bb *BulletinBoard) Receive(ctx context.Context, id uint64) (uint64, []string, error) {
 	return bb.events.Receive(ctx, id)
 }
 
 type Event struct {
 	Time    time.Time
-	Message string // Use string to be comparable
-	Hash    [32]byte
+	Message json.RawMessage
+	Hash    string
 }
 
-func (e Event) createHash() ([32]byte, error) {
-	data, err := json.Marshal(e)
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("convert event to json: %w", err)
-	}
-
-	return sha256.Sum256(data), nil
+func createEventHash(event string) string {
+	hash := sha256.Sum256([]byte(event))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
 }

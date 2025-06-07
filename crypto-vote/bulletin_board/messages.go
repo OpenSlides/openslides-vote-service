@@ -6,6 +6,8 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 )
 
+// TODO: It would be nicer, if the type attribute would be outside the object.
+
 func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 	data := struct {
 		Type string
@@ -18,12 +20,12 @@ func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 	return json.Marshal(data)
 }
 
-func MessagePublishKeyPublic(userID int, keyMixnet []byte, keyTrustee []byte) (json.RawMessage, error) {
+func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (json.RawMessage, error) {
 	data := struct {
 		Type             string
 		UserID           int
-		KeyPublicMixnet  []byte
-		KeyPublicTrustee []byte
+		KeyPublicMixnet  string
+		KeyPublicTrustee string
 	}{
 		Type:             "publish_public_key",
 		UserID:           userID,
