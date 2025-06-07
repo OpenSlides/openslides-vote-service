@@ -1,0 +1,559 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Vote - Crypto Vote</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 30px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+                color: #555;
+            }
+            input[type="text"], input[type="url"], textarea {
+                width: 100%;
+                padding: 10px;
+                border: 2px solid #ddd;
+                border-radius: 4px;
+                box-sizing: border-box;
+                font-size: 14px;
+            }
+            input[type="text"]:focus, input[type="url"]:focus, textarea:focus {
+                border-color: #4caf50;
+                outline: none;
+            }
+            textarea {
+                height: 80px;
+                resize: vertical;
+                font-family: Arial, sans-serif;
+            }
+            button {
+                background-color: #4caf50;
+                color: white;
+                padding: 12px 20px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                margin-right: 10px;
+                margin-bottom: 10px;
+            }
+            button:hover {
+                background-color: #45a049;
+            }
+            button:disabled {
+                background-color: #cccccc;
+                cursor: not-allowed;
+            }
+            .button-connect {
+                background-color: #2196f3;
+            }
+            .button-connect:hover {
+                background-color: #1976d2;
+            }
+            .button-disconnect {
+                background-color: #f44336;
+            }
+            .button-disconnect:hover {
+                background-color: #d32f2f;
+            }
+            .button-clear {
+                background-color: #ff9800;
+            }
+            .button-clear:hover {
+                background-color: #f57c00;
+            }
+            .button-encrypt {
+                background-color: #9c27b0;
+            }
+            .button-encrypt:hover {
+                background-color: #7b1fa2;
+            }
+            #logContainer {
+                margin-top: 20px;
+                border: 2px solid #ddd;
+                padding: 15px;
+                height: 300px;
+                overflow-y: auto;
+                background-color: #f9f9f9;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .log-info {
+                color: #333;
+                margin-bottom: 5px;
+            }
+            .log-success {
+                color: #4caf50;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .log-error {
+                color: #f44336;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .log-warning {
+                color: #ff9800;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            .status {
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 20px;
+                font-weight: bold;
+            }
+            .status-disconnected {
+                background-color: #ffebee;
+                color: #c62828;
+                border: 1px solid #ffcdd2;
+            }
+            .status-connecting {
+                background-color: #fff3e0;
+                color: #ef6c00;
+                border: 1px solid #ffcc02;
+            }
+            .status-connected {
+                background-color: #e8f5e8;
+                color: #2e7d32;
+                border: 1px solid #c8e6c9;
+            }
+            .vote-section {
+                margin-top: 30px;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 4px;
+                border: 1px solid #dee2e6;
+            }
+            .keys-status {
+                margin-top: 15px;
+                padding: 10px;
+                background-color: #e3f2fd;
+                border: 1px solid #bbdefb;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            .keys-list {
+                margin-top: 10px;
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                max-height: 120px;
+                overflow-y: auto;
+            }
+            .key-entry {
+                margin-bottom: 5px;
+                padding: 3px;
+                background-color: #f5f5f5;
+                border-radius: 2px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Vote - Crypto Vote</h1>
+            
+            <div id="status" class="status status-disconnected">
+                Status: Nicht verbunden
+            </div>
+
+            <div class="form-group">
+                <label for="serverDomain">Server Domain:</label>
+                <input type="url" id="serverDomain" value="https://localhost:8000" />
+            </div>
+
+            <div class="form-group">
+                <label for="pollId">Poll ID:</label>
+                <input type="text" id="pollId" value="1" />
+            </div>
+
+            <div class="form-group">
+                <button id="connectButton" class="button-connect">Verbinden</button>
+                <button id="disconnectButton" class="button-disconnect" disabled>Trennen</button>
+                <button id="clearLogButton" class="button-clear">Log leeren</button>
+            </div>
+
+            <div class="vote-section">
+                <h3>Abstimmung</h3>
+                
+                <div class="form-group">
+                    <label for="messageInput">Nachricht zu verschlüsseln:</label>
+                    <textarea id="messageInput" placeholder="Geben Sie Ihre Abstimmung ein..."></textarea>
+                </div>
+                
+                <button id="encryptVoteButton" class="button-encrypt" disabled>Nachricht verschlüsseln und senden</button>
+                
+                <div class="keys-status">
+                    <div><strong>Verfügbare Schlüssel:</strong></div>
+                    <div id="keyStatus">Warten auf Schlüssel...</div>
+                    <div class="keys-list" id="keysList"></div>
+                </div>
+            </div>
+
+            <h3>Server Events Log</h3>
+            <div id="logContainer"></div>
+        </div>
+
+        <!-- Load the WASM wrapper script -->
+        <script src="./wrapper/crypto_vote.js"></script>
+        <script>
+            // Global variables
+            let eventSource = null;
+            let cryptoVote = null;
+            let isConnected = false;
+            let mixnetPublicKeys = [];
+            let trusteePublicKeys = [];
+
+            // DOM elements
+            const serverDomainInput = document.getElementById('serverDomain');
+            const pollIdInput = document.getElementById('pollId');
+            const connectButton = document.getElementById('connectButton');
+            const disconnectButton = document.getElementById('disconnectButton');
+            const clearLogButton = document.getElementById('clearLogButton');
+            const encryptVoteButton = document.getElementById('encryptVoteButton');
+            const messageInput = document.getElementById('messageInput');
+            const statusDiv = document.getElementById('status');
+            const logContainer = document.getElementById('logContainer');
+            const keyStatus = document.getElementById('keyStatus');
+            const keysList = document.getElementById('keysList');
+
+            // Function to generate default message - can be customized later
+            function getDefaultMessage() {
+                return "Ja"; // Default vote message
+            }
+
+            // Initialize default message
+            document.addEventListener('DOMContentLoaded', function() {
+                messageInput.value = getDefaultMessage();
+            });
+
+            // Initialize WASM module
+            async function initWasm() {
+                try {
+                    log('Lade WASM-Modul...', 'info');
+                    cryptoVote = await loadCryptoVote('./zig-out/bin/crypto_vote.wasm');
+                    log('WASM-Modul erfolgreich geladen', 'success');
+                } catch (error) {
+                    log(`Fehler beim Laden des WASM-Moduls: ${error.message}`, 'error');
+                    console.error('WASM loading error:', error);
+                }
+            }
+
+            // Logging function
+            function log(message, type = 'info') {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-${type}`;
+                
+                const timestamp = new Date().toISOString().substring(11, 23);
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            // Update status display
+            function updateStatus(status, className) {
+                statusDiv.textContent = `Status: ${status}`;
+                statusDiv.className = `status ${className}`;
+            }
+
+            // Update keys status and enable/disable encrypt button
+            function updateKeysStatus() {
+                const mixnetCount = mixnetPublicKeys.length;
+                const trusteeCount = trusteePublicKeys.length;
+                
+                keyStatus.textContent = `Mixnet Schlüssel: ${mixnetCount}, Trustee Schlüssel: ${trusteeCount}`;
+                
+                // Update keys list display
+                keysList.innerHTML = '';
+                
+                if (mixnetCount > 0) {
+                    const mixnetTitle = document.createElement('div');
+                    mixnetTitle.innerHTML = '<strong>Mixnet Schlüssel:</strong>';
+                    keysList.appendChild(mixnetTitle);
+                    
+                    mixnetPublicKeys.forEach((key, index) => {
+                        const keyEntry = document.createElement('div');
+                        keyEntry.className = 'key-entry';
+                        keyEntry.textContent = `${index + 1}: ${key.substring(0, 16)}...`;
+                        keysList.appendChild(keyEntry);
+                    });
+                }
+                
+                if (trusteeCount > 0) {
+                    const trusteeTitle = document.createElement('div');
+                    trusteeTitle.innerHTML = '<strong>Trustee Schlüssel:</strong>';
+                    trusteeTitle.style.marginTop = '10px';
+                    keysList.appendChild(trusteeTitle);
+                    
+                    trusteePublicKeys.forEach((key, index) => {
+                        const keyEntry = document.createElement('div');
+                        keyEntry.className = 'key-entry';
+                        keyEntry.textContent = `${index + 1}: ${key.substring(0, 16)}...`;
+                        keysList.appendChild(keyEntry);
+                    });
+                }
+
+                // Enable encrypt button if we have at least 2 of each key type
+                const canEncrypt = mixnetCount >= 2 && trusteeCount >= 2 && cryptoVote && isConnected;
+                encryptVoteButton.disabled = !canEncrypt;
+                
+                if (canEncrypt) {
+                    log(`Verschlüsselung verfügbar: ${mixnetCount} Mixnet, ${trusteeCount} Trustee Schlüssel`, 'success');
+                } else if (mixnetCount > 0 || trusteeCount > 0) {
+                    log(`Warten auf mehr Schlüssel: ${mixnetCount} Mixnet, ${trusteeCount} Trustee (mindestens 2 von jedem benötigt)`, 'warning');
+                }
+            }
+
+            // Process incoming server events
+            function processServerEvent(eventData) {
+                try {
+                    if (eventData.message && eventData.message.Type === 'publish_public_key') {
+                        const message = eventData.message;
+                        
+                        log(`Neuer Schlüssel empfangen von Benutzer ${message.UserID}`, 'info');
+                        
+                        // Add keys to our lists
+                        if (message.KeyPublicMixnet && !mixnetPublicKeys.includes(message.KeyPublicMixnet)) {
+                            mixnetPublicKeys.push(message.KeyPublicMixnet);
+                            log(`Mixnet Schlüssel hinzugefügt: ${message.KeyPublicMixnet.substring(0, 16)}...`, 'success');
+                        }
+                        
+                        if (message.KeyPublicTrustee && !trusteePublicKeys.includes(message.KeyPublicTrustee)) {
+                            trusteePublicKeys.push(message.KeyPublicTrustee);
+                            log(`Trustee Schlüssel hinzugefügt: ${message.KeyPublicTrustee.substring(0, 16)}...`, 'success');
+                        }
+                        
+                        updateKeysStatus();
+                    }
+                } catch (error) {
+                    log(`Fehler beim Verarbeiten des Server-Events: ${error.message}`, 'error');
+                }
+            }
+
+            // Connect to server
+            function connectToServer() {
+                if (isConnected) {
+                    log('Bereits verbunden', 'warning');
+                    return;
+                }
+
+                const domain = serverDomainInput.value.trim();
+                const pollId = pollIdInput.value.trim();
+
+                if (!domain || !pollId) {
+                    log('Bitte Domain und Poll-ID eingeben', 'error');
+                    return;
+                }
+
+                const url = `${domain}/system/vote/board?id=${pollId}`;
+                log(`Verbinde mit: ${url}`, 'info');
+
+                updateStatus('Verbinde...', 'status-connecting');
+
+                try {
+                    eventSource = new EventSource(url);
+                    
+                    eventSource.onopen = function() {
+                        isConnected = true;
+                        updateStatus('Verbunden', 'status-connected');
+                        log('Verbindung erfolgreich hergestellt', 'success');
+                        
+                        connectButton.disabled = true;
+                        disconnectButton.disabled = false;
+                        serverDomainInput.disabled = true;
+                        pollIdInput.disabled = true;
+                        
+                        updateKeysStatus(); // Update encrypt button state
+                    };
+
+                    eventSource.onmessage = function(event) {
+                        try {
+                            const data = JSON.parse(event.data);
+                            log(`Server Event: ${JSON.stringify(data)}`, 'info');
+                            processServerEvent(data);
+                        } catch (error) {
+                            log(`Fehler beim Parsen der Server-Nachricht: ${error.message}`, 'error');
+                            log(`Rohdaten: ${event.data}`, 'info');
+                        }
+                    };
+
+                    eventSource.onerror = function(event) {
+                        log('Verbindungsfehler aufgetreten', 'error');
+                        console.error('EventSource error:', event);
+                        
+                        if (eventSource.readyState === EventSource.CLOSED) {
+                            disconnectFromServer();
+                        }
+                    };
+
+                } catch (error) {
+                    log(`Fehler beim Verbinden: ${error.message}`, 'error');
+                    updateStatus('Verbindungsfehler', 'status-disconnected');
+                }
+            }
+
+            // Disconnect from server
+            function disconnectFromServer() {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                isConnected = false;
+                updateStatus('Nicht verbunden', 'status-disconnected');
+                log('Verbindung getrennt', 'info');
+
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                encryptVoteButton.disabled = true;
+                serverDomainInput.disabled = false;
+                pollIdInput.disabled = false;
+            }
+
+            // Encrypt and send vote
+            async function encryptAndSendVote() {
+                if (!cryptoVote) {
+                    log('WASM-Modul nicht verfügbar', 'error');
+                    return;
+                }
+
+                if (!isConnected) {
+                    log('Nicht mit Server verbunden', 'error');
+                    return;
+                }
+
+                if (mixnetPublicKeys.length < 2 || trusteePublicKeys.length < 2) {
+                    log('Nicht genügend Schlüssel verfügbar', 'error');
+                    return;
+                }
+
+                const message = messageInput.value.trim();
+                if (!message) {
+                    log('Bitte eine Nachricht eingeben', 'error');
+                    return;
+                }
+
+                try {
+                    encryptVoteButton.disabled = true;
+                    log(`Verschlüssele Nachricht: "${message}"`, 'info');
+                    log(`Verwende ${mixnetPublicKeys.length} Mixnet und ${trusteePublicKeys.length} Trustee Schlüssel`, 'info');
+
+                    // Encrypt the message
+                    const encryptedData = cryptoVote.encrypt(mixnetPublicKeys, trusteePublicKeys, message);
+                    log('Nachricht erfolgreich verschlüsselt', 'success');
+
+                    // Convert encrypted data to array for JSON serialization
+                    const encryptedArray = Array.from(encryptedData);
+
+                    // Prepare the vote data according to Go struct requirements
+                    const voteData = {
+                        encrypted_vote_list: [encryptedArray],
+                        controll_hash_list: [] // Empty for now as specified
+                    };
+
+                    // Send to server
+                    const domain = serverDomainInput.value.trim();
+                    const pollId = pollIdInput.value.trim();
+                    const voteUrl = `${domain}/system/vote?id=${pollId}`;
+
+                    log(`Sende verschlüsselte Stimme an: ${voteUrl}`, 'info');
+
+                    const response = await fetch(voteUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(voteData)
+                    });
+
+                    if (response.ok) {
+                        log('Stimme erfolgreich gesendet', 'success');
+                        messageInput.value = getDefaultMessage(); // Reset to default
+                    } else {
+                        const errorText = await response.text();
+                        log(`Fehler beim Senden der Stimme: ${response.status} - ${errorText}`, 'error');
+                    }
+
+                } catch (error) {
+                    log(`Fehler bei der Verschlüsselung/Sendung: ${error.message}`, 'error');
+                    console.error('Encryption/sending error:', error);
+                } finally {
+                    encryptVoteButton.disabled = false;
+                    updateKeysStatus(); // Re-evaluate button state
+                }
+            }
+
+            // Clear log
+            function clearLog() {
+                logContainer.innerHTML = '';
+                log('Log geleert', 'info');
+            }
+
+            // Event listeners
+            connectButton.addEventListener('click', connectToServer);
+            disconnectButton.addEventListener('click', disconnectFromServer);
+            encryptVoteButton.addEventListener('click', encryptAndSendVote);
+            clearLogButton.addEventListener('click', clearLog);
+
+            // Allow connecting with Enter key
+            serverDomainInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !isConnected) {
+                    connectToServer();
+                }
+            });
+
+            pollIdInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !isConnected) {
+                    connectToServer();
+                }
+            });
+
+            // Allow encrypting with Ctrl+Enter in message input
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && e.ctrlKey && !encryptVoteButton.disabled) {
+                    encryptAndSendVote();
+                }
+            });
+
+            // Initialize the application
+            document.addEventListener('DOMContentLoaded', function() {
+                log('Vote-System gestartet', 'info');
+                initWasm();
+            });
+
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', function() {
+                if (isConnected) {
+                    disconnectFromServer();
+                }
+            });
+        </script>
+    </body>
+</html>

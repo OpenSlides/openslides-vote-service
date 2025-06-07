@@ -339,8 +339,8 @@ func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
 	// TODO: Support vote delegation
 
 	var data struct {
-		EncryptedVotes [][]byte
-		ControllHashes [][]byte
+		EncryptedVotes [][]byte `json:"encrypted_vote_list"`
+		ControllHashes [][]byte `json:"controll_hash_list"`
 	}
 
 	if err := json.NewDecoder(r).Decode(&data); err != nil {
