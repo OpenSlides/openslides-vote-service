@@ -64,15 +64,17 @@ func MessageStop() (json.RawMessage, error) {
 	return json.Marshal(data)
 }
 
-func MessageMixed(userID int, mixedVotes string) (json.RawMessage, error) {
+func MessageMixed(userID int, mixedVotes string, amount int) (json.RawMessage, error) {
 	data := struct {
-		Type   string `json:"type"`
-		UserID int    `json:"user_id"`
-		Data   string `json:"data"`
+		Type      string `json:"type"`
+		UserID    int    `json:"user_id"`
+		MixedData string `json:"mixed_data"`
+		Amount    int    `json:"amount"`
 	}{
-		Type:   "mix",
-		UserID: userID,
-		Data:   mixedVotes,
+		Type:      "mixed_data",
+		UserID:    userID,
+		MixedData: mixedVotes,
+		Amount:    amount,
 	}
 
 	return json.Marshal(data)

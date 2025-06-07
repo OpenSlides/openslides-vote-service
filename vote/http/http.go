@@ -121,6 +121,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
 	mux.Handle(external+"/board", enableCORS(handleExternal(handleBoard(service, auth))))
 	mux.Handle(external+"/board/publish_public_key", enableCORS(handleExternal(handleBoardPublishKey(service, auth))))
+	mux.Handle(external+"/board/publish_mixed_data", enableCORS(handleExternal(handleBoardPublishMixedData(service, auth))))
 
 	return mux
 }
@@ -468,6 +469,43 @@ func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc
 		message, err := bulletin_board.MessagePublishKeyPublic(0, body.KeyMixnet, body.KeyTrustee)
 		if err != nil {
 			return fmt.Errorf("createing bb message: %w", err)
+		}
+
+		// TODO: make the message functions methods of board, so they get published automaticly
+		if err := board.Add(message); err != nil {
+			return fmt.Errorf("publishing message: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func handleBoardPublishMixedData(bordProvider boarder, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		// TODO: Auth
+		//
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		board, err := bordProvider.Board(pollID)
+		if err != nil {
+			return fmt.Errorf("getting board: %w", err)
+		}
+
+		var body struct {
+			MixedData string `json:"mixed_data"`
+			Amount    int    `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid body: %w", err)
+		}
+
+		message, err := bulletin_board.MessageMixed(0, body.MixedData, body.Amount)
+		if err != nil {
+			return fmt.Errorf("creating bb message: %w", err)
 		}
 
 		// TODO: make the message functions methods of board, so they get published automaticly
