@@ -293,7 +293,7 @@
                     await yieldToUI(); // Yield to update UI
 
                     const wasmModule = await loadCryptoVote(
-                        "./zig-out/bin/crypto_vote.wasm",
+                        "./wrapper/crypto_vote.wasm",
                     );
                     log("WASM-Modul erfolgreich geladen!", "success");
                     await yieldToUI();
