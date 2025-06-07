@@ -116,7 +116,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
 	mux.Handle(internal+"/all_voted_ids", handleInternal(handleAllVotedIDs(service, ticketProvider)))
-	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
+	mux.Handle(external+"", enableCORS(handleExternal(handleVote(service, auth))))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
 	mux.Handle(external+"/board", enableCORS(handleExternal(handleBoard(service, auth))))
@@ -244,15 +244,19 @@ func handleVote(service voter, auth authenticater) HandlerFunc {
 		log.Info("Receiving vote request")
 		w.Header().Set("Content-Type", "application/json")
 
-		ctx, err := auth.Authenticate(w, r)
-		if err != nil {
-			return err
-		}
+		// TODO: Deactivate auth for the moment
+		uid := 0
+		ctx := r.Context()
 
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
-		}
+		// ctx, err := auth.Authenticate(w, r)
+		// if err != nil {
+		// 	return err
+		// }
+
+		// uid := auth.FromContext(ctx)
+		// if uid == 0 {
+		// 	return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
+		// }
 
 		id, err := pollID(r)
 		if err != nil {

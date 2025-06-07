@@ -36,14 +36,16 @@ func MessagePublishKeyPublic(userID int, keyMixnet string, keyTrustee string) (j
 	return json.Marshal(data)
 }
 
-func MessageVote(userID int, vote []byte, controllHashes [][]byte) (json.RawMessage, error) {
+func MessageVote(userID int, voteList [][]byte, controllHashes [][]byte) (json.RawMessage, error) {
 	data := struct {
 		Type           string
 		UserID         int
+		Votes          [][]byte
 		ControllHashes [][]byte
 	}{
 		Type:           "vote",
 		UserID:         userID,
+		Votes:          voteList,
 		ControllHashes: controllHashes,
 	}
 

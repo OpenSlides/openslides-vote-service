@@ -214,6 +214,14 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 	log.Debug("Poll config: %v", poll)
 
+	crypto := true
+
+	if crypto {
+		// TODO: Only for crypto votes and first check, that the user has not voted
+		// an is allowed to vote.
+		return v.voteCrypto(pollID, requestUser, r)
+	}
+
 	if err := ensurePresent(ctx, &ds.Fetch, poll.MeetingID, requestUser); err != nil {
 		return err
 	}
@@ -319,6 +327,33 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	v.votedMu.Lock()
 	v.voted[pollID] = append(v.voted[pollID], voteUser)
 	v.votedMu.Unlock()
+
+	return nil
+}
+
+func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
+	v.boardMu.RLock()
+	board := v.boards[pollID]
+	v.boardMu.RUnlock()
+
+	// TODO: Support vote delegation
+
+	var data struct {
+		EncryptedVotes [][]byte
+		ControllHashes [][]byte
+	}
+
+	if err := json.NewDecoder(r).Decode(&data); err != nil {
+		return fmt.Errorf("decode body: %w", err)
+	}
+
+	message, err := bulletin_board.MessageVote(requestUser, data.EncryptedVotes, data.ControllHashes)
+	if err != nil {
+		return fmt.Errorf("creating vote message: %w", err)
+	}
+	if err := board.Add(message); err != nil {
+		return fmt.Errorf("publishing message: %w", err)
+	}
 
 	return nil
 }
