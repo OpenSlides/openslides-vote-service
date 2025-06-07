@@ -18,15 +18,17 @@ func MessageCreate(poll dsmodels.Poll) (json.RawMessage, error) {
 	return json.Marshal(data)
 }
 
-func MessagePublishKeyPublic(userID int, key []byte) (json.RawMessage, error) {
+func MessagePublishKeyPublic(userID int, keyMixnet []byte, keyTrustee []byte) (json.RawMessage, error) {
 	data := struct {
-		Type      string
-		UserID    int
-		KeyPublic []byte
+		Type             string
+		UserID           int
+		KeyPublicMixnet  []byte
+		KeyPublicTrustee []byte
 	}{
-		Type:      "publish_public_key",
-		UserID:    userID,
-		KeyPublic: key,
+		Type:             "publish_public_key",
+		UserID:           userID,
+		KeyPublicMixnet:  keyMixnet,
+		KeyPublicTrustee: keyTrustee,
 	}
 
 	return json.Marshal(data)

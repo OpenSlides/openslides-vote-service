@@ -10,7 +10,7 @@ import (
 
 func TestBulletinBoard(t *testing.T) {
 	board := bulletin_board.New([]byte(`{"message": "hello world"`))
-	board.Add(42, []byte(`{"message": "next message"`))
+	board.Add([]byte(`{"message": "next message"`))
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 

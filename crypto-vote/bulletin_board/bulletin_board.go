@@ -29,7 +29,7 @@ func New(message json.RawMessage) BulletinBoard {
 	}
 }
 
-func (bb *BulletinBoard) Add(userID int, message json.RawMessage) error {
+func (bb *BulletinBoard) Add(message json.RawMessage) error {
 	now := time.Now() // TODO: Add a way to set the time for testing.
 
 	// TODO: maybe update topic to get an easier method to fetch the last event.
@@ -47,7 +47,6 @@ func (bb *BulletinBoard) Add(userID int, message json.RawMessage) error {
 
 	event := Event{
 		Time:    now,
-		UserID:  userID,
 		Message: string(message),
 		Hash:    hash,
 	}
@@ -61,7 +60,6 @@ func (bb *BulletinBoard) Receive(ctx context.Context, id uint64) (uint64, []Even
 
 type Event struct {
 	Time    time.Time
-	UserID  int
 	Message string // Use string to be comparable
 	Hash    [32]byte
 }
