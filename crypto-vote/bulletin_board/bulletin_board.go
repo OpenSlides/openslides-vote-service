@@ -69,9 +69,9 @@ func (bb *BulletinBoard) Receive(ctx context.Context, id uint64) (uint64, []stri
 }
 
 type Event struct {
-	Time    time.Time
-	Message json.RawMessage
-	Hash    string
+	Time    time.Time       `json:"time"`
+	Message json.RawMessage `json:"message"`
+	Hash    string          `json:"hash,omitempty"`
 }
 
 func createEventHash(event string) string {
