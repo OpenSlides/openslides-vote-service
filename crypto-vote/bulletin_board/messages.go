@@ -80,11 +80,11 @@ func MessageMixed(userID int, mixedVotes string, amount int) (json.RawMessage, e
 	return json.Marshal(data)
 }
 
-func MessagePublishResult(keys [][]byte, result []byte) (json.RawMessage, error) {
+func MessagePublishResult(keys []string, result json.RawMessage) (json.RawMessage, error) {
 	data := struct {
-		Type          string   `json:"type"`
-		KeySecredList [][]byte `json:"key_secred_list"`
-		Result        []byte   `json:"result"`
+		Type          string          `json:"type"`
+		KeySecredList []string        `json:"key_secred_list"`
+		Result        json.RawMessage `json:"result"`
 	}{
 		Type:          "mix",
 		KeySecredList: keys,

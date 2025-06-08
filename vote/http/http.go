@@ -90,6 +90,7 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 type voteService interface {
 	starter
 	stopper
+	publisher
 	clearer
 	clearAller
 	allVotedIDer
@@ -114,6 +115,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 
 	mux.Handle(internal+"/start", handleInternal(handleStart(service)))
 	mux.Handle(internal+"/stop", handleInternal(handleStop(service)))
+	mux.Handle(internal+"/publish", handleInternal(handlePublish(service)))
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
 	mux.Handle(internal+"/all_voted_ids", handleInternal(handleAllVotedIDs(service, ticketProvider)))
@@ -202,6 +204,37 @@ func handleStop(stop stopper) HandlerFunc {
 
 		if err := json.NewEncoder(w).Encode(out); err != nil {
 			return fmt.Errorf("encoding and sending objects: %w", err)
+		}
+		return nil
+	}
+}
+
+type publisher interface {
+	Publish(ctx context.Context, pollID int, result json.RawMessage) ([]string, error)
+}
+
+func handlePublish(publish publisher) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		log.Info("Receiving publish request")
+		w.Header().Set("Content-Type", "application/json")
+
+		id, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return fmt.Errorf("reading body: %w", err)
+		}
+
+		result, err := publish.Publish(r.Context(), id, body)
+		if err != nil {
+			return err
+		}
+
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			return fmt.Errorf("encoding bulletin board events: %w", err)
 		}
 		return nil
 	}

@@ -245,6 +245,34 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	return StopResult{ballots, userIDs}, nil
 }
 
+// Publish is a function for a crypto-poll to publish the result in the poll
+// result in the bulletin board and returns an archive of the bulletin board.
+func (v *Vote) Publish(ctx context.Context, pollID int, result json.RawMessage) ([]string, error) {
+	v.boardMu.RLock()
+	board, ok1 := v.boards[pollID]
+	skc, ok2 := v.secredKeyList[pollID]
+	v.boardMu.RUnlock()
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("no bulletin board for poll %d", pollID)
+	}
+
+	// TODO: Check if result was published before and if so, don't do it again.
+	message, err := bulletin_board.MessagePublishResult(skc.keys, result)
+	if err != nil {
+		return nil, fmt.Errorf("creating vote message: %w", err)
+	}
+	if err := board.Add(message); err != nil {
+		return nil, fmt.Errorf("publishing message: %w", err)
+	}
+
+	_, events, err := board.Receive(ctx, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting all events: %w", err)
+	}
+
+	return events, nil
+}
+
 // Clear removes all knowlage of a poll.
 func (v *Vote) Clear(ctx context.Context, pollID int) error {
 	if err := v.fastBackend.Clear(ctx, pollID); err != nil {
@@ -621,6 +649,8 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 }
 
 func (v *Vote) Board(pollID int) (bulletin_board.BulletinBoard, error) {
+	// TODO: When a poll is finished, then the board was cleared, but saved in
+	// the Database. Return this instead.
 	v.boardMu.RLock()
 	board, ok := v.boards[pollID]
 	v.boardMu.RUnlock()
