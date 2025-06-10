@@ -19,6 +19,8 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
 
+var cryptoVote = true
+
 // Vote holds the state of the service.
 //
 // Vote has to be initializes with vote.New().
@@ -125,20 +127,21 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return fmt.Errorf("starting poll in the backend: %w", err)
 	}
 
-	// TODO: Only if crypto-vote
-	message, err := bulletin_board.MessageCreate(poll)
-	if err != nil {
-		return fmt.Errorf("creating create message for bulletin board: %w", err)
-	}
-	v.boardMu.Lock()
-	v.boards[poll.ID], err = bulletin_board.New(message)
-	v.secredKeyList[pollID] = &secredKeyCache{
-		done:        make(chan struct{}),
-		requireKeys: 2, // TODO: Read from poll
-	}
-	v.boardMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("creating bulletin board: %w", err)
+	if cryptoVote {
+		message, err := bulletin_board.MessageCreate(poll)
+		if err != nil {
+			return fmt.Errorf("creating create message for bulletin board: %w", err)
+		}
+		v.boardMu.Lock()
+		v.boards[poll.ID], err = bulletin_board.New(message)
+		v.secredKeyList[pollID] = &secredKeyCache{
+			done:        make(chan struct{}),
+			requireKeys: 2, // TODO: Read from poll
+		}
+		v.boardMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("creating bulletin board: %w", err)
+		}
 	}
 
 	return nil
@@ -165,7 +168,6 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
-	cryptoVote := true
 	if cryptoVote {
 		v.boardMu.RLock()
 		board, ok1 := v.boards[pollID]
@@ -221,7 +223,6 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 
 		sr := StopResult{
 			Votes: votes,
-			//UserIDs: []int,
 		}
 
 		for _, vote := range sr.Votes {
@@ -329,9 +330,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	}
 	log.Debug("Poll config: %v", poll)
 
-	crypto := true
-
-	if crypto {
+	if cryptoVote {
 		// TODO: Only for crypto votes and first check, that the user has not voted
 		// an is allowed to vote.
 		return v.voteCrypto(pollID, requestUser, r)

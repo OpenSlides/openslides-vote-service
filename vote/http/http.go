@@ -125,7 +125,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(external+"/board", enableCORS(handleExternal(handleBoard(service, auth))))
 	mux.Handle(external+"/board/publish_public_key", enableCORS(handleExternal(handleBoardPublishKey(service, auth))))
 	mux.Handle(external+"/board/publish_mixed_data", enableCORS(handleExternal(handleBoardPublishMixedData(service, auth))))
-	mux.Handle(external+"/board/publish_secred_key", enableCORS(handleExternal(handleReceivePrivateKey(service, auth))))
+	mux.Handle(external+"/board/publish_secred_key", enableCORS(handleExternal(handleReceiveKeySecred(service, auth))))
 
 	return mux
 }
@@ -556,7 +556,7 @@ type keySecredReceiver interface {
 	ReceiveKeySecred(pollID int, userID int, keySecred string) error
 }
 
-func handleReceivePrivateKey(service keySecredReceiver, auth authenticater) HandlerFunc {
+func handleReceiveKeySecred(service keySecredReceiver, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		// TODO: Auth
 		//
