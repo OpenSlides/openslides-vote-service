@@ -105,7 +105,7 @@ fn encrypt_bufsize(message_len: usize) usize {
     return X25519.public_length + message_len + Aes256Gcm.tag_length;
 }
 
-fn encrypt_x25519(
+fn encrypt_x25519_deterministic(
     key_public: [32]u8,
     message: []const u8,
     seed: [32]u8,
@@ -150,7 +150,7 @@ test "x25519 encrypt and decrypt" {
     const seed = std.mem.zeroes([32]u8);
 
     var buf_encrypt: [encrypt_bufsize(msg.len)]u8 = undefined;
-    const encrypted_message = try encrypt_x25519(key.key_public, msg, seed, &buf_encrypt);
+    const encrypted_message = try encrypt_x25519_deterministic(key.key_public, msg, seed, &buf_encrypt);
 
     var buf_decrypt: [msg.len]u8 = undefined;
     const decrypted = try decrypt_x25519(key.key_secred, encrypted_message, &buf_decrypt);
@@ -183,6 +183,24 @@ fn combine_key_secred(
 }
 
 fn encrypt_ed25519(
+    key_public_list: []const [32]u8,
+    message: []const u8,
+    buf: []u8,
+) (InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
+    var random_seed: [32]u8 = undefined;
+    while (true) {
+        std.crypto.random.bytes(&random_seed);
+        return encrypt_ed25519_deterministric(key_public_list, message, random_seed, buf) catch |err| {
+            @branchHint(.unlikely);
+            switch (err) {
+                IdentityElementError.IdentityElement => continue,
+                else => |leftover| return leftover,
+            }
+        };
+    }
+}
+
+fn encrypt_ed25519_deterministric(
     key_public_list: []const [32]u8,
     message: []const u8,
     seed: [32]u8,
@@ -239,7 +257,6 @@ test "encrypt and decrypt with ed25519" {
     const key2 = KeyPairTrustee.generate();
     const key3 = KeyPairTrustee.generate();
     const msg = "my message to be encrypted";
-    const seed = std.mem.zeroes([32]u8);
 
     const key_public_list = &[_][32]u8{
         key1.key_public,
@@ -251,7 +268,6 @@ test "encrypt and decrypt with ed25519" {
     const encrypted_message = try encrypt_ed25519(
         key_public_list,
         msg,
-        seed,
         &buf_encrypt,
     );
 
@@ -270,11 +286,15 @@ test "encrypt and decrypt with ed25519" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
-pub fn encrypt_full_buf_size(message_size: usize, mixnet_count: usize, trustee_count: usize) usize {
-    return 2 * (message_size + (32 + 16) * (mixnet_count + trustee_count));
+pub fn calc_cypher_size(message_size: usize, mixnet_count: usize, trustee_count: usize) usize {
+    return (message_size + (32 + 16) * (mixnet_count + trustee_count));
 }
 
-pub fn encrypt_full(
+fn encrypt_full_buf_size(message_size: usize, mixnet_count: usize, trustee_count: usize) usize {
+    return 2 * calc_cypher_size(message_size, mixnet_count, trustee_count);
+}
+
+fn encrypt_full(
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
     message: []const u8,
@@ -286,7 +306,7 @@ pub fn encrypt_full(
     assert(buf.len >= full);
     assert(seed.len == (mixnet_key_public_list.len + 1) * 32);
 
-    var cypher = try encrypt_ed25519(trustee_key_public_list, message, seed[0..32].*, buf[buffer_mid..]);
+    var cypher = try encrypt_ed25519_deterministric(trustee_key_public_list, message, seed[0..32].*, buf[buffer_mid..]);
     @memcpy(buf[0..cypher.len], buf[buffer_mid..][0..cypher.len]);
     cypher = buf[0..cypher.len];
 
@@ -295,7 +315,7 @@ pub fn encrypt_full(
         const mixnet_seed = seed[i * 32 ..][0..32];
         i -= 1;
         const key_public = mixnet_key_public_list[i];
-        cypher = try encrypt_x25519(key_public, cypher, mixnet_seed.*, buf[buffer_mid..]);
+        cypher = try encrypt_x25519_deterministic(key_public, cypher, mixnet_seed.*, buf[buffer_mid..]);
         @memcpy(buf[0..cypher.len], buf[buffer_mid..][0..cypher.len]);
         cypher = buf[0..cypher.len];
     }
@@ -344,19 +364,24 @@ test "encrypt_full" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
-pub fn encrypt_message(
+const CypherSeed = struct {
+    cypher: []u8,
+    seed: []u8,
+};
+
+fn encrypt_fixed_size(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
     message: []const u8,
     size: usize,
-) (OutOfMemoryError || InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
+) (OutOfMemoryError || InvalidPublicKeyError || WeakPublicKeyError)!CypherSeed {
     const seed = try allocator.alloc(u8, (mixnet_key_public_list.len + 1) * 32);
-    defer allocator.free(seed);
+    errdefer allocator.free(seed);
 
     while (true) {
         std.crypto.random.bytes(seed);
-        const cypher = encrypt_message_deterministric(
+        const cypher = encrypt_fixed_size_deterministic(
             allocator,
             mixnet_key_public_list,
             trustee_key_public_list,
@@ -371,11 +396,11 @@ pub fn encrypt_message(
             }
         };
 
-        return cypher;
+        return .{ .cypher = cypher, .seed = seed };
     }
 }
 
-pub fn encrypt_message_deterministric(
+pub fn encrypt_fixed_size_deterministic(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
@@ -411,6 +436,55 @@ pub fn encrypt_message_deterministric(
     }
 
     return cypher;
+}
+
+pub const EncryptResult = struct {
+    cyphers: [2][]u8,
+    control_data: []u8,
+
+    pub fn free(self: EncryptResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.cyphers[0]);
+        allocator.free(self.cyphers[1]);
+        allocator.free(self.control_data);
+    }
+
+    pub fn toBytesWithPrefix(self: EncryptResult, allocator: std.mem.Allocator) ![*]u8 {
+        assert(self.cyphers[0].len == self.cyphers[1].len);
+
+        const cypher_len = self.cyphers[0].len;
+        const size = cypher_len * 2 + self.control_data.len;
+        const result = try allocator.alloc(u8, size + 4);
+        std.mem.writeInt(u32, result[0..4], @intCast(size), .little);
+        @memcpy(result[4..][0..cypher_len], self.cyphers[0]);
+        @memcpy(result[4 + cypher_len ..][0..cypher_len], self.cyphers[1]);
+        @memcpy(result[4 + cypher_len * 2 ..][0..self.control_data.len], self.control_data);
+        return result.ptr;
+    }
+};
+
+pub fn encrypt_message(
+    allocator: std.mem.Allocator,
+    mixnet_key_public_list: []const [32]u8,
+    trustee_key_public_list: []const [32]u8,
+    message: []const u8,
+    size: usize,
+) !EncryptResult {
+    const cypher_real = try encrypt_fixed_size(allocator, mixnet_key_public_list, trustee_key_public_list, message, size);
+    allocator.free(cypher_real.seed);
+
+    const zeros = try allocator.alloc(u8, size);
+    defer allocator.free(zeros);
+    @memset(zeros, 0);
+
+    const cypher_fake = try encrypt_fixed_size(allocator, mixnet_key_public_list, trustee_key_public_list, zeros, size);
+
+    const buf = try allocator.alloc(u8, encrypt_bufsize(size));
+    const control_data = try encrypt_ed25519(trustee_key_public_list, cypher_fake.seed, buf);
+
+    return if (std.Random.boolean(std.crypto.random))
+        .{ .cyphers = [2][]u8{ cypher_real.cypher, cypher_fake.cypher }, .control_data = control_data }
+    else
+        .{ .cyphers = [2][]u8{ cypher_fake.cypher, cypher_real.cypher }, .control_data = control_data };
 }
 
 pub fn decrypt_mixnet_buf_size(cypher_block_size: usize, cypher_count: usize) usize {

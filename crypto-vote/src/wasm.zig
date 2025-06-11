@@ -67,7 +67,21 @@ export fn gen_trustee_key_pair() ?[*]const u8 {
     return result.ptr;
 }
 
+// cypher_size returns the size of one cypher returned from `encrypt`.
+//
+// This function is necessary, to split the result of `encrypt`.
+export fn cypher_size(
+    mixnet_count: u32,
+    trustee_count: u32,
+    max_size: u32,
+) u32 {
+    return crypto.calc_cypher_size(max_size, mixnet_count, trustee_count);
+}
+
 // encrypt encryptes a message for the mixnet and trustees.
+//
+// It returns the encrypted message, a fake encrypted message and encrypted
+// controll_data.
 //
 // First, the message gets encrypted for all trustees at once. Then the result
 // gets encrypted for each member of the mixnet, once at a time. It starts with
@@ -77,15 +91,18 @@ export fn gen_trustee_key_pair() ?[*]const u8 {
 // from the last member of the mixnet has to be decrypted with the private keys
 // from all trustees.
 //
-// The argument "mixnet_count" is the amount of members of the mixnet. The
-// argument "trustee_count" the amount of members of the trustree group.
+// The argument `mixnet_count` is the amount of members of the mixnet. The
+// argument `trustee_count` the amount of members of the trustree group.
 //
-// The argument mixnet_key_public_ptr has to be a pointer, that points to a list
-// of all mixnet keys. The argument trustee_key_public_ptr is the same for the
+// The argument `mixnet_key_public_ptr` has to be a pointer, that points to a list
+// of all mixnet keys. The argument `trustee_key_public_ptr` is the same for the
 // trustee group.
 //
-// msg_ptr has to be a pointer to the message, that has to be encrypted. msg_len
+// `msg_ptr` has to be a pointer to the message, that has to be encrypted. `msg_len`
 // is the len of this message.
+//
+// `max_size` is the number, how big a message could be in theory. It is used to
+// add padding to the message.
 //
 // When calling the function, the memory of the mixnet- and trustee public keys
 // gets deallocated. Also the memory of the message.
@@ -94,7 +111,16 @@ export fn gen_trustee_key_pair() ?[*]const u8 {
 //
 // On success, the function returns a pointer to memory. The first four bytes of
 // this memory is the size following memory (the four bytes are not included).
-// The following memory is the encrypted message.
+// The following memory is the encrypted message, a fake encrypted message
+// followed by encrypted controll data.
+//
+// To split the result, the function `cypher_size` has to be called. It returns
+// the size of one cypher. The first cypher are the first `cypher_size` byte,
+// the second message is the second `cypher_size` byte, and the rest of the
+// result are the control data.
+//
+// The order of the first cypher and second cypher is random. So the caller can
+// not know, which cypher encrypts the real message and which the fake message.
 export fn encrypt(
     mixnet_count: u32,
     trustee_count: u32,
@@ -117,7 +143,7 @@ export fn encrypt(
     const trustee_key_public_list: []const [32]u8 = trustee_key_public_ptr[0..trustee_count];
     defer allocator.free(trustee_key_public_list);
 
-    const cypher = crypto.encrypt_message(
+    const result = crypto.encrypt_message(
         allocator,
         mixnet_key_public_list,
         trustee_key_public_list,
@@ -127,9 +153,9 @@ export fn encrypt(
         consoleLog("Error encrypt_message: {}", .{err});
         return null;
     };
-    defer allocator.free(cypher);
+    defer result.free(allocator);
 
-    return successSizedBuffer(cypher);
+    return result.toBytesWithPrefix(allocator) catch return null;
 }
 
 // decrypt_mixnet decrypts a block of cyphers with a private key from a mixnet
