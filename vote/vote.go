@@ -221,10 +221,16 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 			return StopResult{}, fmt.Errorf("decrypt votes: %w", err)
 		}
 
-		// TODO: filter votes that are emtpy string (from controll data)
+		// Filter out empty votes (from control data)
+		var filteredVotes [][]byte
+		for _, vote := range votes {
+			if vote != "" {
+				filteredVotes = append(filteredVotes, []byte(vote))
+			}
+		}
 
 		sr := StopResult{
-			Votes: votes,
+			Votes: filteredVotes,
 		}
 
 		for _, vote := range sr.Votes {

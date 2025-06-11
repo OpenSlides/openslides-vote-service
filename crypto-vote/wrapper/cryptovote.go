@@ -38,6 +38,7 @@ type CryptoVote struct {
 	encryptFunc        api.Function
 	decryptMixnetFunc  api.Function
 	decryptTrusteeFunc api.Function
+	cypherSizeFunc     api.Function
 
 	memory api.Memory
 }
@@ -106,6 +107,11 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 		return nil, fmt.Errorf("decrypt_trustee function not found in WASM module")
 	}
 
+	cypherSizeFunc := module.ExportedFunction("cypher_size")
+	if cypherSizeFunc == nil {
+		return nil, fmt.Errorf("cypher_size function not found in WASM module")
+	}
+
 	// Get memory export
 	memory := module.ExportedMemory("memory")
 	if memory == nil {
@@ -123,6 +129,7 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 		encryptFunc:        encryptFunc,
 		decryptMixnetFunc:  decryptMixnetFunc,
 		decryptTrusteeFunc: decryptTrusteeFunc,
+		cypherSizeFunc:     cypherSizeFunc,
 		memory:             memory,
 	}, nil
 }
@@ -336,8 +343,14 @@ func (cv *CryptoVote) GenTrusteeKeyPair() (*KeyPair, error) {
 	}, nil
 }
 
+// EncryptResult represents the result of encryption with cyphers and control data
+type EncryptResult struct {
+	Cyphers     [2][]byte `json:"cyphers"`
+	ControlData []byte    `json:"control_data"`
+}
+
 // Encrypt encrypts a message using mixnet and trustee public keys
-func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []string, message string, maxSize uint32) ([]byte, error) {
+func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []string, message string, maxSize uint32) (*EncryptResult, error) {
 	if len(message) == 0 {
 		return nil, fmt.Errorf("message must not be empty")
 	}
@@ -388,7 +401,40 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 	}
 
 	// Read the result (sized buffer)
-	return cv.readSizedBuffer(resultPtr)
+	encryptedData, err := cv.readSizedBuffer(resultPtr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get cypher size to split the result
+	cypherSizeResults, err := cv.cypherSizeFunc.Call(cv.ctx,
+		uint64(len(mixnetPublicKeys)),
+		uint64(len(trusteePublicKeys)),
+		uint64(maxSize),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cypher size: %w", err)
+	}
+
+	cypherSize := uint32(cypherSizeResults[0])
+
+	// Split the data into cyphers and control data
+	if len(encryptedData) < int(cypherSize*2) {
+		return nil, fmt.Errorf("encrypted data too small: expected at least %d bytes, got %d", cypherSize*2, len(encryptedData))
+	}
+
+	cypher1 := make([]byte, cypherSize)
+	cypher2 := make([]byte, cypherSize)
+	copy(cypher1, encryptedData[0:cypherSize])
+	copy(cypher2, encryptedData[cypherSize:cypherSize*2])
+	
+	controlData := make([]byte, len(encryptedData)-int(cypherSize*2))
+	copy(controlData, encryptedData[cypherSize*2:])
+
+	return &EncryptResult{
+		Cyphers:     [2][]byte{cypher1, cypher2},
+		ControlData: controlData,
+	}, nil
 }
 
 // DecryptMixnet decrypts a block of ciphers with a mixnet private key
@@ -442,7 +488,7 @@ func (cv *CryptoVote) DecryptMixnet(secretKey string, cypherBlock []byte, cypher
 }
 
 // DecryptTrustee decrypts a block of ciphers with all trustee private keys
-func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cypherCount int) ([][]byte, error) {
+func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cypherCount int) ([]string, error) {
 	// Prepare trustee secret keys
 	trusteeKeysPtr, trusteeCount, err := cv.copyKeysToWasm(secretKeys)
 	if err != nil {
@@ -480,12 +526,19 @@ func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cy
 	}
 
 	messageSize := len(decryptedData) / int(cypherCount)
-	messages := make([][]byte, cypherCount)
+	messages := make([]string, cypherCount)
 
 	for i := range cypherCount {
 		start := int(i) * messageSize
 		end := start + messageSize
-		messages[i] = truncateAtNull(decryptedData[start:end])
+		messageBytes := truncateAtNull(decryptedData[start:end])
+		
+		// Convert to string, handling empty/null-only data
+		if len(messageBytes) == 0 {
+			messages[i] = ""
+		} else {
+			messages[i] = string(messageBytes)
+		}
 	}
 
 	return messages, nil

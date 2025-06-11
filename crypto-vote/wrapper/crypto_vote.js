@@ -38,6 +38,7 @@ async function loadCryptoVote(wasmFile) {
     encrypt: wasm_encrypt,
     decrypt_mixnet: wasm_decrypt_mixnet,
     decrypt_trustee: wasm_decrypt_trustee,
+    cypher_size: wasm_cypher_size,
     memory,
   } = instance.exports;
 
@@ -132,8 +133,19 @@ async function loadCryptoVote(wasmFile) {
     return new TextEncoder().encode(str);
   }
 
-  // Uint8Array to String conversion
+  // Uint8Array to String conversion with null byte truncation
   function uint8ArrayToString(array) {
+    // Find the first null byte and truncate there
+    const nullIndex = array.indexOf(0);
+    if (nullIndex !== -1) {
+      array = array.slice(0, nullIndex);
+    }
+    
+    // If the array is empty or only contains null bytes, return empty string
+    if (array.length === 0) {
+      return "";
+    }
+    
     return new TextDecoder().decode(array);
   }
 
@@ -226,7 +238,20 @@ async function loadCryptoVote(wasmFile) {
         }
 
         // Read the result (sized buffer)
-        return readSizedBuffer(resultPtr);
+        const encryptedData = readSizedBuffer(resultPtr);
+        
+        // Get cypher size to split the result
+        const cypherSize = wasm_cypher_size(mixnetKeys.count, trusteeKeys.count, maxSize);
+        
+        // Split the data into cyphers and control data
+        const cypher1 = encryptedData.slice(0, cypherSize);
+        const cypher2 = encryptedData.slice(cypherSize, cypherSize * 2);
+        const controlData = encryptedData.slice(cypherSize * 2);
+        
+        return {
+          cyphers: [cypher1, cypher2],
+          controlData: controlData
+        };
       } catch (error) {
         console.error("Error during encryption:", error);
         throw new Error("Encryption failed: " + error.message);

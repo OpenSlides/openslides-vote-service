@@ -566,7 +566,7 @@
                     }
 
                     // Encrypt the message
-                    const encryptedData = cryptoVote.encrypt(
+                    const encryptResult = cryptoVote.encrypt(
                         mixnetPublicKeys,
                         trusteePublicKeys,
                         message,
@@ -574,13 +574,15 @@
                     );
                     log("Nachricht erfolgreich verschlüsselt", "success");
 
-                    // Convert encrypted to base64
-                    const encryptedArray = encryptedData.toBase64();
+                    // Convert both cyphers and control data to base64
+                    const cypher1Base64 = encryptResult.cyphers[0].toBase64();
+                    const cypher2Base64 = encryptResult.cyphers[1].toBase64();
+                    const controlDataBase64 = encryptResult.controlData.toBase64();
 
                     // Prepare the vote data according to Go struct requirements
                     const voteData = {
-                        encrypted_vote_list: [encryptedArray],
-                        controll_data: "",
+                        encrypted_vote_list: [cypher1Base64, cypher2Base64],
+                        controll_data: controlDataBase64,
                     };
 
                     // Send to server

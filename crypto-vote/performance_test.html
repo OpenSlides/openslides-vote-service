@@ -363,7 +363,7 @@
                             log(`Verschlüssele Nachricht ${i + 1}...`);
                             await yieldToUI(); // Yield before encryption
 
-                            const encrypted = wasmModule.encrypt(
+                            const encryptResult = wasmModule.encrypt(
                                 mixnetKeys.map((k) => k.publicKey),
                                 trusteeKeys.map((k) => k.publicKey),
                                 message,
@@ -371,10 +371,12 @@
                             );
 
                             log(
-                                `Nachricht ${i + 1} erfolgreich verschlüsselt (${encrypted.length} Bytes)`,
+                                `Nachricht ${i + 1} erfolgreich verschlüsselt`,
                                 "success",
                             );
-                            encryptedMessages.push(encrypted);
+                            // Add both cyphers to the encrypted messages list
+                            encryptedMessages.push(encryptResult.cyphers[0]);
+                            encryptedMessages.push(encryptResult.cyphers[1]);
                             await yieldToUI(); // Yield after encryption
                         } catch (error) {
                             log(
@@ -490,10 +492,16 @@
                         await yieldToUI();
 
                         let matchCount = 0;
+                        // Filter out empty strings from decrypted messages (these come from fake cyphers)
+                        const filteredDecryptedMessages =
+                            finalDecryptedMessages.filter((msg) => msg !== "");
+
                         for (let j = 0; j < originalMessages.length; j++) {
                             const originalMessage = originalMessages[j];
                             if (
-                                finalDecryptedMessages.includes(originalMessage)
+                                filteredDecryptedMessages.includes(
+                                    originalMessage,
+                                )
                             ) {
                                 matchCount++;
                             }
