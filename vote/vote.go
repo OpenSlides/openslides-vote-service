@@ -221,6 +221,8 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 			return StopResult{}, fmt.Errorf("decrypt votes: %w", err)
 		}
 
+		// TODO: filter votes that are emtpy string (from controll data)
+
 		sr := StopResult{
 			Votes: votes,
 		}
@@ -454,14 +456,14 @@ func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
 
 	var data struct {
 		EncryptedVotes []string `json:"encrypted_vote_list"`
-		ControllHashes []string `json:"controll_hash_list"`
+		ControlData    string   `json:"controll_data"`
 	}
 
 	if err := json.NewDecoder(r).Decode(&data); err != nil {
 		return fmt.Errorf("decode body: %w", err)
 	}
 
-	message, err := bulletin_board.MessageVote(requestUser, data.EncryptedVotes, data.ControllHashes)
+	message, err := bulletin_board.MessageVote(requestUser, data.EncryptedVotes, data.ControlData)
 	if err != nil {
 		return fmt.Errorf("creating vote message: %w", err)
 	}
