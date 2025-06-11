@@ -117,29 +117,17 @@ export fn encrypt(
     const trustee_key_public_list: []const [32]u8 = trustee_key_public_ptr[0..trustee_count];
     defer allocator.free(trustee_key_public_list);
 
-    // This makes sure, that the message has a len of `max_size` and that the
-    // padding is only 0. TODO: This should be done inside of crypto.zig
-    const message_with_buffer = allocator.alloc(u8, max_size) catch return null;
-    @memset(message_with_buffer, 0);
-    @memcpy(message_with_buffer, message);
-
-    const buf = allocator.alloc(u8, crypto.encrypt_full_buf_size(max_size, mixnet_count, trustee_count)) catch return null;
-    defer allocator.free(buf);
-
-    const seed = allocator.alloc(u8, (mixnet_count + 1) * 32) catch return null;
-    defer allocator.free(seed);
-    Env.get_random(seed.ptr, seed.len);
-
-    const cypher = crypto.encrypt_full(
+    const cypher = crypto.encrypt_message(
+        allocator,
         mixnet_key_public_list,
         trustee_key_public_list,
-        message_with_buffer,
-        seed,
-        buf,
+        message,
+        max_size,
     ) catch |err| {
-        consoleLog("Error encrypt_full: {}", .{err});
+        consoleLog("Error encrypt_message: {}", .{err});
         return null;
     };
+    defer allocator.free(cypher);
 
     return successSizedBuffer(cypher);
 }

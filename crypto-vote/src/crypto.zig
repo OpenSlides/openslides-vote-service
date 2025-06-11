@@ -10,6 +10,13 @@ const Ed25519 = std.crypto.sign.Ed25519;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const Sha512 = std.crypto.hash.sha2.Sha512;
 
+const InvalidPublicKeyError = error{InvalidPublicKey};
+const AuthenticationError = std.crypto.errors.AuthenticationError;
+const IdentityElementError = std.crypto.errors.IdentityElementError;
+const OutOfMemoryError = std.mem.Allocator.Error;
+const InvalidCypherError = error{InvalidCypher};
+const WeakPublicKeyError = std.crypto.errors.WeakPublicKeyError;
+
 pub const KeyPairMixnet = struct {
     key_secred: [32]u8,
     key_public: [32]u8,
@@ -38,11 +45,11 @@ pub const KeyPairTrustee = struct {
         }
     }
 
-    fn generateDeterministic(seed: [32]u8) !KeyPairTrustee {
+    fn generateDeterministic(seed: [32]u8) error{InvalidKey}!KeyPairTrustee {
         const scalar = generate_scalar(seed);
         return KeyPairTrustee{
             .key_secred = scalar,
-            .key_public = (try calc_pk(scalar)).toBytes(),
+            .key_public = (calc_pk(scalar) catch return error.InvalidKey).toBytes(),
         };
     }
 
@@ -54,7 +61,7 @@ pub const KeyPairTrustee = struct {
         return az[0..32].*;
     }
 
-    fn calc_pk(scalar: EDCurve.scalar.CompressedScalar) !EDCurve {
+    fn calc_pk(scalar: EDCurve.scalar.CompressedScalar) (IdentityElementError || WeakPublicKeyError)!EDCurve {
         return EDCurve.basePoint.mul(scalar);
     }
 };
@@ -79,7 +86,7 @@ fn encrypt_symmetric(shared_secred: [32]u8, message: []const u8, buf: []u8) void
     }
 }
 
-fn decrypt_symmetric(shared_secred: [32]u8, cypher: []const u8, buf: []u8) !void {
+fn decrypt_symmetric(shared_secred: [32]u8, cypher: []const u8, buf: []u8) AuthenticationError!void {
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secred);
     const nonce = blk: {
         var n: [Aes256Gcm.nonce_length]u8 = undefined;
@@ -103,7 +110,7 @@ fn encrypt_x25519(
     message: []const u8,
     seed: [32]u8,
     buf: []u8,
-) std.crypto.errors.IdentityElementError![]u8 {
+) IdentityElementError![]u8 {
     const encrypted_size = encrypt_bufsize(message.len);
     assert(encrypted_size <= buf.len);
 
@@ -124,7 +131,7 @@ fn decrypt_x25519(
     key_secred: [32]u8,
     cypher: []const u8,
     buf: []u8,
-) ![]u8 {
+) (IdentityElementError || AuthenticationError)![]u8 {
     const decrypted_size = decrypted_bufsize(cypher.len);
     assert(buf.len >= decrypted_size);
 
@@ -152,12 +159,13 @@ test "x25519 encrypt and decrypt" {
 
 fn combine_public_keys(
     key_public_list: []const [32]u8,
-) !EDCurve {
+) InvalidPublicKeyError!EDCurve {
     assert(key_public_list.len > 0);
 
-    var combined = try EDCurve.fromBytes(key_public_list[0]);
+    var combined = EDCurve.fromBytes(key_public_list[0]) catch return error.InvalidPublicKey;
     for (key_public_list[1..]) |other| {
-        combined = combined.add(try EDCurve.fromBytes(other));
+        const other_decoded = EDCurve.fromBytes(other) catch return error.InvalidPublicKey;
+        combined = combined.add(other_decoded);
     }
     return combined;
 }
@@ -179,16 +187,16 @@ fn encrypt_ed25519(
     message: []const u8,
     seed: [32]u8,
     buf: []u8,
-) ![]u8 {
+) (InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
     const encrypted_size = encrypt_bufsize(message.len);
     assert(encrypted_size <= buf.len);
     assert(key_public_list.len > 0);
 
-    const combined_key_public = try combine_public_keys(key_public_list);
+    const combined_key_public = combine_public_keys(key_public_list) catch return error.InvalidPublicKey;
 
     const key_ephemeral = try Ed25519.KeyPair.generateDeterministic(seed);
     const key_ephemeral_secred = extract_scalar(key_ephemeral);
-    const key_ephemeral_public = try EDCurve.fromBytes(key_ephemeral.public_key.toBytes());
+    const key_ephemeral_public = EDCurve.fromBytes(key_ephemeral.public_key.toBytes()) catch unreachable;
     const public_key_bytes = key_ephemeral_public.toBytes();
 
     const shared_secred = (try EDCurve.mul(combined_key_public, key_ephemeral_secred)).toBytes();
@@ -211,14 +219,14 @@ fn decrypt_ed25519(
     key_secred_list: []const EDCurve.scalar.CompressedScalar,
     cypher: []const u8,
     buf: []u8,
-) ![]u8 {
+) (InvalidCypherError || IdentityElementError || WeakPublicKeyError || AuthenticationError)![]u8 {
     const decrypted_size = decrypted_bufsize(cypher.len);
     assert(buf.len >= decrypted_size);
     assert(key_secred_list.len > 0);
 
     const combined_key_secred = combine_key_secred(key_secred_list);
 
-    const key_ephemeral_public = try EDCurve.fromBytes(cypher[0..32].*);
+    const key_ephemeral_public = EDCurve.fromBytes(cypher[0..32].*) catch return error.InvalidCypher;
     const encrypted = cypher[32..];
 
     const shared_secred = (try EDCurve.mul(key_ephemeral_public, combined_key_secred)).toBytes();
@@ -272,7 +280,7 @@ pub fn encrypt_full(
     message: []const u8,
     seed: []const u8,
     buf: []u8,
-) ![]u8 {
+) (InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
     const full = encrypt_full_buf_size(message.len, mixnet_key_public_list.len, trustee_key_public_list.len);
     const buffer_mid = full / 2;
     assert(buf.len >= full);
@@ -336,6 +344,75 @@ test "encrypt_full" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
+pub fn encrypt_message(
+    allocator: std.mem.Allocator,
+    mixnet_key_public_list: []const [32]u8,
+    trustee_key_public_list: []const [32]u8,
+    message: []const u8,
+    size: usize,
+) (OutOfMemoryError || InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
+    const seed = try allocator.alloc(u8, (mixnet_key_public_list.len + 1) * 32);
+    defer allocator.free(seed);
+
+    while (true) {
+        std.crypto.random.bytes(seed);
+        const cypher = encrypt_message_deterministric(
+            allocator,
+            mixnet_key_public_list,
+            trustee_key_public_list,
+            message,
+            size,
+            seed,
+        ) catch |err| {
+            @branchHint(.unlikely);
+            switch (err) {
+                IdentityElementError.IdentityElement => continue,
+                else => |leftover| return leftover,
+            }
+        };
+
+        return cypher;
+    }
+}
+
+pub fn encrypt_message_deterministric(
+    allocator: std.mem.Allocator,
+    mixnet_key_public_list: []const [32]u8,
+    trustee_key_public_list: []const [32]u8,
+    message: []const u8,
+    size: usize,
+    seed: []u8,
+) (OutOfMemoryError || InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
+    const message_with_padding = try allocator.alloc(u8, size);
+    defer allocator.free(message_with_padding);
+    @memset(message_with_padding, 0);
+    @memcpy(message_with_padding, message);
+
+    const buf = try allocator.alloc(u8, encrypt_full_buf_size(
+        size,
+        mixnet_key_public_list.len,
+        trustee_key_public_list.len,
+    ));
+    errdefer allocator.free(buf);
+
+    var cypher = try encrypt_full(
+        mixnet_key_public_list,
+        trustee_key_public_list,
+        message_with_padding,
+        seed,
+        buf,
+    );
+
+    if (!allocator.resize(buf, cypher.len)) {
+        const new_buf = try allocator.alloc(u8, cypher.len);
+        @memcpy(new_buf[0..cypher.len], cypher);
+        allocator.free(buf);
+        cypher = new_buf;
+    }
+
+    return cypher;
+}
+
 pub fn decrypt_mixnet_buf_size(cypher_block_size: usize, cypher_count: usize) usize {
     assert(cypher_count > 0);
     const cypher_size = cypher_block_size / cypher_count;
@@ -347,7 +424,7 @@ pub fn decrypt_mixnet(
     cypher_count: usize,
     cypher_block: []const u8,
     buf: []u8,
-) ![]u8 {
+) (IdentityElementError || AuthenticationError)![]u8 {
     assert(cypher_count > 0);
     assert(cypher_block.len > 0);
     assert(cypher_block.len % cypher_count == 0);
@@ -380,7 +457,7 @@ pub fn decrypt_trustee(
     cypher_count: usize,
     cypher_block: []const u8,
     buf: []u8,
-) ![]u8 {
+) (InvalidCypherError || IdentityElementError || WeakPublicKeyError || AuthenticationError)![]u8 {
     assert(cypher_count > 0);
     assert(cypher_block.len > 0);
     assert(cypher_block.len % cypher_count == 0);
