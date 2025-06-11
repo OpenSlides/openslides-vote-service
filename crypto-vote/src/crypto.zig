@@ -101,12 +101,13 @@ fn encrypt_bufsize(message_len: usize) usize {
 fn encrypt_x25519(
     key_public: [32]u8,
     message: []const u8,
+    seed: [32]u8,
     buf: []u8,
 ) std.crypto.errors.IdentityElementError![]u8 {
     const encrypted_size = encrypt_bufsize(message.len);
     assert(encrypted_size <= buf.len);
 
-    const key_ephemeral = X25519.KeyPair.generate();
+    const key_ephemeral = try X25519.KeyPair.generateDeterministic(seed);
     const shared_secred = try X25519.scalarmult(key_ephemeral.secret_key, key_public);
 
     encrypt_symmetric(shared_secred, message, buf[32..]);
@@ -139,9 +140,10 @@ fn decrypt_x25519(
 test "x25519 encrypt and decrypt" {
     const key = KeyPairMixnet.generate();
     const msg = "my message to be encrypted";
+    const seed = std.mem.zeroes([32]u8);
 
     var buf_encrypt: [encrypt_bufsize(msg.len)]u8 = undefined;
-    const encrypted_message = try encrypt_x25519(key.key_public, msg, &buf_encrypt);
+    const encrypted_message = try encrypt_x25519(key.key_public, msg, seed, &buf_encrypt);
 
     var buf_decrypt: [msg.len]u8 = undefined;
     const decrypted = try decrypt_x25519(key.key_secred, encrypted_message, &buf_decrypt);
@@ -175,6 +177,7 @@ fn combine_key_secred(
 fn encrypt_ed25519(
     key_public_list: []const [32]u8,
     message: []const u8,
+    seed: [32]u8,
     buf: []u8,
 ) ![]u8 {
     const encrypted_size = encrypt_bufsize(message.len);
@@ -183,7 +186,7 @@ fn encrypt_ed25519(
 
     const combined_key_public = try combine_public_keys(key_public_list);
 
-    const key_ephemeral = Ed25519.KeyPair.generate();
+    const key_ephemeral = try Ed25519.KeyPair.generateDeterministic(seed);
     const key_ephemeral_secred = extract_scalar(key_ephemeral);
     const key_ephemeral_public = try EDCurve.fromBytes(key_ephemeral.public_key.toBytes());
     const public_key_bytes = key_ephemeral_public.toBytes();
@@ -228,6 +231,7 @@ test "encrypt and decrypt with ed25519" {
     const key2 = KeyPairTrustee.generate();
     const key3 = KeyPairTrustee.generate();
     const msg = "my message to be encrypted";
+    const seed = std.mem.zeroes([32]u8);
 
     const key_public_list = &[_][32]u8{
         key1.key_public,
@@ -239,6 +243,7 @@ test "encrypt and decrypt with ed25519" {
     const encrypted_message = try encrypt_ed25519(
         key_public_list,
         msg,
+        seed,
         &buf_encrypt,
     );
 
@@ -265,21 +270,24 @@ pub fn encrypt_full(
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
     message: []const u8,
+    seed: []const u8,
     buf: []u8,
 ) ![]u8 {
     const full = encrypt_full_buf_size(message.len, mixnet_key_public_list.len, trustee_key_public_list.len);
     const buffer_mid = full / 2;
     assert(buf.len >= full);
+    assert(seed.len == (mixnet_key_public_list.len + 1) * 32);
 
-    var cypher = try encrypt_ed25519(trustee_key_public_list, message, buf[buffer_mid..]);
+    var cypher = try encrypt_ed25519(trustee_key_public_list, message, seed[0..32].*, buf[buffer_mid..]);
     @memcpy(buf[0..cypher.len], buf[buffer_mid..][0..cypher.len]);
     cypher = buf[0..cypher.len];
 
     var i = mixnet_key_public_list.len;
     while (i > 0) {
+        const mixnet_seed = seed[i * 32 ..][0..32];
         i -= 1;
         const key_public = mixnet_key_public_list[i];
-        cypher = try encrypt_x25519(key_public, cypher, buf[buffer_mid..]);
+        cypher = try encrypt_x25519(key_public, cypher, mixnet_seed.*, buf[buffer_mid..]);
         @memcpy(buf[0..cypher.len], buf[buffer_mid..][0..cypher.len]);
         cypher = buf[0..cypher.len];
     }
@@ -295,6 +303,7 @@ test "encrypt_full" {
     const mixnet_key2 = KeyPairMixnet.generate();
     const mixnet_key3 = KeyPairMixnet.generate();
     const msg = "my message to be encrypted";
+    const seed = std.mem.zeroes([128]u8);
 
     const trustee_sk_list = &[_][32]u8{
         trustee_key1.key_secred,
@@ -315,7 +324,7 @@ test "encrypt_full" {
     };
 
     var buf: [encrypt_full_buf_size(msg.len, mixnet_pk_list.len, trustee_pk_list.len)]u8 = undefined;
-    var cypher = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg, &buf);
+    var cypher = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg, &seed, &buf);
 
     var decrypt_buf: [1024]u8 = undefined;
     cypher = try decrypt_x25519(mixnet_key1.key_secred, cypher, &decrypt_buf);
@@ -401,6 +410,8 @@ test "decrypt many messages" {
     const msg1 = "message1";
     const msg2 = "message2";
     const msg_count = 2;
+    const seed1 = [_]u8{0} ** 128;
+    const seed2 = [_]u8{1} ** 128;
     assert(msg1.len == msg2.len); // All messages need to have the same len
 
     const trustee_sk_list = &[_][32]u8{
@@ -424,8 +435,8 @@ test "decrypt many messages" {
     const cypher_size = comptime encrypt_full_buf_size(msg1.len, mixnet_pk_list.len, trustee_pk_list.len);
     var buf_cypher1: [cypher_size]u8 = undefined;
     var buf_cypher2: [cypher_size]u8 = undefined;
-    const cypher1 = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg1, &buf_cypher1);
-    const cypher2 = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg2, &buf_cypher2);
+    const cypher1 = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg1, &seed1, &buf_cypher1);
+    const cypher2 = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg2, &seed2, &buf_cypher2);
 
     // cypher1.len is probably pyher_size/2, so it would be enough to use
     // cypher_size here. But to be sure and safe for future updates, we take
