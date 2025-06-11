@@ -72,10 +72,9 @@ export fn gen_trustee_key_pair() ?[*]const u8 {
 // This function is necessary, to split the result of `encrypt`.
 export fn cypher_size(
     mixnet_count: u32,
-    trustee_count: u32,
     max_size: u32,
 ) u32 {
-    return crypto.calc_cypher_size(max_size, mixnet_count, trustee_count);
+    return crypto.calc_cypher_size(max_size, mixnet_count);
 }
 
 // encrypt encryptes a message for the mixnet and trustees.

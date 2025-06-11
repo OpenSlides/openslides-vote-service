@@ -140,12 +140,12 @@ async function loadCryptoVote(wasmFile) {
     if (nullIndex !== -1) {
       array = array.slice(0, nullIndex);
     }
-    
+
     // If the array is empty or only contains null bytes, return empty string
     if (array.length === 0) {
       return "";
     }
-    
+
     return new TextDecoder().decode(array);
   }
 
@@ -239,18 +239,18 @@ async function loadCryptoVote(wasmFile) {
 
         // Read the result (sized buffer)
         const encryptedData = readSizedBuffer(resultPtr);
-        
+
         // Get cypher size to split the result
-        const cypherSize = wasm_cypher_size(mixnetKeys.count, trusteeKeys.count, maxSize);
-        
+        const cypherSize = wasm_cypher_size(mixnetKeys.count, maxSize);
+
         // Split the data into cyphers and control data
         const cypher1 = encryptedData.slice(0, cypherSize);
         const cypher2 = encryptedData.slice(cypherSize, cypherSize * 2);
         const controlData = encryptedData.slice(cypherSize * 2);
-        
+
         return {
           cyphers: [cypher1, cypher2],
-          controlData: controlData
+          controlData: controlData,
         };
       } catch (error) {
         console.error("Error during encryption:", error);

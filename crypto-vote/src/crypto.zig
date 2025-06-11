@@ -286,12 +286,12 @@ test "encrypt and decrypt with ed25519" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
-pub fn calc_cypher_size(message_size: usize, mixnet_count: usize, trustee_count: usize) usize {
-    return (message_size + (32 + 16) * (mixnet_count + trustee_count));
+pub fn calc_cypher_size(message_size: usize, mixnet_count: usize) usize {
+    return (message_size + (32 + 16) * (mixnet_count + 1));
 }
 
-fn encrypt_full_buf_size(message_size: usize, mixnet_count: usize, trustee_count: usize) usize {
-    return 2 * calc_cypher_size(message_size, mixnet_count, trustee_count);
+fn encrypt_full_buf_size(message_size: usize, mixnet_count: usize) usize {
+    return 2 * calc_cypher_size(message_size, mixnet_count);
 }
 
 fn encrypt_full(
@@ -301,7 +301,7 @@ fn encrypt_full(
     seed: []const u8,
     buf: []u8,
 ) (InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
-    const full = encrypt_full_buf_size(message.len, mixnet_key_public_list.len, trustee_key_public_list.len);
+    const full = encrypt_full_buf_size(message.len, mixnet_key_public_list.len);
     const buffer_mid = full / 2;
     assert(buf.len >= full);
     assert(seed.len == (mixnet_key_public_list.len + 1) * 32);
@@ -351,7 +351,7 @@ test "encrypt_full" {
         mixnet_key3.key_public,
     };
 
-    var buf: [encrypt_full_buf_size(msg.len, mixnet_pk_list.len, trustee_pk_list.len)]u8 = undefined;
+    var buf: [encrypt_full_buf_size(msg.len, mixnet_pk_list.len)]u8 = undefined;
     var cypher = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg, &seed, &buf);
 
     var decrypt_buf: [1024]u8 = undefined;
@@ -416,7 +416,6 @@ pub fn encrypt_fixed_size_deterministic(
     const buf = try allocator.alloc(u8, encrypt_full_buf_size(
         size,
         mixnet_key_public_list.len,
-        trustee_key_public_list.len,
     ));
     errdefer allocator.free(buf);
 
@@ -671,7 +670,7 @@ test "decrypt many messages" {
         mixnet_key3.key_public,
     };
 
-    const cypher_size = comptime encrypt_full_buf_size(msg1.len, mixnet_pk_list.len, trustee_pk_list.len);
+    const cypher_size = comptime encrypt_full_buf_size(msg1.len, mixnet_pk_list.len);
     var buf_cypher1: [cypher_size]u8 = undefined;
     var buf_cypher2: [cypher_size]u8 = undefined;
     const cypher1 = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg1, &seed1, &buf_cypher1);

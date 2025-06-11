@@ -435,7 +435,7 @@
                             const decryptedBlock = wasmModule.decrypt_mixnet(
                                 mixnetKeys[mixnetIndex].secretKey,
                                 currentEncryptedBlock,
-                                messageCount, // Number of messages in the block
+                                encryptedMessages.length, // Number of messages in the block
                             );
 
                             const mixnetDecryptEndTime = performance.now();
@@ -473,7 +473,7 @@
                             wasmModule.decrypt_trustee(
                                 trusteeKeys.map((k) => k.secretKey),
                                 currentEncryptedBlock, // Pass the entire block from the last mixnet stage
-                                messageCount,
+                                encryptedMessages.length,
                             );
 
                         const trusteeDecryptEndTime = performance.now();

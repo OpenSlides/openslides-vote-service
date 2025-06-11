@@ -409,7 +409,6 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 	// Get cypher size to split the result
 	cypherSizeResults, err := cv.cypherSizeFunc.Call(cv.ctx,
 		uint64(len(mixnetPublicKeys)),
-		uint64(len(trusteePublicKeys)),
 		uint64(maxSize),
 	)
 	if err != nil {
@@ -427,7 +426,7 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 	cypher2 := make([]byte, cypherSize)
 	copy(cypher1, encryptedData[0:cypherSize])
 	copy(cypher2, encryptedData[cypherSize:cypherSize*2])
-	
+
 	controlData := make([]byte, len(encryptedData)-int(cypherSize*2))
 	copy(controlData, encryptedData[cypherSize*2:])
 
@@ -532,7 +531,7 @@ func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cy
 		start := int(i) * messageSize
 		end := start + messageSize
 		messageBytes := truncateAtNull(decryptedData[start:end])
-		
+
 		// Convert to string, handling empty/null-only data
 		if len(messageBytes) == 0 {
 			messages[i] = ""
