@@ -411,7 +411,7 @@ pub fn encrypt_fixed_size_deterministic(
     const message_with_padding = try allocator.alloc(u8, size);
     defer allocator.free(message_with_padding);
     @memset(message_with_padding, 0);
-    @memcpy(message_with_padding, message);
+    @memcpy(message_with_padding[0..message.len], message);
 
     const buf = try allocator.alloc(u8, encrypt_full_buf_size(
         size,
@@ -477,14 +477,102 @@ pub fn encrypt_message(
     @memset(zeros, 0);
 
     const cypher_fake = try encrypt_fixed_size(allocator, mixnet_key_public_list, trustee_key_public_list, zeros, size);
+    defer allocator.free(cypher_fake.seed);
 
-    const buf = try allocator.alloc(u8, encrypt_bufsize(size));
+    const buf = try allocator.alloc(u8, encrypt_bufsize(cypher_fake.seed.len));
     const control_data = try encrypt_ed25519(trustee_key_public_list, cypher_fake.seed, buf);
 
     return if (std.Random.boolean(std.crypto.random))
         .{ .cyphers = [2][]u8{ cypher_real.cypher, cypher_fake.cypher }, .control_data = control_data }
     else
         .{ .cyphers = [2][]u8{ cypher_fake.cypher, cypher_real.cypher }, .control_data = control_data };
+}
+
+test "encrypt_message" {
+    const allocator = std.testing.allocator;
+    const trustee_key1 = KeyPairTrustee.generate();
+    const trustee_key2 = KeyPairTrustee.generate();
+    const trustee_key3 = KeyPairTrustee.generate();
+    const mixnet_key1 = KeyPairMixnet.generate();
+    const mixnet_key2 = KeyPairMixnet.generate();
+    const mixnet_key3 = KeyPairMixnet.generate();
+    const msg = "my message to be encrypted";
+    const max_size = msg.len + 10;
+
+    const trustee_sk_list = &[_][32]u8{
+        trustee_key1.key_secred,
+        trustee_key2.key_secred,
+        trustee_key3.key_secred,
+    };
+
+    const trustee_pk_list = &[_][32]u8{
+        trustee_key1.key_public,
+        trustee_key2.key_public,
+        trustee_key3.key_public,
+    };
+
+    const mixnet_pk_list = &[_][32]u8{
+        mixnet_key1.key_public,
+        mixnet_key2.key_public,
+        mixnet_key3.key_public,
+    };
+
+    const result = try encrypt_message(
+        allocator,
+        mixnet_pk_list,
+        trustee_pk_list,
+        msg,
+        max_size,
+    );
+    defer result.free(allocator);
+
+    const cypher_block = try std.mem.concat(allocator, u8, &result.cyphers);
+    defer allocator.free(cypher_block);
+
+    var buf_decrypt1: [1024]u8 = undefined;
+    const decrypted_from_mixnet1 = try decrypt_mixnet(
+        mixnet_key1.key_secred,
+        2,
+        cypher_block,
+        &buf_decrypt1,
+    );
+
+    var buf_decrypt2: [1024]u8 = undefined;
+    const decrypted_from_mixnet2 = try decrypt_mixnet(
+        mixnet_key2.key_secred,
+        2,
+        decrypted_from_mixnet1,
+        &buf_decrypt2,
+    );
+
+    var buf_decrypt3: [1024]u8 = undefined;
+    const decrypted_from_mixnet3 = try decrypt_mixnet(
+        mixnet_key3.key_secred,
+        2,
+        decrypted_from_mixnet2,
+        &buf_decrypt3,
+    );
+
+    var buf_decrypt4: [1024]u8 = undefined;
+    const decryptd_from_trustees = try decrypt_trustee(
+        trustee_sk_list,
+        2,
+        decrypted_from_mixnet3,
+        &buf_decrypt4,
+    );
+
+    const decrypted1 = std.mem.trimRight(u8, decryptd_from_trustees[0..max_size], "\x00");
+    const decrypted2 = std.mem.trimRight(u8, decryptd_from_trustees[max_size..][0..max_size], "\x00");
+
+    if (decrypted1.len == 0) {
+        try std.testing.expectEqualDeep("", decrypted1);
+        try std.testing.expectEqualDeep(msg, decrypted2);
+    } else if (decrypted2.len == 0) {
+        try std.testing.expectEqualDeep("", decrypted2);
+        try std.testing.expectEqualDeep(msg, decrypted1);
+    } else {
+        try std.testing.expect(false);
+    }
 }
 
 pub fn decrypt_mixnet_buf_size(cypher_block_size: usize, cypher_count: usize) usize {
