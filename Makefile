@@ -1,9 +1,21 @@
+SERVICE=vote 
+
 build-dev:
-	docker build . --target development --tag openslides-vote-dev
+	bash ../dev/scripts/makefile/build-service.sh $(SERVICE) dev
+
+build-prod:
+	bash ../dev/scripts/makefile/build-service.sh $(SERVICE) prod
+
+build-test:
+	bash ../dev/scripts/makefile/build-service.sh $(SERVICE) tests
 
 run-tests:
-	docker build . --target testing --tag openslides-vote-test
-	docker run openslides-vote-test
+	bash dev/run-tests.sh
+
+run-test:
+	make build-aio context=tests submodule=vote
+	docker run openslides-vote-tests
+#   docker build . --target testing --tag openslides-vote-test
 
 system-test:
 	VOTE_SYSTEM_TEST=1 go test ./system_test/
