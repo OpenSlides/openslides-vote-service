@@ -528,29 +528,29 @@ test "encrypt_message" {
     const cypher_block = try std.mem.concat(allocator, u8, &result.cyphers);
     defer allocator.free(cypher_block);
 
-    var buf_decrypt1: [1024]u8 = undefined;
     const decrypted_from_mixnet1 = try decrypt_mixnet(
+        allocator,
         mixnet_key1.key_secred,
         2,
         cypher_block,
-        &buf_decrypt1,
     );
+    defer allocator.free(decrypted_from_mixnet1);
 
-    var buf_decrypt2: [1024]u8 = undefined;
     const decrypted_from_mixnet2 = try decrypt_mixnet(
+        allocator,
         mixnet_key2.key_secred,
         2,
         decrypted_from_mixnet1,
-        &buf_decrypt2,
     );
+    defer allocator.free(decrypted_from_mixnet2);
 
-    var buf_decrypt3: [1024]u8 = undefined;
     const decrypted_from_mixnet3 = try decrypt_mixnet(
+        allocator,
         mixnet_key3.key_secred,
         2,
         decrypted_from_mixnet2,
-        &buf_decrypt3,
     );
+    defer allocator.free(decrypted_from_mixnet3);
 
     var buf_decrypt4: [1024]u8 = undefined;
     const decryptd_from_trustees = try decrypt_trustee(
@@ -574,37 +574,39 @@ test "encrypt_message" {
     }
 }
 
-pub fn decrypt_mixnet_buf_size(cypher_block_size: usize, cypher_count: usize) usize {
-    assert(cypher_count > 0);
-    const cypher_size = cypher_block_size / cypher_count;
-    return decrypted_bufsize(cypher_size) * cypher_count;
-}
-
 pub fn decrypt_mixnet(
+    allocator: std.mem.Allocator,
     key_secred: [32]u8,
     cypher_count: usize,
     cypher_block: []const u8,
-    buf: []u8,
-) (IdentityElementError || AuthenticationError)![]u8 {
+) (IdentityElementError || AuthenticationError || OutOfMemoryError)![]u8 {
     assert(cypher_count > 0);
     assert(cypher_block.len > 0);
     assert(cypher_block.len % cypher_count == 0);
     const cypher_size = cypher_block.len / cypher_count;
-    assert(buf.len >= decrypt_mixnet_buf_size(cypher_size, cypher_count));
 
-    const decrypted_size = decrypted_bufsize(cypher_size);
+    const decrypted_message_size = decrypted_bufsize(cypher_size);
+    const decrypted_list = try allocator.alloc([]u8, cypher_count);
+    defer allocator.free(decrypted_list);
+    const decrypted_buf = try allocator.alloc(u8, decrypted_message_size * cypher_count);
+    defer allocator.free(decrypted_buf);
 
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
-        _ = try decrypt_x25519(key_secred, cypher, buf[i * decrypted_size ..]);
+        const buf = decrypted_buf[i * decrypted_message_size ..][0..decrypted_message_size];
+
+        // TODO: Handle error by ignoring message. It probalby has to add a
+        // 0-byte placeholder to keep the amount of cypher_blount.
+        _ = try decrypt_x25519(key_secred, cypher, buf);
+        decrypted_list[i] = buf;
     }
 
-    // TODO: Mix messages Each message has to be binary ordered. For that, the
-    // buf has to be big enough to fit one other message. Then the messages can
-    // be copied to get in the right order. Maybe it is possible to write them
-    // directly at there place. If a memory swap is possible, then buf does not
-    // need to be bigger.
-    return buf[0 .. cypher_count * decrypted_size];
+    std.mem.sort([]u8, decrypted_list, {}, compareBytes);
+    return std.mem.concat(allocator, u8, decrypted_list);
+}
+
+fn compareBytes(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
 }
 
 pub fn decrypt_trustee_buf_size(cypher_block_size: usize, cypher_count: usize) usize {
@@ -639,6 +641,7 @@ pub fn decrypt_trustee(
 }
 
 test "decrypt many messages" {
+    const allocator = std.testing.allocator;
     const trustee_key1 = KeyPairTrustee.generate();
     const trustee_key2 = KeyPairTrustee.generate();
     const trustee_key3 = KeyPairTrustee.generate();
@@ -683,29 +686,29 @@ test "decrypt many messages" {
     @memcpy(cypher_block[0..cypher1.len], cypher1);
     @memcpy(cypher_block[cypher1.len..][0..cypher2.len], cypher2);
 
-    var buf_decrypt1: [1024]u8 = undefined;
     const decrypted_from_mixnet1 = try decrypt_mixnet(
+        allocator,
         mixnet_key1.key_secred,
         msg_count,
         cypher_block[0 .. cypher1.len * 2],
-        &buf_decrypt1,
     );
+    defer allocator.free(decrypted_from_mixnet1);
 
-    var buf_decrypt2: [1024]u8 = undefined;
     const decrypted_from_mixnet2 = try decrypt_mixnet(
+        allocator,
         mixnet_key2.key_secred,
         msg_count,
         decrypted_from_mixnet1,
-        &buf_decrypt2,
     );
+    defer allocator.free(decrypted_from_mixnet2);
 
-    var buf_decrypt3: [1024]u8 = undefined;
     const decrypted_from_mixnet3 = try decrypt_mixnet(
+        allocator,
         mixnet_key3.key_secred,
         msg_count,
         decrypted_from_mixnet2,
-        &buf_decrypt3,
     );
+    defer allocator.free(decrypted_from_mixnet3);
 
     var buf_decrypt4: [1024]u8 = undefined;
     const decryptd_from_trustees = try decrypt_trustee(

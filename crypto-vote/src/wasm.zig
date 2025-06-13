@@ -190,22 +190,16 @@ export fn decrypt_mixnet(
     defer allocator.free(key_secred);
     defer allocator.free(cypher_block_ptr[0..cypher_block_size]);
 
-    const buf_size = crypto.decrypt_mixnet_buf_size(cypher_block_size, cypher_count);
-    const buf = allocator.alloc(u8, buf_size) catch |err| {
-        consoleLog("allocate buffer: {}", .{err});
-        return null;
-    };
-    defer allocator.free(buf);
-
     const decrypted = crypto.decrypt_mixnet(
+        allocator,
         key_secred.*,
         cypher_count,
         cypher_block_ptr[0..cypher_block_size],
-        buf,
     ) catch |err| {
         consoleLog("decrypt data: {}", .{err});
         return null;
     };
+    defer allocator.free(decrypted);
 
     return successSizedBuffer(decrypted);
 }
