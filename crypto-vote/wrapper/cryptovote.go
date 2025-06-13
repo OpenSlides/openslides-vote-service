@@ -39,6 +39,7 @@ type CryptoVote struct {
 	decryptMixnetFunc  api.Function
 	decryptTrusteeFunc api.Function
 	cypherSizeFunc     api.Function
+	validateFunc       api.Function
 
 	memory api.Memory
 }
@@ -112,6 +113,11 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 		return nil, fmt.Errorf("cypher_size function not found in WASM module")
 	}
 
+	validateFunc := module.ExportedFunction("validate")
+	if validateFunc == nil {
+		return nil, fmt.Errorf("validate function not found in WASM module")
+	}
+
 	// Get memory export
 	memory := module.ExportedMemory("memory")
 	if memory == nil {
@@ -130,6 +136,7 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 		decryptMixnetFunc:  decryptMixnetFunc,
 		decryptTrusteeFunc: decryptTrusteeFunc,
 		cypherSizeFunc:     cypherSizeFunc,
+		validateFunc:       validateFunc,
 		memory:             memory,
 	}, nil
 }
@@ -548,4 +555,95 @@ func truncateAtNull(data []byte) []byte {
 		return data[:index]
 	}
 	return data
+}
+
+// Validate validates encrypted messages using the validate function from WASM
+func (cv *CryptoVote) Validate(userDataBlock []byte, mixnetDataList [][]byte, mixnetPublicKeys []string, trusteePublicKeys []string, trusteeSecretKeys []string, maxSize uint32, userCount uint32) (int32, error) {
+	// Copy user data block to WASM
+	userDataPtr, userDataSize, err := cv.copyToWasm(userDataBlock)
+	if err != nil {
+		return 0, fmt.Errorf("failed to copy user data block to WASM: %w", err)
+	}
+
+	// Prepare mixnet size list
+	mixnetSizeList := make([]byte, len(mixnetDataList)*4)
+	for i, data := range mixnetDataList {
+		binary.LittleEndian.PutUint32(mixnetSizeList[i*4:(i+1)*4], uint32(len(data)))
+	}
+	mixnetSizePtr, mixnetSizeLen, err := cv.copyToWasm(mixnetSizeList)
+	if err != nil {
+		cv.free(userDataPtr, userDataSize)
+		return 0, fmt.Errorf("failed to copy mixnet size list to WASM: %w", err)
+	}
+
+	// Concatenate mixnet data blocks
+	totalMixnetSize := 0
+	for _, data := range mixnetDataList {
+		totalMixnetSize += len(data)
+	}
+	mixnetDataBlock := make([]byte, totalMixnetSize)
+	offset := 0
+	for _, data := range mixnetDataList {
+		copy(mixnetDataBlock[offset:], data)
+		offset += len(data)
+	}
+	mixnetDataPtr, mixnetDataSize, err := cv.copyToWasm(mixnetDataBlock)
+	if err != nil {
+		cv.free(userDataPtr, userDataSize)
+		cv.free(mixnetSizePtr, mixnetSizeLen)
+		return 0, fmt.Errorf("failed to copy mixnet data block to WASM: %w", err)
+	}
+
+	// Prepare mixnet public keys
+	mixnetKeysPtr, mixnetCount, err := cv.copyKeysToWasm(mixnetPublicKeys)
+	if err != nil {
+		cv.free(userDataPtr, userDataSize)
+		cv.free(mixnetSizePtr, mixnetSizeLen)
+		cv.free(mixnetDataPtr, mixnetDataSize)
+		return 0, fmt.Errorf("failed to copy mixnet public keys to WASM: %w", err)
+	}
+
+	// Prepare trustee public keys
+	trusteePublicKeysPtr, trusteePublicCount, err := cv.copyKeysToWasm(trusteePublicKeys)
+	if err != nil {
+		cv.free(userDataPtr, userDataSize)
+		cv.free(mixnetSizePtr, mixnetSizeLen)
+		cv.free(mixnetDataPtr, mixnetDataSize)
+		cv.free(mixnetKeysPtr, mixnetCount*32)
+		return 0, fmt.Errorf("failed to copy trustee public keys to WASM: %w", err)
+	}
+
+	// Prepare trustee secret keys
+	trusteeSecretKeysPtr, trusteeSecretCount, err := cv.copyKeysToWasm(trusteeSecretKeys)
+	if err != nil {
+		cv.free(userDataPtr, userDataSize)
+		cv.free(mixnetSizePtr, mixnetSizeLen)
+		cv.free(mixnetDataPtr, mixnetDataSize)
+		cv.free(mixnetKeysPtr, mixnetCount*32)
+		cv.free(trusteePublicKeysPtr, trusteePublicCount*32)
+		return 0, fmt.Errorf("failed to copy trustee secret keys to WASM: %w", err)
+	}
+
+	// Call WASM validate function
+	results, err := cv.validateFunc.Call(cv.ctx,
+		uint64(userCount),
+		uint64(trusteeSecretCount),
+		uint64(userDataPtr),
+		uint64(userDataSize),
+		uint64(maxSize),
+		uint64(mixnetSizePtr),
+		uint64(mixnetSizeLen),
+		uint64(mixnetDataPtr),
+		uint64(mixnetDataSize),
+		uint64(mixnetKeysPtr),
+		uint64(trusteePublicKeysPtr),
+		uint64(trusteeSecretKeysPtr),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to call validate: %w", err)
+	}
+
+	// The WASM function deallocates the inputs
+	result := int32(results[0])
+	return result, nil
 }

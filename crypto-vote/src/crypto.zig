@@ -826,7 +826,12 @@ pub fn validate(
         const cypher = user_data_list[i * user_data_size ..][0..user_data_size];
         const user_data = EncryptResult.fromBytes(cypher, mixnet_data_list.len, max_size);
 
-        const seed = try decrypt_ed25519(trustee_key_secred_list, user_data.control_data, seed_decrypt_buf);
+        const seed = try decrypt_ed25519(
+            trustee_key_secred_list,
+            user_data.control_data,
+            seed_decrypt_buf,
+        );
+
         const fake_steps = try encrypt_fake_steps(
             allocator,
             mixnet_key_public_list,

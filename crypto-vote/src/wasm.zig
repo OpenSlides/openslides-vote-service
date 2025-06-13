@@ -269,14 +269,14 @@ export fn validate(
     mixnet_key_public_ptr: [*]const [32]u8,
     trustee_key_public_ptr: [*]const [32]u8,
     trustee_key_secred_ptr: [*]const [32]u8,
-) ?i32 {
+) i32 {
     const user_data_block = user_data_block_ptr[0..user_data_block_size];
     defer allocator.free(user_data_block);
     const mixnet_data_block = mixnet_data_block_ptr[0..mixnet_data_block_size];
     defer allocator.free(mixnet_data_block);
     const mixnet_size_list = mixnet_size_ptr[0..mixnet_size_len];
     defer allocator.free(mixnet_size_list);
-    const mixnet_data_list = try convert_mixnet_data(mixnet_size_list, mixnet_data_block);
+    const mixnet_data_list = convert_mixnet_data(mixnet_size_list, mixnet_data_block) catch return -1000;
     defer allocator.free(mixnet_data_list);
     const mixnet_key_public_list = mixnet_key_public_ptr[0..mixnet_data_list.len];
     defer allocator.free(mixnet_key_public_list);
@@ -285,7 +285,7 @@ export fn validate(
     const trustee_key_secred_list = trustee_key_secred_ptr[0..trustee_count];
     defer allocator.free(trustee_key_secred_ptr[0..trustee_count]);
 
-    const result = try crypto.validate(
+    const result = crypto.validate(
         allocator,
         user_data_block,
         mixnet_data_list,
@@ -294,24 +294,27 @@ export fn validate(
         trustee_key_secred_list,
         max_size,
         user_count,
-    );
+    ) catch |err| {
+        consoleLog("Error validate: {}", .{err});
+        return -1000;
+    };
 
     return result;
 }
 
 fn convert_mixnet_data(
-    mixnet_size_list: []u8,
-    mixnet_data_block: []u8,
-) ![][]u8 {
+    mixnet_size_list: []const u8,
+    mixnet_data_block: []const u8,
+) ![][]const u8 {
     const mixnet_count = mixnet_size_list.len / 4;
     var u32_slice = try allocator.alloc(u32, mixnet_count);
     defer allocator.free(u32_slice);
 
     for (0..mixnet_count) |i| {
-        u32_slice[i] = std.mem.readInt(u32, mixnet_size_list[i * 4 .. (i + 1) * 4], .little);
+        u32_slice[i] = std.mem.readInt(u32, mixnet_size_list[i * 4 ..][0..4], .little);
     }
 
-    const mixnet_data_list = try allocator.alloc([]u8, mixnet_count);
+    const mixnet_data_list = try allocator.alloc([]const u8, mixnet_count);
     errdefer allocator.free(mixnet_data_list);
 
     var offset: u32 = 0;

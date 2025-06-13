@@ -39,6 +39,7 @@ async function loadCryptoVote(wasmFile) {
     decrypt_mixnet: wasm_decrypt_mixnet,
     decrypt_trustee: wasm_decrypt_trustee,
     cypher_size: wasm_cypher_size,
+    validate: wasm_validate,
     memory,
   } = instance.exports;
 
@@ -340,6 +341,101 @@ async function loadCryptoVote(wasmFile) {
       } catch (error) {
         console.error("Error during trustee decryption:", error);
         throw new Error("Trustee decryption failed: " + error.message);
+      }
+    },
+
+    validate: (
+      encryptResultList,
+      mixnetDataList,
+      mixnetPublicKeyList,
+      trusteePublicKeyList,
+      trusteeSecretKeyList,
+      maxSize,
+      userCount,
+    ) => {
+      try {
+        // Convert encryptResultList to userDataBlock by concatenating all entries
+        // For each encryptionResult, concatenate the cyphers and the control_data
+        let totalSize = 0;
+        for (const encryptResult of encryptResultList) {
+          totalSize += encryptResult.cyphers[0].length;
+          totalSize += encryptResult.cyphers[1].length;
+          totalSize += encryptResult.controlData.length;
+        }
+
+        const userDataBlock = new Uint8Array(totalSize);
+        let userOffset = 0;
+
+        for (const encryptResult of encryptResultList) {
+          // Copy first cypher
+          userDataBlock.set(encryptResult.cyphers[0], userOffset);
+          userOffset += encryptResult.cyphers[0].length;
+
+          // Copy second cypher
+          userDataBlock.set(encryptResult.cyphers[1], userOffset);
+          userOffset += encryptResult.cyphers[1].length;
+
+          // Copy control data
+          userDataBlock.set(encryptResult.controlData, userOffset);
+          userOffset += encryptResult.controlData.length;
+        }
+
+        // Copy user data block to WASM
+        const userDataPtr = copyToWasm(userDataBlock);
+
+        // Prepare mixnet size list
+        const mixnetSizeList = new Uint8Array(mixnetDataList.length * 4);
+        for (let i = 0; i < mixnetDataList.length; i++) {
+          const size = mixnetDataList[i].length;
+          const view = new DataView(mixnetSizeList.buffer);
+          view.setUint32(i * 4, size, true); // Little endian
+        }
+        const mixnetSizePtr = copyToWasm(mixnetSizeList);
+
+        // Concatenate mixnet data blocks
+        const totalMixnetSize = mixnetDataList.reduce(
+          (sum, data) => sum + data.length,
+          0,
+        );
+        const mixnetDataBlock = new Uint8Array(totalMixnetSize);
+        let mixnetOffset = 0;
+        for (const data of mixnetDataList) {
+          mixnetDataBlock.set(data, mixnetOffset);
+          mixnetOffset += data.length;
+        }
+        const mixnetDataPtr = copyToWasm(mixnetDataBlock);
+
+        // Prepare mixnet public keys
+        const mixnetKeys = copyKeysToWasm(mixnetPublicKeyList);
+
+        // Prepare trustee public keys
+        const trusteePublicKeys = copyKeysToWasm(trusteePublicKeyList);
+
+        // Prepare trustee secret keys
+        const trusteeSecretKeys = copyKeysToWasm(trusteeSecretKeyList);
+
+        // Call WASM validate function
+        const result = wasm_validate(
+          userCount,
+          trusteeSecretKeyList.length,
+          userDataPtr.ptr,
+          userDataPtr.size,
+          maxSize,
+          mixnetSizePtr.ptr,
+          mixnetSizePtr.size,
+          mixnetDataPtr.ptr,
+          mixnetDataPtr.size,
+          mixnetKeys.ptr,
+          trusteePublicKeys.ptr,
+          trusteeSecretKeys.ptr,
+        );
+
+        // The WASM function deallocates the inputs
+
+        return result;
+      } catch (error) {
+        console.error("Error during validation:", error);
+        throw new Error("Validation failed: " + error.message);
       }
     },
   };

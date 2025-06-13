@@ -349,6 +349,8 @@
                     // Collect all original and encrypted messages
                     const originalMessages = [];
                     const encryptedMessages = [];
+                    const allEncryptResult = [];
+                    const allMixnetResult = [];
 
                     // Measure encryption time
                     const encryptStartTime = performance.now();
@@ -377,6 +379,10 @@
                             // Add both cyphers to the encrypted messages list
                             encryptedMessages.push(encryptResult.cyphers[0]);
                             encryptedMessages.push(encryptResult.cyphers[1]);
+
+                            // Store cyphers and control data for validation
+                            allEncryptResult.push(encryptResult);
+
                             await yieldToUI(); // Yield after encryption
                         } catch (error) {
                             log(
@@ -446,6 +452,8 @@
                             log(
                                 `Stufe ${i + 1}: ${messageCount} Nachrichten erfolgreich als Block entschlüsselt in ${mixnetDecryptTime.toFixed(2)}ms (durchschnittlich ${(mixnetDecryptTime / messageCount).toFixed(2)}ms pro Nachricht)!`,
                             );
+
+                            allMixnetResult.push(decryptedBlock);
 
                             // Set decrypted block for the next stage
                             currentEncryptedBlock = decryptedBlock;
@@ -524,6 +532,49 @@
                             );
                         }
 
+                        await yieldToUI();
+
+                        // Call validate function before summary
+                        let validateTime = 0;
+                        try {
+                            log("Starte Validierung...", "info");
+                            await yieldToUI();
+                            const validateStartTime = performance.now();
+
+                            const validateResult = wasmModule.validate(
+                                allEncryptResult,
+                                allMixnetResult,
+                                mixnetKeys.map((k) => k.publicKey),
+                                trusteeKeys.map((k) => k.publicKey),
+                                trusteeKeys.map((k) => k.secretKey),
+                                messageSize,
+                                messageCount,
+                            );
+
+                            const validateEndTime = performance.now();
+                            validateTime = validateEndTime - validateStartTime;
+
+                            if (validateResult === 0) {
+                                log(
+                                    `Validierung erfolgreich abgeschlossen! (${validateTime.toFixed(2)}ms)`,
+                                    "success",
+                                );
+                            } else {
+                                log(
+                                    `Validierung fehlgeschlagen mit Code: ${validateResult} (${validateTime.toFixed(2)}ms)`,
+                                    "warning",
+                                );
+                            }
+                        } catch (error) {
+                            log(
+                                `Fehler bei der Validierung: ${error.message}`,
+                                "error",
+                            );
+                            console.error("Error during validation:", error);
+                        }
+
+                        await yieldToUI();
+
                         // Log summary of timing information
                         log(`Zusammenfassung der Zeitmessungen:`, "info");
                         log(
@@ -538,7 +589,10 @@
                             `- Treuhänder-Entschlüsselung: Insgesamt ${trusteeDecryptTime.toFixed(2)}ms`,
                             "info",
                         );
-                        await yieldToUI();
+                        log(
+                            `- Validierung: Insgesamt ${validateTime.toFixed(2)}ms`,
+                            "info",
+                        );
                     } catch (error) {
                         log(
                             `Fehler bei Treuhänder-Entschlüsselung: ${error.message}`,
