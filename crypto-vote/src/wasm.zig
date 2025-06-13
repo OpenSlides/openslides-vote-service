@@ -256,6 +256,79 @@ export fn decrypt_trustee(
     return successSizedBuffer(decrypted);
 }
 
+export fn validate(
+    user_count: u32,
+    trustee_count: u32,
+    user_data_block_ptr: [*]const u8,
+    user_data_block_size: u32,
+    max_size: u32,
+    mixnet_size_ptr: [*]const u8,
+    mixnet_size_len: u32,
+    mixnet_data_block_ptr: [*]const u8,
+    mixnet_data_block_size: u32,
+    mixnet_key_public_ptr: [*]const [32]u8,
+    trustee_key_public_ptr: [*]const [32]u8,
+    trustee_key_secred_ptr: [*]const [32]u8,
+) ?i32 {
+    const user_data_block = user_data_block_ptr[0..user_data_block_size];
+    defer allocator.free(user_data_block);
+    const mixnet_data_block = mixnet_data_block_ptr[0..mixnet_data_block_size];
+    defer allocator.free(mixnet_data_block);
+    const mixnet_size_list = mixnet_size_ptr[0..mixnet_size_len];
+    defer allocator.free(mixnet_size_list);
+    const mixnet_data_list = try convert_mixnet_data(mixnet_size_list, mixnet_data_block);
+    defer allocator.free(mixnet_data_list);
+    const mixnet_key_public_list = mixnet_key_public_ptr[0..mixnet_data_list.len];
+    defer allocator.free(mixnet_key_public_list);
+    const trustee_key_public_list = trustee_key_public_ptr[0..trustee_count];
+    defer allocator.free(trustee_key_public_list);
+    const trustee_key_secred_list = trustee_key_secred_ptr[0..trustee_count];
+    defer allocator.free(trustee_key_secred_ptr[0..trustee_count]);
+
+    const result = try crypto.validate(
+        allocator,
+        user_data_block,
+        mixnet_data_list,
+        mixnet_key_public_list,
+        trustee_key_public_list,
+        trustee_key_secred_list,
+        max_size,
+        user_count,
+    );
+
+    return result;
+}
+
+fn convert_mixnet_data(
+    mixnet_size_list: []u8,
+    mixnet_data_block: []u8,
+) ![][]u8 {
+    const mixnet_count = mixnet_size_list.len / 4;
+    var u32_slice = try allocator.alloc(u32, mixnet_count);
+    defer allocator.free(u32_slice);
+
+    for (0..mixnet_count) |i| {
+        u32_slice[i] = std.mem.readInt(u32, mixnet_size_list[i * 4 .. (i + 1) * 4], .little);
+    }
+
+    const mixnet_data_list = try allocator.alloc([]u8, mixnet_count);
+    errdefer allocator.free(mixnet_data_list);
+
+    var offset: u32 = 0;
+    for (0..mixnet_count) |i| {
+        const size = u32_slice[i];
+
+        if (offset + size > mixnet_data_block.len) {
+            return error.WrongInput;
+        }
+
+        mixnet_data_list[i] = mixnet_data_block[offset..][0..size];
+        offset += size;
+    }
+
+    return mixnet_data_list;
+}
+
 fn successSizedBuffer(buf: []const u8) ?[*]u8 {
     const result = allocator.alloc(u8, buf.len + 4) catch return null;
     std.mem.writeInt(u32, result[0..4], @intCast(buf.len), .little);

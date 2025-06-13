@@ -323,6 +323,45 @@ fn encrypt_full(
     return cypher;
 }
 
+fn encrypt_fake_steps(
+    allocator: std.mem.Allocator,
+    mixnet_key_public_list: []const [32]u8,
+    trustee_key_public_list: []const [32]u8,
+    seed: []const u8,
+    message_size: usize,
+) ![][]u8 {
+    const message = try allocator.alloc(u8, message_size);
+    defer allocator.free(message);
+    @memset(message, 0);
+
+    const result = try allocator.alloc([]u8, mixnet_key_public_list.len + 1);
+    errdefer {
+        for (result) |v| {
+            allocator.free(v);
+        }
+        allocator.free(result);
+    }
+
+    var cypher = try allocator.alloc(u8, encrypt_bufsize(message.len));
+    _ = try encrypt_ed25519_deterministric(trustee_key_public_list, message, seed[0..32].*, cypher);
+    result[result.len - 1] = cypher;
+
+    var cypher_size = cypher.len;
+
+    var i = mixnet_key_public_list.len;
+    while (i > 0) {
+        const mixnet_seed = seed[i * 32 ..][0..32];
+        i -= 1;
+        const key_public = mixnet_key_public_list[i];
+        const mixnet_cypher = try allocator.alloc(u8, encrypt_bufsize(cypher_size));
+        cypher = try encrypt_x25519_deterministic(key_public, cypher, mixnet_seed.*, mixnet_cypher);
+        result[i] = cypher;
+        cypher_size = cypher.len;
+    }
+
+    return result;
+}
+
 test "encrypt_full" {
     const trustee_key1 = KeyPairTrustee.generate();
     const trustee_key2 = KeyPairTrustee.generate();
@@ -438,16 +477,30 @@ pub fn encrypt_fixed_size_deterministic(
 }
 
 pub const EncryptResult = struct {
-    cyphers: [2][]u8,
-    control_data: []u8,
+    const Self = @This();
+    cyphers: [2][]const u8,
+    control_data: []const u8,
 
-    pub fn free(self: EncryptResult, allocator: std.mem.Allocator) void {
+    pub fn fromBytes(bytes: []const u8, mixnet_count: usize, max_size: usize) Self {
+        const cypher_size = calc_cypher_size(max_size, mixnet_count);
+        assert(bytes.len == 2 * cypher_size + encrypt_bufsize((mixnet_count + 1) * 32));
+
+        return .{
+            .cyphers = [2][]const u8{
+                bytes[0..cypher_size],
+                bytes[cypher_size..][0..cypher_size],
+            },
+            .control_data = bytes[cypher_size * 2 ..],
+        };
+    }
+
+    pub fn free(self: Self, allocator: std.mem.Allocator) void {
         allocator.free(self.cyphers[0]);
         allocator.free(self.cyphers[1]);
         allocator.free(self.control_data);
     }
 
-    pub fn toBytesWithPrefix(self: EncryptResult, allocator: std.mem.Allocator) ![*]u8 {
+    pub fn toBytesWithPrefix(self: Self, allocator: std.mem.Allocator) ![*]u8 {
         assert(self.cyphers[0].len == self.cyphers[1].len);
 
         const cypher_len = self.cyphers[0].len;
@@ -572,6 +625,29 @@ test "encrypt_message" {
     } else {
         try std.testing.expect(false);
     }
+
+    const user_data_ptr = try result.toBytesWithPrefix(allocator);
+    const user_data_size = std.mem.readInt(u32, user_data_ptr[0..4], .little);
+    const user_data = user_data_ptr[0 .. user_data_size + 4];
+    defer allocator.free(user_data);
+    const mixnet_data_list = &[_][]u8{
+        decrypted_from_mixnet1,
+        decrypted_from_mixnet2,
+        decrypted_from_mixnet3,
+    };
+
+    const validated = try validate(
+        allocator,
+        user_data[4..],
+        mixnet_data_list,
+        mixnet_pk_list,
+        trustee_pk_list,
+        trustee_sk_list,
+        max_size,
+        1,
+    );
+
+    try std.testing.expectEqual(0, validated);
 }
 
 pub fn decrypt_mixnet(
@@ -631,6 +707,7 @@ pub fn decrypt_trustee(
 
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
+        // TODO: Ignore messages, that can not be decrypted.
         _ = try decrypt_ed25519(key_secred_list, cypher, buf[i * decrypted_size ..]);
     }
 
@@ -723,4 +800,86 @@ test "decrypt many messages" {
 
     try std.testing.expectEqualDeep(msg1, decrypted1);
     try std.testing.expectEqualDeep(msg2, decrypted2);
+}
+
+// 0 = no error
+// -N.. = user  N-1 has faked
+// +N.. = mixnet N-1 has faked
+// TODO: return better report data. Many users can fake, mixnets can fake many times
+pub fn validate(
+    allocator: std.mem.Allocator,
+    user_data_list: []const u8,
+    mixnet_data_list: []const []const u8,
+    mixnet_key_public_list: []const [32]u8,
+    trustee_key_public_list: []const [32]u8,
+    trustee_key_secred_list: []const [32]u8,
+    max_size: u32,
+    user_count: usize,
+) !i32 {
+    const seed_size = (mixnet_data_list.len + 1) * 32;
+    const user_data_size = user_data_list.len / user_count;
+
+    const seed_decrypt_buf = try allocator.alloc(u8, seed_size);
+    defer allocator.free(seed_decrypt_buf);
+
+    for (0..user_count) |i| {
+        const cypher = user_data_list[i * user_data_size ..][0..user_data_size];
+        const user_data = EncryptResult.fromBytes(cypher, mixnet_data_list.len, max_size);
+
+        const seed = try decrypt_ed25519(trustee_key_secred_list, user_data.control_data, seed_decrypt_buf);
+        const fake_steps = try encrypt_fake_steps(
+            allocator,
+            mixnet_key_public_list,
+            trustee_key_public_list,
+            seed,
+            max_size,
+        );
+        defer {
+            for (fake_steps) |step| {
+                allocator.free(step);
+            }
+            allocator.free(fake_steps);
+        }
+
+        if (!std.mem.eql(u8, fake_steps[0], user_data.cyphers[0]) and
+            !std.mem.eql(u8, fake_steps[0], user_data.cyphers[1]))
+        {
+            return -@as(i32, @intCast(i + 1));
+        }
+
+        for (mixnet_data_list, 0..) |mixnet_data, j| {
+            if (!in_mixnet_data(mixnet_data, fake_steps[j + 1], user_count * 2)) {
+                return @intCast(j + 1);
+            }
+        }
+    }
+    return 0;
+}
+
+fn in_mixnet_data(mixnet_data: []const u8, data: []const u8, message_count: usize) bool {
+    if (message_count == 0) return false;
+
+    const message_length = mixnet_data.len / message_count;
+
+    assert(data.len == message_length);
+
+    var left: usize = 0;
+    var right = message_count;
+
+    while (left < right) {
+        const mid = left + (right - left) / 2;
+        const message_start = mid * message_length;
+        const message_end = message_start + message_length;
+        const current_message = mixnet_data[message_start..message_end];
+
+        const order = std.mem.order(u8, data, current_message);
+
+        switch (order) {
+            .eq => return true,
+            .lt => right = mid,
+            .gt => left = mid + 1,
+        }
+    }
+
+    return false;
 }
