@@ -2,63 +2,131 @@ const std = @import("std");
 const builtin = @import("builtin");
 const crypto = @import("crypto.zig");
 
+/// Global allocator for WebAssembly memory management.
+/// Uses the WASM allocator in production, testing allocator during tests.
 pub const allocator = if (builtin.is_test) std.testing.allocator else std.heap.wasm_allocator;
 
+/// Allocates memory in WebAssembly linear memory.
+/// This function is exported and can be called from the host environment.
+///
+/// Args:
+///   size: Number of bytes to allocate
+///
+/// Returns:
+///   ?[*]u8: Pointer to allocated memory, or null if allocation fails
 export fn alloc(size: u32) ?[*]u8 {
     const buf = allocator.alloc(u8, size) catch return null;
     return buf.ptr;
 }
 
+/// Frees previously allocated memory in WebAssembly linear memory.
+/// This function is exported and can be called from the host environment.
+///
+/// Args:
+///   ptr: Pointer to memory to free
+///   size: Size of the memory block to free
 export fn free(ptr: [*]u8, size: u32) void {
     allocator.free(ptr[0..size]);
 }
 
+/// Host environment functions that must be provided by the WebAssembly runtime.
+/// These functions allow the WASM module to interact with the host environment.
 const Env = struct {
+    /// Logs a message to the host console.
     extern fn console_log(ptr: [*]u8, len: usize) void;
+
+    /// Fills a buffer with cryptographically secure random bytes from the host.
     extern fn get_random(ptr: [*]u8, amount: u32) void;
 };
 
+/// Logs a formatted message to the host console.
+/// This function provides printf-style formatting for debugging and error reporting.
+///
+/// Args:
+///   fmt: Format string (compile-time known)
+///   args: Arguments for the format string
 pub fn consoleLog(comptime fmt: []const u8, args: anytype) void {
     const msg = std.fmt.allocPrint(allocator, fmt, args) catch unreachable;
     defer allocator.free(msg);
     Env.console_log(msg.ptr, msg.len);
 }
 
+/// Fills a buffer with cryptographically secure random bytes from the host.
+/// This function bridges Zig's random API with the host environment.
+///
+/// Args:
+///   buf: Buffer to fill with random bytes
 pub fn getRandom(buf: []u8) void {
     Env.get_random(buf.ptr, buf.len);
 }
 
+/// Standard library options for WebAssembly environment.
+/// Configures the random number generator to use the host-provided randomness.
 pub const std_options = std.Options{
     .cryptoRandomSeed = getRandom,
 };
 
-// Managed buffer with RAII pattern
+/// Managed buffer with RAII (Resource Acquisition Is Initialization) pattern.
+/// Automatically handles memory allocation and deallocation to prevent leaks.
 const ManagedBuffer = struct {
+    /// Allocated memory data
     data: []u8,
 
+    /// Initializes a new managed buffer with the specified size.
+    ///
+    /// Args:
+    ///   size: Number of bytes to allocate
+    ///
+    /// Returns:
+    ///   ManagedBuffer: New managed buffer
+    ///   OutOfMemoryError: If allocation fails
     fn init(size: usize) !ManagedBuffer {
         return ManagedBuffer{
             .data = try allocator.alloc(u8, size),
         };
     }
 
+    /// Frees the managed buffer's memory.
+    /// Should be called when the buffer is no longer needed.
     fn deinit(self: ManagedBuffer) void {
         allocator.free(self.data);
     }
 
+    /// Returns a raw pointer to the buffer's memory.
+    ///
+    /// Returns:
+    ///   [*]u8: Raw pointer to the buffer data
     fn ptr(self: ManagedBuffer) [*]u8 {
         return self.data.ptr;
     }
 };
 
-// Helper to validate input parameters
+/// Validates input parameters for array-based functions.
+/// Ensures that count is non-zero and validates the pointer.
+///
+/// Args:
+///   T: Type of elements in the array
+///   ptr: Pointer to the array (cannot be null in Zig)
+///   count: Number of elements in the array
+///
+/// Returns:
+///   bool: True if inputs are valid
 fn validateInputs(comptime T: type, ptr: [*]const T, count: u32) bool {
     if (count == 0) return false;
     _ = ptr; // ptr cannot be null in Zig, just suppress unused warning
     return true;
 }
 
-// Helper to validate message parameters
+/// Validates message parameters for encryption functions.
+/// Ensures message length and size constraints are met.
+///
+/// Args:
+///   msg_ptr: Pointer to the message (cannot be null in Zig)
+///   msg_len: Length of the message in bytes
+///   max_size: Maximum allowed message size
+///
+/// Returns:
+///   bool: True if message parameters are valid
 fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
     _ = msg_ptr; // ptr cannot be null in Zig, just suppress unused warning
     if (msg_len == 0) return false;
@@ -67,15 +135,18 @@ fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
     return true;
 }
 
-// gen_mixnet_key_pair creates a keypair for a mixnet member.
-//
-// On error, the function returns 0.
-//
-// On success, the function returns a pointer to memory, where the keypair is.
-// The first 32 bytes of the keypair is the secret key. The second 32 bytes is the
-// public key.
-//
-// The memory has to be deallocated from the caller.
+/// Generates a cryptographic key pair for a mixnet node.
+/// Mixnet nodes are responsible for anonymizing messages by shuffling and re-encryption.
+///
+/// Returns:
+///   ?[*]const u8: Pointer to 64-byte key pair (32 bytes secret + 32 bytes public)
+///                 Returns null on allocation failure
+///
+/// Memory Layout:
+///   Bytes 0-31:  Secret key (32 bytes)
+///   Bytes 32-63: Public key (32 bytes)
+///
+/// Note: The caller is responsible for freeing the returned memory using free()
 export fn gen_mixnet_key_pair() ?[*]const u8 {
     const kp = crypto.KeyPairMixnet.generate();
 
@@ -85,15 +156,18 @@ export fn gen_mixnet_key_pair() ?[*]const u8 {
     return result.ptr;
 }
 
-// gen_trustee_key_pair creates a keypair for a trustee member.
-//
-// On error, the function returns 0.
-//
-// On success, the function returns a pointer to memory, where the keypair is.
-// The first 32 bytes of the keypair is the secret key. The second 32 bytes is the
-// public key.
-//
-// The memory has to be deallocated from the caller.
+/// Generates a cryptographic key pair for a trustee.
+/// Trustees collectively hold the final decryption keys for the voting system.
+///
+/// Returns:
+///   ?[*]const u8: Pointer to 64-byte key pair (32 bytes secret + 32 bytes public)
+///                 Returns null on allocation failure
+///
+/// Memory Layout:
+///   Bytes 0-31:  Secret key (32 bytes Ed25519 scalar)
+///   Bytes 32-63: Public key (32 bytes Ed25519 point)
+///
+/// Note: The caller is responsible for freeing the returned memory using free()
 export fn gen_trustee_key_pair() ?[*]const u8 {
     const kp = crypto.KeyPairTrustee.generate();
 
@@ -103,11 +177,18 @@ export fn gen_trustee_key_pair() ?[*]const u8 {
     return result.ptr;
 }
 
-// cypher_size returns the size of one cypher returned from `encrypt`.
-//
-// This function is necessary, to split the result of `encrypt`.
-//
-// It Returns 0 on error.
+/// Calculates the size of a single encrypted message (cypher).
+/// This function is necessary to split the result of encrypt() into individual components.
+///
+/// Args:
+///   mixnet_count: Number of mixnet nodes in the encryption chain
+///   max_size: Maximum size of messages (used for padding calculation)
+///
+/// Returns:
+///   u32: Size in bytes of one encrypted message
+///        Returns 0 if inputs are invalid
+///
+/// Note: Each encryption layer adds overhead for ephemeral keys and authentication tags
 export fn cypher_size(
     mixnet_count: u32,
     max_size: u32,
@@ -117,48 +198,43 @@ export fn cypher_size(
     return @intCast(crypto.calc_cypher_size(max_size, mixnet_count));
 }
 
-// encrypt encrypts a message for the mixnet and trustees.
-//
-// It returns the encrypted message, a fake encrypted message and encrypted
-// control_data.
-//
-// First, the message gets encrypted for all trustees at once. Then the result
-// gets encrypted for each member of the mixnet, once at a time. It starts with
-// the last member of the mixnet, and ends with the first. So the final result
-// is a message, that is encrypted many times. To decrypt it, it first has to be
-// decrypted from mixnet1, then mixnet2 and so on. The value, that was decrypted
-// from the last member of the mixnet has to be decrypted with the private keys
-// from all trustees.
-//
-// The argument `mixnet_count` is the amount of members of the mixnet. The
-// argument `trustee_count` the amount of members of the trustee group.
-//
-// The argument `mixnet_key_public_ptr` has to be a pointer, that points to a list
-// of all mixnet keys. The argument `trustee_key_public_ptr` is the same for the
-// trustee group.
-//
-// `msg_ptr` has to be a pointer to the message, that has to be encrypted. `msg_len`
-// is the length of this message.
-//
-// `max_size` is the number, how big a message could be in theory. It is used to
-// add padding to the message.
-//
-// The caller is responsible for deallocating the input memory.
-//
-// On error, the function returns 0.
-//
-// On success, the function returns a pointer to memory. The first four bytes of
-// this memory is the size following memory (the four bytes are not included).
-// The following memory is the encrypted message, a fake encrypted message
-// followed by encrypted control data.
-//
-// To split the result, the function `cypher_size` has to be called. It returns
-// the size of one cypher. The first cypher are the first `cypher_size` bytes,
-// the second message is the second `cypher_size` bytes, and the rest of the
-// result are the control data.
-//
-// The order of the first cypher and second cypher is random. So the caller can
-// not know, which cypher encrypts the real message and which the fake message.
+/// Encrypts a voting message for anonymity and integrity protection.
+/// Creates both a real encrypted message and a fake one to provide deniability.
+/// The encrypted data goes through multiple layers: first trustees, then mixnet nodes.
+///
+/// Encryption Flow:
+///   1. Message → Trustee encryption (threshold cryptography)
+///   2. Result → Mixnet layer N encryption
+///   3. Result → Mixnet layer N-1 encryption
+///   4. ... (continue for all mixnet layers in reverse order)
+///   5. Result → Mixnet layer 1 encryption
+///
+/// Args:
+///   mixnet_count: Number of mixnet nodes in the anonymization chain
+///   trustee_count: Number of trustees in the threshold decryption group
+///   mixnet_key_public_ptr: Pointer to array of mixnet public keys (32 bytes each)
+///   trustee_key_public_ptr: Pointer to array of trustee public keys (32 bytes each)
+///   msg_ptr: Pointer to the message to encrypt
+///   msg_len: Length of the message in bytes
+///   max_size: Maximum message size (used for padding to fixed length)
+///
+/// Returns:
+///   ?[*]u8: Pointer to encrypted result with size prefix, or null on error
+///
+/// Result Format:
+///   Bytes 0-3:    Size of following data (little-endian u32)
+///   Bytes 4-N:    First cypher (real or fake, order randomized)
+///   Bytes N+1-M:  Second cypher (fake or real, order randomized)
+///   Bytes M+1-End: Control data (encrypted seed for fake message verification)
+///
+/// Error Conditions:
+///   - Invalid mixnet or trustee counts (zero)
+///   - Invalid key pointers or message parameters
+///   - Message larger than max_size
+///   - Memory allocation failures
+///   - Cryptographic operation failures
+///
+/// Note: The caller is responsible for freeing input memory and the returned memory
 export fn encrypt(
     mixnet_count: u32,
     trustee_count: u32,
@@ -202,29 +278,41 @@ export fn encrypt(
     return result.toBytesWithPrefix(allocator) catch return null;
 }
 
-// decrypt_mixnet decrypts a block of cyphers with a private key from a mixnet
-// member.
-//
-// For the first member of the mixnet, the input cypher has to be combined
-// result for each message encrypted with `encrypt` without the size-prefix.
-//
-// For each other member of the mixnet, the input cypher is the output of
-// `decrypt_mixnet` from the previous mixnet member.
-//
-// The argument `key_secret` is the private key of the mixnet member.
-//
-// The argument `cypher_count` is the amount of messages, that should be
-// decrypted.
-//
-// The argument `cypher_block_ptr` is a pointer to the memory, where the cypher
-// block can be found. The argument `cypher_block_size` is the size of the block.
-//
-// Returns 0 on error.
-//
-// On success, it returns a pointer to the decrypted data block, with a four
-// byte prefix of the new size.
-//
-// The caller is responsible for deallocating input and output memory.
+/// Decrypts a block of encrypted messages using a mixnet node's secret key.
+/// This function is called once for each mixnet node in the decryption chain.
+/// The messages are processed in parallel and sorted to remove ordering information.
+///
+/// Decryption Flow:
+///   - First mixnet node: Processes output from encrypt() (without size prefix)
+///   - Subsequent nodes: Process output from previous decrypt_mixnet() call
+///   - Final output: Goes to decrypt_trustee() for final decryption
+///
+/// Args:
+///   key_secret: Pointer to the mixnet node's 32-byte secret key
+///   cypher_count: Number of encrypted messages in the block
+///   cypher_block_ptr: Pointer to concatenated encrypted messages
+///   cypher_block_size: Total size of the encrypted block in bytes
+///
+/// Returns:
+///   ?[*]u8: Pointer to decrypted block with size prefix, or null on error
+///
+/// Result Format:
+///   Bytes 0-3: Size of following data (little-endian u32)
+///   Bytes 4-N: Concatenated decrypted messages (sorted lexicographically)
+///
+/// Error Conditions:
+///   - Invalid cypher count (zero)
+///   - Invalid cypher block size or pointer
+///   - Block size not divisible by cypher count (indicates malformed data)
+///   - Individual cypher size is zero
+///   - Cryptographic decryption failures
+///   - Memory allocation failures
+///
+/// Security Note:
+///   Messages are sorted lexicographically to remove ordering information,
+///   which is crucial for maintaining voter anonymity in the mixnet.
+///
+/// Note: The caller is responsible for freeing input memory and the returned memory
 export fn decrypt_mixnet(
     key_secret: *const [32]u8,
     cypher_count: u32,
@@ -269,27 +357,47 @@ export fn decrypt_mixnet(
     return successSizedBuffer(decrypted);
 }
 
-// decrypt_trustee decrypts a block of cyphers with all keys from the trustees.
-//
-// The input has to be the cypher block returned from `decrypt_mixnet` from the
-// last member of the mixnet.
-//
-// The argument `trustee_count` is the amount of trustees. The argument
-// `key_secret_list` is a pointer to all secret keys from each trustee.
-//
-// The argument `cypher_count` is the amount of messages, that should be
-// decrypted.
-//
-// The argument `cypher_block_ptr` is a pointer to the memory, where the cypher
-// block can be found. The argument `cypher_block_size` is the size of the block.
-//
-// Returns 0 on error.
-//
-// On success, it returns a pointer to the decrypted data block, with a four
-// byte prefix of the new size. It can be divided in chunks of `cypher_count`
-// blocks to get the list of decrypted messages.
-//
-// The caller is responsible for deallocating input and output memory.
+/// Performs the final decryption of voting messages using trustee secret keys.
+/// This function combines multiple trustee keys to decrypt messages that were
+/// processed through the entire mixnet chain. Uses threshold cryptography.
+///
+/// Input Source:
+///   The cypher block must be the output from decrypt_mixnet() of the final
+///   mixnet node in the chain.
+///
+/// Args:
+///   trustee_count: Number of trustees participating in decryption
+///   key_secret_list: Pointer to array of trustee secret keys (32 bytes each)
+///   cypher_count: Number of encrypted messages to decrypt
+///   cypher_block_ptr: Pointer to the encrypted message block
+///   cypher_block_size: Size of the encrypted block in bytes
+///
+/// Returns:
+///   ?[*]u8: Pointer to decrypted messages with size prefix, or null on error
+///
+/// Result Format:
+///   Bytes 0-3: Size of following data (little-endian u32)
+///   Bytes 4-N: Concatenated decrypted voting messages
+///
+/// Message Extraction:
+///   The result can be divided into chunks of (total_size / cypher_count)
+///   to extract individual voting messages. Each message may be padded
+///   with null bytes to reach the fixed max_size.
+///
+/// Error Conditions:
+///   - Invalid trustee count or key list
+///   - Invalid cypher count (zero)
+///   - Invalid cypher block size or pointer
+///   - Block size not divisible by cypher count
+///   - Individual cypher size is zero
+///   - Memory allocation failures
+///   - Cryptographic decryption failures (invalid cyphers, authentication failures)
+///
+/// Security Note:
+///   This function reveals the final voting messages, so it should only be
+///   called after the voting period has ended and by authorized entities.
+///
+/// Note: The caller is responsible for freeing input memory and the returned memory
 export fn decrypt_trustee(
     trustee_count: u32,
     key_secret_list: [*]const [32]u8,
@@ -347,6 +455,55 @@ export fn decrypt_trustee(
     return successSizedBuffer(decrypted);
 }
 
+/// Validates the integrity of the entire voting process end-to-end.
+/// Performs cryptographic verification that users submitted valid votes and
+/// that mixnet nodes processed them correctly without tampering or manipulation.
+///
+/// Validation Process:
+///   1. For each user: Decrypt control data to get fake message seed
+///   2. Reconstruct fake encryption steps using the seed
+///   3. Verify fake messages appear in user's submitted cyphers
+///   4. Verify fake messages appear in each mixnet node's output
+///   5. Return validation results indicating any detected fraud
+///
+/// Args:
+///   user_count: Number of users who submitted votes
+///   trustee_count: Number of trustees in the system
+///   user_data_block_ptr: Pointer to all user-submitted encrypted votes
+///   user_data_block_size: Size of user data block in bytes
+///   max_size: Maximum message size (for padding validation)
+///   mixnet_size_ptr: Pointer to array of mixnet output sizes (4 bytes each)
+///   mixnet_size_len: Length of mixnet size array in bytes
+///   mixnet_data_block_ptr: Pointer to concatenated mixnet outputs
+///   mixnet_data_block_size: Size of mixnet data block in bytes
+///   mixnet_key_public_ptr: Pointer to array of mixnet public keys
+///   trustee_key_public_ptr: Pointer to array of trustee public keys
+///   trustee_key_secret_ptr: Pointer to array of trustee secret keys
+///
+/// Returns:
+///   i32: Validation result code
+///     0: All validations passed successfully
+///    -N: User N-1 submitted invalid/fraudulent data (N >= 1)
+///    +N: Mixnet node N-1 tampered with data (N >= 1)
+///  -1000: Critical validation error (invalid inputs, memory failures, etc.)
+///
+/// Error Conditions:
+///   - Invalid user count, trustee count, or size parameters
+///   - User data block size not divisible by user count
+///   - Mixnet size array not properly formatted (not divisible by 4)
+///   - Invalid structure
+///   - Max size too large (>1MB) or zero
+///   - Memory allocation failures
+///   - Cryptographic operation failures
+///   - Mismatched data sizes or counts
+///
+/// Security Properties:
+///   - Detects if users submitted invalid fake message proofs
+///   - Detects if mixnet nodes modified, deleted, or added messages
+///   - Ensures all fake messages are properly propagated through the mixnet
+///   - Validates cryptographic integrity at each step
+///
+/// Note: The caller is responsible for freeing all input memory
 export fn validate(
     user_count: u32,
     trustee_count: u32,
@@ -425,6 +582,26 @@ export fn validate(
     return result;
 }
 
+/// Converts mixnet size and data information into structured data arrays.
+/// Parses the serialized mixnet output format into individual data blocks.
+///
+/// Args:
+///   mixnet_size_list: Array of u32 sizes (serialized as bytes, little-endian)
+///   mixnet_data_block: Concatenated data from all mixnet nodes
+///
+/// Returns:
+///   [][]const u8: Array of slices pointing to individual mixnet data blocks
+///   error.WrongInput: If input format is invalid
+///   error.OutOfMemory: If memory allocation fails
+///
+/// Input Format:
+///   mixnet_size_list: [size1 (4 bytes)] [size2 (4 bytes)] ... [sizeN (4 bytes)]
+///   mixnet_data_block: [data1 (size1 bytes)] [data2 (size2 bytes)] ... [dataN (sizeN bytes)]
+///
+/// Validation:
+///   - Size list length must be divisible by 4 (u32 size)
+///   - Must have at least one mixnet node
+///   - Data block must contain enough bytes for all specified sizes
 fn convert_mixnet_data(
     mixnet_size_list: []const u8,
     mixnet_data_block: []const u8,
@@ -465,6 +642,20 @@ fn convert_mixnet_data(
     return mixnet_data_list;
 }
 
+/// Creates a buffer with a 4-byte size prefix for returning data to the host.
+/// This is the standard format for variable-length data returned from WASM functions.
+///
+/// Args:
+///   buf: Data buffer to wrap with size prefix
+///
+/// Returns:
+///   ?[*]u8: Pointer to new buffer with format [size (4 bytes)][data], or null on allocation failure
+///
+/// Output Format:
+///   Bytes 0-3: Data length as little-endian u32 (excluding these 4 bytes)
+///   Bytes 4-N: Original buffer data
+///
+/// Note: The caller is responsible for freeing the returned memory
 fn successSizedBuffer(buf: []const u8) ?[*]u8 {
     const result = allocator.alloc(u8, buf.len + 4) catch return null;
     std.mem.writeInt(u32, result[0..4], @intCast(buf.len), .little);

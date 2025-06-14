@@ -17,10 +17,19 @@ const OutOfMemoryError = std.mem.Allocator.Error;
 const InvalidCypherError = error{InvalidCypher};
 const WeakPublicKeyError = std.crypto.errors.WeakPublicKeyError;
 
+/// Key pair for mixnet nodes using X25519 cryptography.
+/// Mixnet nodes are responsible for shuffling
+/// to provide anonymity in the voting system.
 pub const KeyPairMixnet = struct {
+    /// Secret key used for decryption (32 bytes)
     key_secret: [32]u8,
+    /// Public key used for encryption (32 bytes)
     key_public: [32]u8,
 
+    /// Generates a new random key pair for a mixnet node.
+    ///
+    /// Returns:
+    ///   KeyPairMixnet: A new key pair with cryptographically secure random keys
     pub fn generate() KeyPairMixnet {
         const key = X25519.KeyPair.generate();
         return KeyPairMixnet{
@@ -30,10 +39,19 @@ pub const KeyPairMixnet = struct {
     }
 };
 
+/// Key pair for trustee nodes using Ed25519 cryptography.
+/// Trustees collectively decrypt the final voting results after mixnet processing.
 pub const KeyPairTrustee = struct {
+    /// Secret key used for decryption (32 bytes, Ed25519 scalar)
     key_secret: [32]u8,
+    /// Public key used for encryption (32 bytes, Ed25519 point)
     key_public: [32]u8,
 
+    /// Generates a new random key pair for a trustee.
+    /// Uses rejection sampling to ensure valid Ed25519 keys.
+    ///
+    /// Returns:
+    ///   KeyPairTrustee: A new key pair with cryptographically secure random keys
     pub fn generate() KeyPairTrustee {
         var random_seed: [32]u8 = undefined;
         while (true) {
@@ -45,6 +63,14 @@ pub const KeyPairTrustee = struct {
         }
     }
 
+    /// Generates a deterministic key pair from a given seed.
+    ///
+    /// Args:
+    ///   seed: 32-byte random seed for key generation
+    ///
+    /// Returns:
+    ///   KeyPairTrustee: Generated key pair
+    ///   error.InvalidKey: If the seed produces an invalid key (very rare)
     fn generateDeterministic(seed: [32]u8) error{InvalidKey}!KeyPairTrustee {
         const scalar = generate_scalar(seed);
         return KeyPairTrustee{
@@ -53,6 +79,13 @@ pub const KeyPairTrustee = struct {
         };
     }
 
+    /// Generates an Ed25519 scalar from a random seed using SHA-512.
+    ///
+    /// Args:
+    ///   random_seed: 32-byte random input
+    ///
+    /// Returns:
+    ///   EDCurve.scalar.CompressedScalar: Valid Ed25519 scalar
     fn generate_scalar(random_seed: [32]u8) EDCurve.scalar.CompressedScalar {
         var az: [Sha512.digest_length]u8 = undefined;
         var h = Sha512.init(.{});
@@ -61,17 +94,34 @@ pub const KeyPairTrustee = struct {
         return az[0..32].*;
     }
 
+    /// Calculates the public key from a private scalar.
+    ///
+    /// Args:
+    ///   scalar: Ed25519 private scalar
+    ///
+    /// Returns:
+    ///   EDCurve: The corresponding public key point
+    ///   IdentityElementError: If the result is the identity element
+    ///   WeakPublicKeyError: If the key is cryptographically weak
     fn calc_pk(scalar: EDCurve.scalar.CompressedScalar) (IdentityElementError || WeakPublicKeyError)!EDCurve {
         return EDCurve.basePoint.mul(scalar);
     }
 };
 
+/// Encrypts a message using AES-256-GCM with a shared secret.
+/// Uses a zero nonce which is safe because each shared secret is used only once.
+///
+/// Args:
+///   shared_secret: 32-byte shared secret derived from key exchange
+///   message: Plaintext message to encrypt
+///   buf: Output buffer (must be at least message.len + 16 bytes for tag)
 fn encrypt_symmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void {
+    assert(buf.len > message.len + 16);
+
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
 
-    // With uses a static nonce. Since the data_key is only used once, this
-    // should be secure.
-    // TODO: Confirm this.
+    // With uses a static nonce. Since the data_key is only used once, this is
+    // secure.
     const nonce = blk: {
         var n: [Aes256Gcm.nonce_length]u8 = undefined;
         @memset(&n, 0);
@@ -86,7 +136,18 @@ fn encrypt_symmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void
     }
 }
 
+/// Decrypts a message using AES-256-GCM with a shared secret.
+///
+/// Args:
+///   shared_secret: 32-byte shared secret used for encryption
+///   cypher: Encrypted message including authentication tag
+///   buf: Output buffer for decrypted message
+///
+/// Returns:
+///   AuthenticationError: If authentication tag verification fails
 fn decrypt_symmetric(shared_secret: [32]u8, cypher: []const u8, buf: []u8) AuthenticationError!void {
+    assert(buf.len > cypher.len - 16);
+
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
     const nonce = blk: {
         var n: [Aes256Gcm.nonce_length]u8 = undefined;
@@ -101,10 +162,28 @@ fn decrypt_symmetric(shared_secret: [32]u8, cypher: []const u8, buf: []u8) Authe
     }
 }
 
+/// Calculates the required buffer size for encryption output.
+///
+/// Args:
+///   message_len: Length of the message to encrypt
+///
+/// Returns:
+///   usize: Required buffer size (32 bytes ephemeral key + message + 16 bytes tag)
 fn encrypt_bufsize(message_len: usize) usize {
     return X25519.public_length + message_len + Aes256Gcm.tag_length;
 }
 
+/// Encrypts a message using X25519 ECIES with deterministic ephemeral key.
+///
+/// Args:
+///   key_public: Recipient's X25519 public key
+///   message: Plaintext message to encrypt
+///   seed: 32-byte seed for deterministic ephemeral key generation
+///   buf: Output buffer for encrypted data
+///
+/// Returns:
+///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   IdentityElementError: If key exchange results in identity element
 fn encrypt_x25519_deterministic(
     key_public: [32]u8,
     message: []const u8,
@@ -123,10 +202,28 @@ fn encrypt_x25519_deterministic(
     return buf[0..encrypted_size];
 }
 
+/// Calculates the size of decrypted message from cypher length.
+///
+/// Args:
+///   cypher_len: Length of the encrypted data
+///
+/// Returns:
+///   usize: Size of the decrypted message
 fn decrypted_bufsize(cypher_len: usize) usize {
     return cypher_len - X25519.public_length - Aes256Gcm.tag_length;
 }
 
+/// Decrypts a message encrypted with X25519 ECIES.
+///
+/// Args:
+///   key_secret: Recipient's X25519 secret key
+///   cypher: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   buf: Output buffer for decrypted message
+///
+/// Returns:
+///   []u8: Decrypted message
+///   IdentityElementError: If key exchange results in identity element
+///   AuthenticationError: If authentication tag verification fails
 fn decrypt_x25519(
     key_secret: [32]u8,
     cypher: []const u8,
@@ -157,6 +254,15 @@ test "x25519 encrypt and decrypt" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
+/// Combines multiple Ed25519 public keys into a single aggregated key.
+/// Used for threshold cryptography where multiple trustees share decryption.
+///
+/// Args:
+///   key_public_list: Array of Ed25519 public keys to combine
+///
+/// Returns:
+///   EDCurve: Combined public key point
+///   InvalidPublicKeyError: If any public key is invalid
 fn combine_public_keys(
     key_public_list: []const [32]u8,
 ) InvalidPublicKeyError!EDCurve {
@@ -170,6 +276,14 @@ fn combine_public_keys(
     return combined;
 }
 
+/// Combines multiple Ed25519 secret scalars into a single aggregated scalar.
+/// Used for threshold decryption by trustees.
+///
+/// Args:
+///   key_secret_list: Array of Ed25519 secret scalars to combine
+///
+/// Returns:
+///   [32]u8: Combined secret scalar
 fn combine_key_secret(
     key_secret_list: []const EDCurve.scalar.CompressedScalar,
 ) [32]u8 {
@@ -182,6 +296,17 @@ fn combine_key_secret(
     return combined;
 }
 
+/// Encrypts a message using Ed25519 ECIES with random ephemeral key.
+///
+/// Args:
+///   key_public_list: List of Ed25519 public keys to encrypt for
+///   message: Plaintext message to encrypt
+///   buf: Output buffer for encrypted data
+///
+/// Returns:
+///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   InvalidPublicKeyError: If any public key is invalid
+///   WeakPublicKeyError: If ephemeral key generation produces weak key
 fn encrypt_ed25519(
     key_public_list: []const [32]u8,
     message: []const u8,
@@ -200,6 +325,19 @@ fn encrypt_ed25519(
     }
 }
 
+/// Encrypts a message using Ed25519 ECIES with deterministic ephemeral key.
+///
+/// Args:
+///   key_public_list: List of Ed25519 public keys to encrypt for
+///   message: Plaintext message to encrypt
+///   seed: 32-byte seed for deterministic ephemeral key generation
+///   buf: Output buffer for encrypted data
+///
+/// Returns:
+///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   InvalidPublicKeyError: If any public key is invalid
+///   IdentityElementError: If key exchange results in identity element
+///   WeakPublicKeyError: If ephemeral key generation produces weak key
 fn encrypt_ed25519_deterministric(
     key_public_list: []const [32]u8,
     message: []const u8,
@@ -224,6 +362,13 @@ fn encrypt_ed25519_deterministric(
     return buf[0..encrypted_size];
 }
 
+/// Extracts the scalar component from an Ed25519 key pair.
+///
+/// Args:
+///   kp: Ed25519 key pair
+///
+/// Returns:
+///   [32]u8: Extracted and clamped scalar
 fn extract_scalar(kp: Ed25519.KeyPair) [32]u8 {
     var az: [Sha512.digest_length]u8 = undefined;
     var h = Sha512.init(.{});
@@ -233,6 +378,19 @@ fn extract_scalar(kp: Ed25519.KeyPair) [32]u8 {
     return az[0..32].*;
 }
 
+/// Decrypts a message encrypted with Ed25519 ECIES using combined secret keys.
+///
+/// Args:
+///   key_secret_list: List of Ed25519 secret scalars for decryption
+///   cypher: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   buf: Output buffer for decrypted message
+///
+/// Returns:
+///   []u8: Decrypted message
+///   InvalidCypherError: If cypher format is invalid
+///   IdentityElementError: If key exchange results in identity element
+///   WeakPublicKeyError: If ephemeral public key is weak
+///   AuthenticationError: If authentication tag verification fails
 fn decrypt_ed25519(
     key_secret_list: []const EDCurve.scalar.CompressedScalar,
     cypher: []const u8,
@@ -286,14 +444,46 @@ test "encrypt and decrypt with ed25519" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
+/// Calculates the final encrypted message size after mixnet and trustee encryption.
+/// Each encryption layer adds overhead for ephemeral keys and authentication tags.
+///
+/// Args:
+///   message_size: Size of the original message
+///   mixnet_count: Number of mixnet nodes in the chain
+///
+/// Returns:
+///   usize: Final encrypted message size
 pub fn calc_cypher_size(message_size: usize, mixnet_count: usize) usize {
     return (message_size + (32 + 16) * (mixnet_count + 1));
 }
 
+/// Calculates buffer size needed for full encryption (real + fake message).
+///
+/// Args:
+///   message_size: Size of the original message
+///   mixnet_count: Number of mixnet nodes
+///
+/// Returns:
+///   usize: Required buffer size for both real and fake cyphers
 fn encrypt_full_buf_size(message_size: usize, mixnet_count: usize) usize {
     return 2 * calc_cypher_size(message_size, mixnet_count);
 }
 
+/// Encrypts a message through the full mixnet and trustee chain.
+/// First encrypts for trustees, then for each mixnet node in reverse order.
+///
+/// Args:
+///   mixnet_key_public_list: Public keys of mixnet nodes
+///   trustee_key_public_list: Public keys of trustees
+///   message: Message to encrypt
+///   seed: Deterministic seeds for encryption
+///   buf: Output buffer
+///
+/// Returns:
+///   []u8: Fully encrypted message
+///   InvalidPublicKeyError: If any public key is invalid
+///   IdentityElementError: If key exchange results in identity element
+///   WeakPublicKeyError: If any generated key is weak
 fn encrypt_full(
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
@@ -323,6 +513,18 @@ fn encrypt_full(
     return cypher;
 }
 
+/// Generates fake encryption steps for verification purposes.
+/// Creates encrypted dummy data at each stage of the mixnet for validation.
+///
+/// Args:
+///   allocator: Memory allocator
+///   mixnet_key_public_list: Public keys of mixnet nodes
+///   trustee_key_public_list: Public keys of trustees
+///   seed: Deterministic seeds for fake encryption
+///   message_size: Size of dummy message to encrypt
+///
+/// Returns:
+///   [][]u8: Array of fake encrypted data for each mixnet stage
 fn encrypt_fake_steps(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
@@ -403,11 +605,29 @@ test "encrypt_full" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
+/// Container for encrypted data and its corresponding seed.
+/// Used to track the randomness used for encryption for later verification.
 const CypherSeed = struct {
+    /// Encrypted message data
     cypher: []u8,
+    /// Seed used for deterministic encryption
     seed: []u8,
 };
 
+/// Encrypts a message with padding to a fixed size.
+///
+/// Args:
+///   allocator: Memory allocator
+///   mixnet_key_public_list: Public keys of mixnet nodes
+///   trustee_key_public_list: Public keys of trustees
+///   message: Message to encrypt
+///   size: Target size after padding
+///
+/// Returns:
+///   CypherSeed: Encrypted data and seed used
+///   OutOfMemoryError: If memory allocation fails
+///   InvalidPublicKeyError: If any public key is invalid
+///   WeakPublicKeyError: If any generated key is weak
 fn encrypt_fixed_size(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
@@ -439,6 +659,22 @@ fn encrypt_fixed_size(
     }
 }
 
+/// Encrypts a message with padding to a fixed size using deterministic randomness.
+///
+/// Args:
+///   allocator: Memory allocator
+///   mixnet_key_public_list: Public keys of mixnet nodes
+///   trustee_key_public_list: Public keys of trustees
+///   message: Message to encrypt
+///   size: Target size after padding
+///   seed: Deterministic seed for encryption
+///
+/// Returns:
+///   []u8: Encrypted message of fixed size
+///   OutOfMemoryError: If memory allocation fails
+///   InvalidPublicKeyError: If any public key is invalid
+///   IdentityElementError: If key exchange results in identity element
+///   WeakPublicKeyError: If any generated key is weak
 pub fn encrypt_fixed_size_deterministic(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
@@ -476,11 +712,25 @@ pub fn encrypt_fixed_size_deterministic(
     return cypher;
 }
 
+/// Result of message encryption containing real/fake cyphers and control data.
+/// The system generates both a real encrypted message and a fake one to provide
+/// deniability - external observers cannot determine which is which.
 pub const EncryptResult = struct {
     const Self = @This();
+    /// Two encrypted messages: one real, one fake (order is randomized)
     cyphers: [2][]const u8,
+    /// Control data containing the seed used for fake message encryption
     control_data: []const u8,
 
+    /// Reconstructs an EncryptResult from serialized bytes.
+    ///
+    /// Args:
+    ///   bytes: Serialized encryption result
+    ///   mixnet_count: Number of mixnet nodes (for size calculation)
+    ///   max_size: Maximum message size (for size calculation)
+    ///
+    /// Returns:
+    ///   Self: Reconstructed EncryptResult
     pub fn fromBytes(bytes: []const u8, mixnet_count: usize, max_size: usize) Self {
         const cypher_size = calc_cypher_size(max_size, mixnet_count);
         assert(bytes.len == 2 * cypher_size + encrypt_bufsize((mixnet_count + 1) * 32));
@@ -494,12 +744,23 @@ pub const EncryptResult = struct {
         };
     }
 
+    /// Frees all allocated memory in this EncryptResult.
+    ///
+    /// Args:
+    ///   allocator: The allocator used to create this result
     pub fn free(self: Self, allocator: std.mem.Allocator) void {
         allocator.free(self.cyphers[0]);
         allocator.free(self.cyphers[1]);
         allocator.free(self.control_data);
     }
 
+    /// Serializes the EncryptResult to bytes with a size prefix.
+    ///
+    /// Args:
+    ///   allocator: Memory allocator for the result
+    ///
+    /// Returns:
+    ///   [*]u8: Pointer to serialized data (size_prefix || cypher1 || cypher2 || control_data)
     pub fn toBytesWithPrefix(self: Self, allocator: std.mem.Allocator) ![*]u8 {
         assert(self.cyphers[0].len == self.cyphers[1].len);
 
@@ -514,6 +775,22 @@ pub const EncryptResult = struct {
     }
 };
 
+/// Encrypts a voting message with anonymity protection.
+/// Creates both real and fake encrypted messages to provide deniability.
+/// The fake message is encrypted with a random seed that gets encrypted
+/// as control data for later verification.
+///
+/// Args:
+///   allocator: Memory allocator
+///   mixnet_key_public_list: Public keys of all mixnet nodes
+///   trustee_key_public_list: Public keys of all trustees
+///   message: The voting message to encrypt
+///   size: Target size for padding (must be >= message.len)
+///
+/// Returns:
+///   EncryptResult: Structure containing two cyphers and control data
+///     - cyphers[0] and cyphers[1]: One real, one fake (order randomized)
+///     - control_data: Encrypted seed for fake message verification
 pub fn encrypt_message(
     allocator: std.mem.Allocator,
     mixnet_key_public_list: []const [32]u8,
@@ -650,6 +927,21 @@ test "encrypt_message" {
     try std.testing.expectEqual(0, validated);
 }
 
+/// Decrypts a block of messages using a mixnet node's secret key.
+/// Processes multiple encrypted messages in parallel and sorts the results
+/// to remove ordering information (important for anonymity).
+///
+/// Args:
+///   allocator: Memory allocator
+///   key_secret: Secret key of this mixnet node
+///   cypher_count: Number of encrypted messages in the block
+///   cypher_block: Concatenated encrypted messages
+///
+/// Returns:
+///   []u8: Decrypted and sorted message block
+///   IdentityElementError: If key exchange results in identity element
+///   AuthenticationError: If any message authentication fails
+///   OutOfMemoryError: If memory allocation fails
 pub fn decrypt_mixnet(
     allocator: std.mem.Allocator,
     key_secret: [32]u8,
@@ -681,16 +973,50 @@ pub fn decrypt_mixnet(
     return std.mem.concat(allocator, u8, decrypted_list);
 }
 
+/// Comparison function for sorting byte arrays lexicographically.
+/// Used by decrypt_mixnet to sort decrypted messages.
+///
+/// Args:
+///   _: Unused context parameter
+///   lhs: Left-hand side byte array
+///   rhs: Right-hand side byte array
+///
+/// Returns:
+///   bool: True if lhs < rhs lexicographically
 fn compareBytes(_: void, lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
 }
 
+/// Calculates the buffer size needed for trustee decryption.
+///
+/// Args:
+///   cypher_block_size: Size of the encrypted block
+///   cypher_count: Number of messages in the block
+///
+/// Returns:
+///   usize: Required buffer size for decryption
 pub fn decrypt_trustee_buf_size(cypher_block_size: usize, cypher_count: usize) usize {
     assert(cypher_count > 0);
     const cypher_size = cypher_block_size / cypher_count;
     return decrypted_bufsize(cypher_size) * cypher_count;
 }
 
+/// Performs the final decryption using combined trustee secret keys.
+/// This is the last step in the mixnet decryption chain, revealing the
+/// original voting messages after all mixnet processing is complete.
+///
+/// Args:
+///   key_secret_list: Secret keys from all trustees
+///   cypher_count: Number of encrypted messages
+///   cypher_block: Block of encrypted messages from final mixnet node
+///   buf: Pre-allocated buffer for decrypted messages
+///
+/// Returns:
+///   []u8: Decrypted voting messages (concatenated, fixed-size blocks)
+///   InvalidCypherError: If any cypher format is invalid
+///   IdentityElementError: If key exchange results in identity element
+///   WeakPublicKeyError: If any ephemeral key is weak
+///   AuthenticationError: If any message authentication fails
 pub fn decrypt_trustee(
     key_secret_list: []const EDCurve.scalar.CompressedScalar,
     cypher_count: usize,
@@ -802,10 +1128,26 @@ test "decrypt many messages" {
     try std.testing.expectEqualDeep(msg2, decrypted2);
 }
 
-// 0 = no error
-// -N.. = user  N-1 has faked
-// +N.. = mixnet N-1 has faked
-// TODO: return better report data. Many users can fake, mixnets can fake many times
+/// Validates the integrity of the entire voting process.
+/// Checks that users submitted valid encrypted votes and that mixnet nodes
+/// processed them correctly without tampering. Uses zero-knowledge proofs
+/// via fake message reconstruction.
+///
+/// Args:
+///   allocator: Memory allocator
+///   user_data_list: All user-submitted encrypted votes
+///   mixnet_data_list: Output from each mixnet node
+///   mixnet_key_public_list: Public keys of mixnet nodes
+///   trustee_key_public_list: Public keys of trustees
+///   trustee_key_secret_list: Secret keys of trustees (for verification)
+///   max_size: Maximum message size
+///   user_count: Number of users who voted
+///
+/// Returns:
+///   i32: Validation result
+///     0 = All validation passed
+///     -N = User N-1 has submitted invalid data
+///     +N = Mixnet node N-1 has tampered with data
 pub fn validate(
     allocator: std.mem.Allocator,
     user_data_list: []const u8,
@@ -861,6 +1203,16 @@ pub fn validate(
     return 0;
 }
 
+/// Checks if a specific piece of data exists within a sorted mixnet data block.
+/// Uses binary search for efficient lookup in the sorted message array.
+///
+/// Args:
+///   mixnet_data: Sorted block of messages from a mixnet node
+///   data: Specific message to search for
+///   message_count: Number of messages in the block
+///
+/// Returns:
+///   bool: True if the data is found in the mixnet block
 fn in_mixnet_data(mixnet_data: []const u8, data: []const u8, message_count: usize) bool {
     if (message_count == 0) return false;
 
