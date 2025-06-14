@@ -44,6 +44,75 @@ type CryptoVote struct {
 	memory api.Memory
 }
 
+// WasmBuffer represents a buffer in WASM memory with automatic cleanup
+type WasmBuffer struct {
+	cv   *CryptoVote
+	ptr  uint32
+	size uint32
+}
+
+// NewWasmBuffer creates a new buffer in WASM memory
+func (cv *CryptoVote) NewWasmBuffer(size uint32) (*WasmBuffer, error) {
+	if size == 0 {
+		return nil, fmt.Errorf("buffer size cannot be zero")
+	}
+	if size > 10*1024*1024 { // 10MB safety limit
+		return nil, fmt.Errorf("buffer size too large: %d bytes", size)
+	}
+
+	ptr, err := cv.alloc(size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate WASM memory: %w", err)
+	}
+
+	return &WasmBuffer{
+		cv:   cv,
+		ptr:  ptr,
+		size: size,
+	}, nil
+}
+
+// Free releases the WASM memory buffer
+func (wb *WasmBuffer) Free() error {
+	if wb.ptr != 0 {
+		err := wb.cv.free(wb.ptr, wb.size)
+		wb.ptr = 0
+		wb.size = 0
+		return err
+	}
+	return nil
+}
+
+// Ptr returns the pointer to the WASM memory
+func (wb *WasmBuffer) Ptr() uint32 {
+	return wb.ptr
+}
+
+// Size returns the size of the buffer
+func (wb *WasmBuffer) Size() uint32 {
+	return wb.size
+}
+
+// Write writes data to the WASM buffer
+func (wb *WasmBuffer) Write(data []byte) error {
+	if uint32(len(data)) > wb.size {
+		return fmt.Errorf("data too large for buffer: %d > %d", len(data), wb.size)
+	}
+	if !wb.cv.memory.Write(wb.ptr, data) {
+		return fmt.Errorf("can not write wasm memory")
+	}
+	return nil
+}
+
+// Read reads data from the WASM buffer
+func (wb *WasmBuffer) Read() ([]byte, error) {
+	data, ok := wb.cv.memory.Read(wb.ptr, wb.size)
+	if !ok {
+		return nil, fmt.Errorf("failed to read from WASM memory")
+	}
+	return data, nil
+}
+
 // NewCryptoVote creates a new CryptoVote instance and initializes the WASM module
 func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 	// Create a new WASM runtime
@@ -62,6 +131,7 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 		Export("get_random").
 		Instantiate(ctx)
 	if err != nil {
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("failed to instantiate host module: %w", err)
 	}
 	defer hostModule.Close(ctx)
@@ -69,58 +139,79 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 	// Instantiate the WASM module
 	module, err := runtime.InstantiateWithConfig(ctx, wasmFile, wazero.NewModuleConfig())
 	if err != nil {
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("failed to instantiate WASM module: %w", err)
 	}
 
 	// Get function exports
 	allocFunc := module.ExportedFunction("alloc")
 	if allocFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("alloc function not found in WASM module")
 	}
 
 	freeFunc := module.ExportedFunction("free")
 	if freeFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("free function not found in WASM module")
 	}
 
 	genMixnetKeyPair := module.ExportedFunction("gen_mixnet_key_pair")
 	if genMixnetKeyPair == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("gen_mixnet_key_pair function not found in WASM module")
 	}
 
 	genTrusteeKeyPair := module.ExportedFunction("gen_trustee_key_pair")
 	if genTrusteeKeyPair == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("gen_trustee_key_pair function not found in WASM module")
 	}
 
 	encryptFunc := module.ExportedFunction("encrypt")
 	if encryptFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("encrypt function not found in WASM module")
 	}
 
 	decryptMixnetFunc := module.ExportedFunction("decrypt_mixnet")
 	if decryptMixnetFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("decrypt_mixnet function not found in WASM module")
 	}
 
 	decryptTrusteeFunc := module.ExportedFunction("decrypt_trustee")
 	if decryptTrusteeFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("decrypt_trustee function not found in WASM module")
 	}
 
 	cypherSizeFunc := module.ExportedFunction("cypher_size")
 	if cypherSizeFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("cypher_size function not found in WASM module")
 	}
 
 	validateFunc := module.ExportedFunction("validate")
 	if validateFunc == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("validate function not found in WASM module")
 	}
 
 	// Get memory export
 	memory := module.ExportedMemory("memory")
 	if memory == nil {
+		module.Close(ctx)
+		runtime.Close(ctx)
 		return nil, fmt.Errorf("memory not found in WASM module")
 	}
 
@@ -143,15 +234,21 @@ func NewCryptoVote(ctx context.Context) (*CryptoVote, error) {
 
 // Close releases resources used by the CryptoVote instance
 func (cv *CryptoVote) Close() error {
+	var errs []error
+
 	if cv.module != nil {
 		if err := cv.module.Close(cv.ctx); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("failed to close module: %w", err))
 		}
 	}
 	if cv.runtime != nil {
 		if err := cv.runtime.Close(cv.ctx); err != nil {
-			return err
+			errs = append(errs, fmt.Errorf("failed to close runtime: %w", err))
 		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors during close: %v", errs)
 	}
 	return nil
 }
@@ -175,51 +272,86 @@ func getRandom(ctx context.Context, m api.Module, ptr, amount uint32) {
 	}
 }
 
-// allocate memory in WASM
+// alloc allocates memory in WASM
 func (cv *CryptoVote) alloc(size uint32) (uint32, error) {
 	results, err := cv.allocFunc.Call(cv.ctx, uint64(size))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("alloc call failed: %w", err)
 	}
 	ptr := uint32(results[0])
 	if ptr == 0 {
-		return 0, fmt.Errorf("allocation failed")
+		return 0, fmt.Errorf("allocation failed: returned null pointer")
 	}
 	return ptr, nil
 }
 
-// free memory in WASM
+// free frees memory in WASM
 func (cv *CryptoVote) free(ptr, size uint32) error {
+	if ptr == 0 {
+		return nil // Nothing to free
+	}
 	_, err := cv.freeFunc.Call(cv.ctx, uint64(ptr), uint64(size))
-	return err
-}
-
-// copyToWasm copies data from Go to WASM memory
-func (cv *CryptoVote) copyToWasm(data []byte) (uint32, uint32, error) {
-	size := uint32(len(data))
-	ptr, err := cv.alloc(size)
 	if err != nil {
-		return 0, 0, err
+		return fmt.Errorf("free call failed: %w", err)
 	}
-
-	if !cv.memory.Write(ptr, data) {
-		cv.free(ptr, size)
-		return 0, 0, fmt.Errorf("failed to write data to WASM memory")
-	}
-
-	return ptr, size, nil
+	return nil
 }
 
-// copyFromWasm copies data from WASM memory to Go
-func (cv *CryptoVote) copyFromWasm(ptr, size uint32) ([]byte, error) {
-	data, ok := cv.memory.Read(ptr, size)
-	if !ok {
-		return nil, fmt.Errorf("failed to read data from WASM memory")
+// validateKeyList validates a list of base64-encoded keys
+func validateKeyList(keys []string, name string) error {
+	if len(keys) == 0 {
+		return fmt.Errorf("%s cannot be empty", name)
+	}
+	if len(keys) > 1000 {
+		return fmt.Errorf("%s too large: %d keys", name, len(keys))
 	}
 
-	result := make([]byte, size)
-	copy(result, data)
-	return result, nil
+	for i, key := range keys {
+		if key == "" {
+			return fmt.Errorf("%s[%d] cannot be empty", name, i)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			return fmt.Errorf("%s[%d] invalid base64: %w", name, i, err)
+		}
+		if len(decoded) != 32 {
+			return fmt.Errorf("%s[%d] must be 32 bytes, got %d", name, i, len(decoded))
+		}
+	}
+	return nil
+}
+
+// copyKeysToWasm copies a list of base64-encoded keys to WASM memory
+func (cv *CryptoVote) copyKeysToWasm(keys []string) (*WasmBuffer, error) {
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("key list cannot be empty")
+	}
+
+	// Create buffer for all keys (32 bytes each)
+	buffer, err := cv.NewWasmBuffer(uint32(len(keys) * 32))
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate key buffer: %w", err)
+	}
+
+	// Copy each key to the buffer
+	for i, key := range keys {
+		decoded, err := base64.StdEncoding.DecodeString(key)
+		if err != nil {
+			buffer.Free()
+			return nil, fmt.Errorf("invalid base64 key at index %d: %w", i, err)
+		}
+		if len(decoded) != 32 {
+			buffer.Free()
+			return nil, fmt.Errorf("key at index %d must be 32 bytes, got %d", i, len(decoded))
+		}
+
+		if success := cv.memory.Write(buffer.ptr+uint32(i*32), decoded); !success {
+			buffer.Free()
+			return nil, fmt.Errorf("failed to write key %d to WASM memory: %w", i, err)
+		}
+	}
+
+	return buffer, nil
 }
 
 // readSizedBuffer reads a buffer with a 4-byte size prefix from WASM memory
@@ -229,64 +361,31 @@ func (cv *CryptoVote) readSizedBuffer(ptr uint32) ([]byte, error) {
 	}
 
 	// Read the size (first 4 bytes)
-	sizeData, ok := cv.memory.Read(ptr, 4)
+	sizeBytes, ok := cv.memory.Read(ptr, 4)
 	if !ok {
 		return nil, fmt.Errorf("failed to read size from WASM memory")
 	}
 
-	size := binary.LittleEndian.Uint32(sizeData)
-
-	// Read the actual data
-	data, err := cv.copyFromWasm(ptr+4, size)
-	if err != nil {
-		cv.free(ptr, size+4) // Try to free even on error
-		return nil, err
+	size := binary.LittleEndian.Uint32(sizeBytes)
+	if size > 10*1024*1024 { // 10MB safety limit
+		return nil, fmt.Errorf("buffer size too large: %d bytes", size)
 	}
 
-	// Free the WASM memory
+	// Read the actual data
+	data, ok := cv.memory.Read(ptr+4, size)
+	if !ok {
+		return nil, fmt.Errorf("failed to read data from WASM memory")
+	}
+
+	// Free the WASM memory (the WASM function expects us to do this)
 	if err := cv.free(ptr, size+4); err != nil {
-		return nil, fmt.Errorf("failed to free WASM memory: %w", err)
+		log.Printf("Warning: failed to free WASM memory: %v", err)
 	}
 
 	return data, nil
 }
 
-// copyKeysToWasm copies base64-encoded keys to WASM memory
-func (cv *CryptoVote) copyKeysToWasm(keys []string) (uint32, uint32, error) {
-	if len(keys) == 0 {
-		return 0, 0, fmt.Errorf("key list must not be empty")
-	}
-
-	// Each key is 32 bytes
-	totalSize := uint32(len(keys) * 32)
-	ptr, err := cv.alloc(totalSize)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	for i, keyBase64 := range keys {
-		keyBytes, err := base64.RawStdEncoding.DecodeString(keyBase64)
-		if err != nil {
-			cv.free(ptr, totalSize)
-			return 0, 0, fmt.Errorf("failed to decode key %s from base64: %w", keyBase64, err)
-		}
-
-		if len(keyBytes) != 32 {
-			cv.free(ptr, totalSize)
-			return 0, 0, fmt.Errorf("key %d must be 32 bytes, got %d", i, len(keyBytes))
-		}
-
-		offset := ptr + uint32(i*32)
-		if !cv.memory.Write(offset, keyBytes) {
-			cv.free(ptr, totalSize)
-			return 0, 0, fmt.Errorf("failed to write key %d to WASM memory", i)
-		}
-	}
-
-	return ptr, uint32(len(keys)), nil
-}
-
-// GenMixnetKeyPair generates a new mixnet key pair
+// GenMixnetKeyPair generates a mixnet key pair
 func (cv *CryptoVote) GenMixnetKeyPair() (*KeyPair, error) {
 	results, err := cv.genMixnetKeyPair.Call(cv.ctx)
 	if err != nil {
@@ -295,30 +394,27 @@ func (cv *CryptoVote) GenMixnetKeyPair() (*KeyPair, error) {
 
 	ptr := uint32(results[0])
 	if ptr == 0 {
-		return nil, fmt.Errorf("failed to generate mixnet key pair")
+		return nil, fmt.Errorf("key generation failed")
 	}
 
-	// Copy the 64 bytes (32 secret + 32 public)
-	keyData, err := cv.copyFromWasm(ptr, 64)
-	if err != nil {
-		return nil, err
+	// Read the 64 bytes (32 bytes secret key + 32 bytes public key)
+	data, ok := cv.memory.Read(ptr, 64)
+	if !ok {
+		return nil, fmt.Errorf("failed to read key pair from WASM memory")
 	}
 
 	// Free the WASM memory
 	if err := cv.free(ptr, 64); err != nil {
-		return nil, err
+		log.Printf("Warning: failed to free key pair memory: %v", err)
 	}
 
-	secretKey := base64.RawStdEncoding.EncodeToString(keyData[:32])
-	publicKey := base64.RawStdEncoding.EncodeToString(keyData[32:64])
-
 	return &KeyPair{
-		SecretKey: secretKey,
-		PublicKey: publicKey,
+		SecretKey: base64.StdEncoding.EncodeToString(data[:32]),
+		PublicKey: base64.StdEncoding.EncodeToString(data[32:64]),
 	}, nil
 }
 
-// GenTrusteeKeyPair generates a new trustee key pair
+// GenTrusteeKeyPair generates a trustee key pair
 func (cv *CryptoVote) GenTrusteeKeyPair() (*KeyPair, error) {
 	results, err := cv.genTrusteeKeyPair.Call(cv.ctx)
 	if err != nil {
@@ -327,79 +423,89 @@ func (cv *CryptoVote) GenTrusteeKeyPair() (*KeyPair, error) {
 
 	ptr := uint32(results[0])
 	if ptr == 0 {
-		return nil, fmt.Errorf("failed to generate trustee key pair")
+		return nil, fmt.Errorf("key generation failed")
 	}
 
-	// Copy the 64 bytes (32 secret + 32 public)
-	keyData, err := cv.copyFromWasm(ptr, 64)
-	if err != nil {
-		return nil, err
+	// Read the 64 bytes (32 bytes secret key + 32 bytes public key)
+	data, ok := cv.memory.Read(ptr, 64)
+	if !ok {
+		return nil, fmt.Errorf("failed to read key pair from WASM memory")
 	}
 
 	// Free the WASM memory
 	if err := cv.free(ptr, 64); err != nil {
-		return nil, err
+		log.Printf("Warning: failed to free key pair memory: %v", err)
 	}
 
-	secretKey := base64.RawStdEncoding.EncodeToString(keyData[:32])
-	publicKey := base64.RawStdEncoding.EncodeToString(keyData[32:64])
-
 	return &KeyPair{
-		SecretKey: secretKey,
-		PublicKey: publicKey,
+		SecretKey: base64.StdEncoding.EncodeToString(data[:32]),
+		PublicKey: base64.StdEncoding.EncodeToString(data[32:64]),
 	}, nil
 }
 
-// EncryptResult represents the result of encryption with cyphers and control data
+// EncryptResult represents the result of an encryption operation
 type EncryptResult struct {
 	Cyphers     [2][]byte `json:"cyphers"`
 	ControlData []byte    `json:"control_data"`
 }
 
-// Encrypt encrypts a message using mixnet and trustee public keys
-func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []string, message string, maxSize uint32) (*EncryptResult, error) {
-	if len(message) == 0 {
-		return nil, fmt.Errorf("message must not be empty")
+// Encrypt encrypts a message using the mixnet and trustee public keys
+func (cv *CryptoVote) Encrypt(mixnetPublicKeys, trusteePublicKeys []string, message string, maxSize uint32) (*EncryptResult, error) {
+	// Input validation
+	if err := validateKeyList(mixnetPublicKeys, "mixnet public keys"); err != nil {
+		return nil, err
 	}
-
+	if err := validateKeyList(trusteePublicKeys, "trustee public keys"); err != nil {
+		return nil, err
+	}
+	if message == "" {
+		return nil, fmt.Errorf("message cannot be empty")
+	}
+	if maxSize == 0 || maxSize > 1024*1024 {
+		return nil, fmt.Errorf("invalid max size: %d", maxSize)
+	}
 	if uint32(len(message)) > maxSize {
-		return nil, fmt.Errorf("message is bigger than max_size")
-	}
-
-	// Prepare message data
-	messageBytes := []byte(message)
-	msgPtr, msgSize, err := cv.copyToWasm(messageBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy message to WASM: %w", err)
+		return nil, fmt.Errorf("message too large: %d > %d", len(message), maxSize)
 	}
 
 	// Prepare mixnet keys
-	mixnetKeysPtr, mixnetCount, err := cv.copyKeysToWasm(mixnetPublicKeys)
+	mixnetBuffer, err := cv.copyKeysToWasm(mixnetPublicKeys)
 	if err != nil {
-		cv.free(msgPtr, msgSize)
-		return nil, fmt.Errorf("failed to copy mixnet keys to WASM: %w", err)
+		return nil, fmt.Errorf("failed to prepare mixnet keys: %w", err)
 	}
+	defer mixnetBuffer.Free()
 
 	// Prepare trustee keys
-	trusteeKeysPtr, trusteeCount, err := cv.copyKeysToWasm(trusteePublicKeys)
+	trusteeBuffer, err := cv.copyKeysToWasm(trusteePublicKeys)
 	if err != nil {
-		cv.free(msgPtr, msgSize)
-		cv.free(mixnetKeysPtr, mixnetCount*32)
-		return nil, fmt.Errorf("failed to copy trustee keys to WASM: %w", err)
+		return nil, fmt.Errorf("failed to prepare trustee keys: %w", err)
+	}
+	defer trusteeBuffer.Free()
+
+	// Prepare message
+	messageBytes := []byte(message)
+	messageBuffer, err := cv.NewWasmBuffer(uint32(len(messageBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate message buffer: %w", err)
+	}
+	defer messageBuffer.Free()
+
+	if err := messageBuffer.Write(messageBytes); err != nil {
+		return nil, fmt.Errorf("failed to write message to WASM memory: %w", err)
 	}
 
 	// Call WASM encrypt function
 	results, err := cv.encryptFunc.Call(cv.ctx,
-		uint64(mixnetCount),
-		uint64(trusteeCount),
-		uint64(mixnetKeysPtr),
-		uint64(trusteeKeysPtr),
-		uint64(msgPtr),
-		uint64(msgSize),
+		uint64(len(mixnetPublicKeys)),
+		uint64(len(trusteePublicKeys)),
+		uint64(mixnetBuffer.Ptr()),
+		uint64(trusteeBuffer.Ptr()),
+		uint64(messageBuffer.Ptr()),
+		uint64(messageBuffer.Size()),
 		uint64(maxSize),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call encrypt: %w", err)
+		return nil, fmt.Errorf("encrypt function call failed: %w", err)
 	}
 
 	resultPtr := uint32(results[0])
@@ -407,31 +513,30 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 		return nil, fmt.Errorf("encryption failed")
 	}
 
-	// Read the result (sized buffer)
+	// Read the result
 	encryptedData, err := cv.readSizedBuffer(resultPtr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read encrypted data: %w", err)
 	}
 
 	// Get cypher size to split the result
-	cypherSizeResults, err := cv.cypherSizeFunc.Call(cv.ctx,
-		uint64(len(mixnetPublicKeys)),
-		uint64(maxSize),
-	)
+	cypherSizeResults, err := cv.cypherSizeFunc.Call(cv.ctx, uint64(len(mixnetPublicKeys)), uint64(maxSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cypher size: %w", err)
 	}
-
 	cypherSize := uint32(cypherSizeResults[0])
-
-	// Split the data into cyphers and control data
-	if len(encryptedData) < int(cypherSize*2) {
-		return nil, fmt.Errorf("encrypted data too small: expected at least %d bytes, got %d", cypherSize*2, len(encryptedData))
+	if cypherSize == 0 {
+		return nil, fmt.Errorf("invalid cypher size")
 	}
 
+	if len(encryptedData) < int(cypherSize*2) {
+		return nil, fmt.Errorf("encrypted data too small: %d < %d", len(encryptedData), cypherSize*2)
+	}
+
+	// Split the data into cyphers and control data
 	cypher1 := make([]byte, cypherSize)
 	cypher2 := make([]byte, cypherSize)
-	copy(cypher1, encryptedData[0:cypherSize])
+	copy(cypher1, encryptedData[:cypherSize])
 	copy(cypher2, encryptedData[cypherSize:cypherSize*2])
 
 	controlData := make([]byte, len(encryptedData)-int(cypherSize*2))
@@ -443,45 +548,62 @@ func (cv *CryptoVote) Encrypt(mixnetPublicKeys []string, trusteePublicKeys []str
 	}, nil
 }
 
-// DecryptMixnet decrypts a block of ciphers with a mixnet private key
+// DecryptMixnet decrypts a cypher block using a mixnet secret key
 func (cv *CryptoVote) DecryptMixnet(secretKey string, cypherBlock []byte, cypherCount uint32) ([]byte, error) {
-	// Decode secret key from base64
-	keyBytes, err := base64.RawStdEncoding.DecodeString(secretKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode secret key from base64: %w", err)
+	// Input validation
+	if secretKey == "" {
+		return nil, fmt.Errorf("secret key cannot be empty")
+	}
+	if len(cypherBlock) == 0 {
+		return nil, fmt.Errorf("cypher block cannot be empty")
+	}
+	if cypherCount == 0 {
+		return nil, fmt.Errorf("cypher count cannot be zero")
+	}
+	if len(cypherBlock)%int(cypherCount) != 0 {
+		return nil, fmt.Errorf("cypher block size not divisible by cypher count")
 	}
 
+	// Decode and validate secret key
+	keyBytes, err := base64.StdEncoding.DecodeString(secretKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid secret key base64: %w", err)
+	}
 	if len(keyBytes) != 32 {
 		return nil, fmt.Errorf("secret key must be 32 bytes, got %d", len(keyBytes))
 	}
 
-	// Copy secret key to WASM
-	keyPtr, err := cv.alloc(32)
+	// Allocate and copy the secret key
+	keyBuffer, err := cv.NewWasmBuffer(32)
 	if err != nil {
-		return nil, fmt.Errorf("failed to allocate memory for secret key: %w", err)
+		return nil, fmt.Errorf("failed to allocate key buffer: %w", err)
+	}
+	defer keyBuffer.Free()
+
+	if err := keyBuffer.Write(keyBytes); err != nil {
+		return nil, fmt.Errorf("failed to write key to WASM memory: %w", err)
 	}
 
-	if !cv.memory.Write(keyPtr, keyBytes) {
-		cv.free(keyPtr, 32)
-		return nil, fmt.Errorf("failed to write secret key to WASM memory")
-	}
-
-	// Copy cypher block to WASM
-	cypherPtr, cypherSize, err := cv.copyToWasm(cypherBlock)
+	// Copy the cypher block
+	cypherBuffer, err := cv.NewWasmBuffer(uint32(len(cypherBlock)))
 	if err != nil {
-		cv.free(keyPtr, 32)
-		return nil, fmt.Errorf("failed to copy cypher block to WASM: %w", err)
+		return nil, fmt.Errorf("failed to allocate cypher buffer: %w", err)
+	}
+	defer cypherBuffer.Free()
+
+	if err := cypherBuffer.Write(cypherBlock); err != nil {
+		return nil, fmt.Errorf("failed to write cypher block to WASM memory: %w", err)
 	}
 
 	// Call WASM decrypt_mixnet function
 	results, err := cv.decryptMixnetFunc.Call(cv.ctx,
-		uint64(keyPtr),
+		uint64(keyBuffer.Ptr()),
 		uint64(cypherCount),
-		uint64(cypherPtr),
-		uint64(cypherSize),
+		uint64(cypherBuffer.Ptr()),
+		uint64(cypherBuffer.Size()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call decrypt_mixnet: %w", err)
+		return nil, fmt.Errorf("decrypt_mixnet function call failed: %w", err)
 	}
 
 	resultPtr := uint32(results[0])
@@ -489,35 +611,54 @@ func (cv *CryptoVote) DecryptMixnet(secretKey string, cypherBlock []byte, cypher
 		return nil, fmt.Errorf("mixnet decryption failed")
 	}
 
-	// Read the result (sized buffer)
+	// Read the result
 	return cv.readSizedBuffer(resultPtr)
 }
 
-// DecryptTrustee decrypts a block of ciphers with all trustee private keys
+// DecryptTrustee decrypts a cypher block using trustee secret keys
 func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cypherCount int) ([]string, error) {
-	// Prepare trustee secret keys
-	trusteeKeysPtr, trusteeCount, err := cv.copyKeysToWasm(secretKeys)
-	if err != nil {
-		return nil, fmt.Errorf("failed to copy trustee keys to WASM: %w", err)
+	// Input validation
+	if err := validateKeyList(secretKeys, "secret keys"); err != nil {
+		return nil, err
+	}
+	if len(cypherBlock) == 0 {
+		return nil, fmt.Errorf("cypher block cannot be empty")
+	}
+	if cypherCount == 0 {
+		return nil, fmt.Errorf("cypher count cannot be zero")
+	}
+	if len(cypherBlock)%int(cypherCount) != 0 {
+		return nil, fmt.Errorf("cypher block size not divisible by cypher count")
 	}
 
-	// Copy cypher block to WASM
-	cypherPtr, cypherSize, err := cv.copyToWasm(cypherBlock)
+	// Prepare trustee secret keys
+	keysBuffer, err := cv.copyKeysToWasm(secretKeys)
 	if err != nil {
-		cv.free(trusteeKeysPtr, trusteeCount*32)
-		return nil, fmt.Errorf("failed to copy cypher block to WASM: %w", err)
+		return nil, fmt.Errorf("failed to prepare secret keys: %w", err)
+	}
+	defer keysBuffer.Free()
+
+	// Copy the cypher block
+	cypherBuffer, err := cv.NewWasmBuffer(uint32(len(cypherBlock)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate cypher buffer: %w", err)
+	}
+	defer cypherBuffer.Free()
+
+	if err := cypherBuffer.Write(cypherBlock); err != nil {
+		return nil, fmt.Errorf("failed to write cypher block to WASM memory: %w", err)
 	}
 
 	// Call WASM decrypt_trustee function
 	results, err := cv.decryptTrusteeFunc.Call(cv.ctx,
-		uint64(trusteeCount),
-		uint64(trusteeKeysPtr),
+		uint64(len(secretKeys)),
+		uint64(keysBuffer.Ptr()),
 		uint64(cypherCount),
-		uint64(cypherPtr),
-		uint64(cypherSize),
+		uint64(cypherBuffer.Ptr()),
+		uint64(cypherBuffer.Size()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call decrypt_trustee: %w", err)
+		return nil, fmt.Errorf("decrypt_trustee function call failed: %w", err)
 	}
 
 	resultPtr := uint32(results[0])
@@ -525,10 +666,19 @@ func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cy
 		return nil, fmt.Errorf("trustee decryption failed")
 	}
 
-	// Read the result (sized buffer)
+	// Read the result
 	decryptedData, err := cv.readSizedBuffer(resultPtr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read decrypted data: %w", err)
+	}
+
+	// Parse decrypted data into individual messages
+	if cypherCount == 1 {
+		return []string{truncateAtNull(string(decryptedData))}, nil
+	}
+
+	if len(decryptedData)%int(cypherCount) != 0 {
+		return nil, fmt.Errorf("decrypted data size not divisible by cypher count")
 	}
 
 	messageSize := len(decryptedData) / int(cypherCount)
@@ -537,113 +687,158 @@ func (cv *CryptoVote) DecryptTrustee(secretKeys []string, cypherBlock []byte, cy
 	for i := range cypherCount {
 		start := int(i) * messageSize
 		end := start + messageSize
-		messageBytes := truncateAtNull(decryptedData[start:end])
-
-		// Convert to string, handling empty/null-only data
-		if len(messageBytes) == 0 {
-			messages[i] = ""
-		} else {
-			messages[i] = string(messageBytes)
-		}
+		messageBytes := decryptedData[start:end]
+		messages[i] = truncateAtNull(string(messageBytes))
 	}
 
 	return messages, nil
 }
 
-func truncateAtNull(data []byte) []byte {
-	if index := bytes.IndexByte(data, 0); index != -1 {
-		return data[:index]
+// truncateAtNull truncates a string at the first null byte
+func truncateAtNull(s string) string {
+	if idx := bytes.IndexByte([]byte(s), 0); idx != -1 {
+		return s[:idx]
 	}
-	return data
+	return s
 }
 
-// Validate validates encrypted messages using the validate function from WASM
-func (cv *CryptoVote) Validate(userDataBlock []byte, mixnetDataList [][]byte, mixnetPublicKeys []string, trusteePublicKeys []string, trusteeSecretKeys []string, maxSize uint32, userCount uint32) (int32, error) {
+// Validate validates the cryptographic integrity of the voting process
+func (cv *CryptoVote) Validate(encryptResults []*EncryptResult, mixnetDataList [][]byte, mixnetPublicKeys, trusteePublicKeys, trusteeSecretKeys []string, maxSize, userCount uint32) (int32, error) {
+	// Input validation
+	if len(encryptResults) == 0 {
+		return -1000, fmt.Errorf("encrypt results cannot be empty")
+	}
+	if len(mixnetDataList) == 0 {
+		return -1000, fmt.Errorf("mixnet data list cannot be empty")
+	}
+	if err := validateKeyList(mixnetPublicKeys, "mixnet public keys"); err != nil {
+		return -1000, err
+	}
+	if err := validateKeyList(trusteePublicKeys, "trustee public keys"); err != nil {
+		return -1000, err
+	}
+	if err := validateKeyList(trusteeSecretKeys, "trustee secret keys"); err != nil {
+		return -1000, err
+	}
+	if maxSize == 0 || maxSize > 1024*1024 {
+		return -1000, fmt.Errorf("invalid max size: %d", maxSize)
+	}
+	if userCount == 0 {
+		return -1000, fmt.Errorf("user count cannot be zero")
+	}
+	if len(encryptResults) != int(userCount) {
+		return -1000, fmt.Errorf("encrypt results length must match user count")
+	}
+
+	// Convert encryptResults to userDataBlock
+	var totalSize int
+	for _, result := range encryptResults {
+		if len(result.Cyphers) != 2 {
+			return -1000, fmt.Errorf("each encrypt result must have exactly 2 cyphers")
+		}
+		totalSize += len(result.Cyphers[0]) + len(result.Cyphers[1]) + len(result.ControlData)
+	}
+
+	userDataBlock := make([]byte, totalSize)
+	offset := 0
+	for _, result := range encryptResults {
+		copy(userDataBlock[offset:], result.Cyphers[0])
+		offset += len(result.Cyphers[0])
+		copy(userDataBlock[offset:], result.Cyphers[1])
+		offset += len(result.Cyphers[1])
+		copy(userDataBlock[offset:], result.ControlData)
+		offset += len(result.ControlData)
+	}
+
 	// Copy user data block to WASM
-	userDataPtr, userDataSize, err := cv.copyToWasm(userDataBlock)
+	userDataBuffer, err := cv.NewWasmBuffer(uint32(len(userDataBlock)))
 	if err != nil {
-		return 0, fmt.Errorf("failed to copy user data block to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to allocate user data buffer: %w", err)
+	}
+	defer userDataBuffer.Free()
+
+	if err := userDataBuffer.Write(userDataBlock); err != nil {
+		return -1000, fmt.Errorf("failed to write user data to WASM memory: %w", err)
 	}
 
 	// Prepare mixnet size list
 	mixnetSizeList := make([]byte, len(mixnetDataList)*4)
 	for i, data := range mixnetDataList {
-		binary.LittleEndian.PutUint32(mixnetSizeList[i*4:(i+1)*4], uint32(len(data)))
+		binary.LittleEndian.PutUint32(mixnetSizeList[i*4:], uint32(len(data)))
 	}
-	mixnetSizePtr, mixnetSizeLen, err := cv.copyToWasm(mixnetSizeList)
+
+	mixnetSizeBuffer, err := cv.NewWasmBuffer(uint32(len(mixnetSizeList)))
 	if err != nil {
-		cv.free(userDataPtr, userDataSize)
-		return 0, fmt.Errorf("failed to copy mixnet size list to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to allocate mixnet size buffer: %w", err)
+	}
+	defer mixnetSizeBuffer.Free()
+
+	if err := mixnetSizeBuffer.Write(mixnetSizeList); err != nil {
+		return -1000, fmt.Errorf("failed to write mixnet size list to WASM memory: %w", err)
 	}
 
 	// Concatenate mixnet data blocks
-	totalMixnetSize := 0
+	var totalMixnetSize int
 	for _, data := range mixnetDataList {
 		totalMixnetSize += len(data)
 	}
 	mixnetDataBlock := make([]byte, totalMixnetSize)
-	offset := 0
+	offset = 0
 	for _, data := range mixnetDataList {
 		copy(mixnetDataBlock[offset:], data)
 		offset += len(data)
 	}
-	mixnetDataPtr, mixnetDataSize, err := cv.copyToWasm(mixnetDataBlock)
+
+	mixnetDataBuffer, err := cv.NewWasmBuffer(uint32(len(mixnetDataBlock)))
 	if err != nil {
-		cv.free(userDataPtr, userDataSize)
-		cv.free(mixnetSizePtr, mixnetSizeLen)
-		return 0, fmt.Errorf("failed to copy mixnet data block to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to allocate mixnet data buffer: %w", err)
+	}
+	defer mixnetDataBuffer.Free()
+
+	if err := mixnetDataBuffer.Write(mixnetDataBlock); err != nil {
+		return -1000, fmt.Errorf("failed to write mixnet data to WASM memory: %w", err)
 	}
 
 	// Prepare mixnet public keys
-	mixnetKeysPtr, mixnetCount, err := cv.copyKeysToWasm(mixnetPublicKeys)
+	mixnetKeysBuffer, err := cv.copyKeysToWasm(mixnetPublicKeys)
 	if err != nil {
-		cv.free(userDataPtr, userDataSize)
-		cv.free(mixnetSizePtr, mixnetSizeLen)
-		cv.free(mixnetDataPtr, mixnetDataSize)
-		return 0, fmt.Errorf("failed to copy mixnet public keys to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to prepare mixnet public keys: %w", err)
 	}
+	defer mixnetKeysBuffer.Free()
 
 	// Prepare trustee public keys
-	trusteePublicKeysPtr, trusteePublicCount, err := cv.copyKeysToWasm(trusteePublicKeys)
+	trusteePublicKeysBuffer, err := cv.copyKeysToWasm(trusteePublicKeys)
 	if err != nil {
-		cv.free(userDataPtr, userDataSize)
-		cv.free(mixnetSizePtr, mixnetSizeLen)
-		cv.free(mixnetDataPtr, mixnetDataSize)
-		cv.free(mixnetKeysPtr, mixnetCount*32)
-		return 0, fmt.Errorf("failed to copy trustee public keys to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to prepare trustee public keys: %w", err)
 	}
+	defer trusteePublicKeysBuffer.Free()
 
 	// Prepare trustee secret keys
-	trusteeSecretKeysPtr, trusteeSecretCount, err := cv.copyKeysToWasm(trusteeSecretKeys)
+	trusteeSecretKeysBuffer, err := cv.copyKeysToWasm(trusteeSecretKeys)
 	if err != nil {
-		cv.free(userDataPtr, userDataSize)
-		cv.free(mixnetSizePtr, mixnetSizeLen)
-		cv.free(mixnetDataPtr, mixnetDataSize)
-		cv.free(mixnetKeysPtr, mixnetCount*32)
-		cv.free(trusteePublicKeysPtr, trusteePublicCount*32)
-		return 0, fmt.Errorf("failed to copy trustee secret keys to WASM: %w", err)
+		return -1000, fmt.Errorf("failed to prepare trustee secret keys: %w", err)
 	}
+	defer trusteeSecretKeysBuffer.Free()
 
 	// Call WASM validate function
 	results, err := cv.validateFunc.Call(cv.ctx,
 		uint64(userCount),
-		uint64(trusteeSecretCount),
-		uint64(userDataPtr),
-		uint64(userDataSize),
+		uint64(len(trusteeSecretKeys)),
+		uint64(userDataBuffer.Ptr()),
+		uint64(userDataBuffer.Size()),
 		uint64(maxSize),
-		uint64(mixnetSizePtr),
-		uint64(mixnetSizeLen),
-		uint64(mixnetDataPtr),
-		uint64(mixnetDataSize),
-		uint64(mixnetKeysPtr),
-		uint64(trusteePublicKeysPtr),
-		uint64(trusteeSecretKeysPtr),
+		uint64(mixnetSizeBuffer.Ptr()),
+		uint64(mixnetSizeBuffer.Size()),
+		uint64(mixnetDataBuffer.Ptr()),
+		uint64(mixnetDataBuffer.Size()),
+		uint64(mixnetKeysBuffer.Ptr()),
+		uint64(trusteePublicKeysBuffer.Ptr()),
+		uint64(trusteeSecretKeysBuffer.Ptr()),
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to call validate: %w", err)
+		return -1000, fmt.Errorf("validate function call failed: %w", err)
 	}
 
-	// The WASM function deallocates the inputs
 	result := int32(results[0])
 	return result, nil
 }

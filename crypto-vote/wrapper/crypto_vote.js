@@ -45,6 +45,9 @@ async function loadCryptoVote(wasmFile) {
 
   // Helper function to copy from WASM memory to JavaScript
   function copyFromWasm(ptr, size) {
+    if (!ptr || size <= 0) {
+      throw new Error("Invalid pointer or size");
+    }
     const result = new Uint8Array(size);
     const memoryView = new Uint8Array(memory.buffer, ptr, size);
     result.set(memoryView);
@@ -53,6 +56,10 @@ async function loadCryptoVote(wasmFile) {
 
   // Helper function to allocate memory in WASM and copy data from JavaScript
   function copyToWasm(data) {
+    if (!data || data.length === 0) {
+      throw new Error("Data cannot be null or empty");
+    }
+
     const dataLength = data.length;
     const dataPtr = alloc(dataLength);
 
@@ -60,20 +67,31 @@ async function loadCryptoVote(wasmFile) {
       throw new Error("Failed to allocate memory in WebAssembly");
     }
 
-    const memoryView = new Uint8Array(memory.buffer, dataPtr, dataLength);
-    memoryView.set(data);
-
-    return { ptr: dataPtr, size: dataLength };
+    try {
+      const memoryView = new Uint8Array(memory.buffer, dataPtr, dataLength);
+      memoryView.set(data);
+      return { ptr: dataPtr, size: dataLength };
+    } catch (error) {
+      // Clean up on error
+      free(dataPtr, dataLength);
+      throw error;
+    }
   }
 
   // Helper function to read a sized buffer (4 bytes size prefix)
   function readSizedBuffer(ptr) {
     if (!ptr) return null;
 
+    let size = 0;
     try {
       // Read the size (first 4 bytes)
       const sizeView = new DataView(memory.buffer, ptr, 4);
-      const size = sizeView.getUint32(0, true); // Little endian
+      size = sizeView.getUint32(0, true); // Little endian
+
+      if (size > 10 * 1024 * 1024) {
+        // 10MB safety limit
+        throw new Error(`Buffer size too large: ${size} bytes`);
+      }
 
       // Copy the actual data
       const result = copyFromWasm(ptr + 4, size);
@@ -86,7 +104,11 @@ async function loadCryptoVote(wasmFile) {
       console.error("Error reading sized buffer:", error);
       // Make sure to free memory even if an error occurs
       try {
-        free(ptr, 4); // Free at least the header if we couldn't read the size
+        if (size > 0) {
+          free(ptr, size + 4);
+        } else {
+          free(ptr, 4); // Free at least the header if we couldn't read the size
+        }
       } catch (e) {
         console.error("Failed to free memory after error:", e);
       }
@@ -100,6 +122,22 @@ async function loadCryptoVote(wasmFile) {
       throw new Error("Key list must be a non-empty array");
     }
 
+    // Validate all keys first before allocating memory
+    const decodedKeys = [];
+    for (let i = 0; i < keyList.length; i++) {
+      try {
+        const key = Uint8Array.fromBase64(keyList[i]);
+        if (!key || key.length !== 32) {
+          throw new Error(
+            `Key at index ${i} must be 32 bytes, got ${key ? key.length : "undefined"}`,
+          );
+        }
+        decodedKeys.push(key);
+      } catch (error) {
+        throw new Error(`Invalid key at index ${i}: ${error.message}`);
+      }
+    }
+
     // Allocate memory for all keys (32 bytes each)
     const totalSize = keyList.length * 32;
     const keysPtr = alloc(totalSize);
@@ -111,14 +149,8 @@ async function loadCryptoVote(wasmFile) {
     try {
       // Copy each key to WASM memory
       const memoryView = new Uint8Array(memory.buffer);
-      for (let i = 0; i < keyList.length; i++) {
-        const key = Uint8Array.fromBase64(keyList[i]);
-        if (!key || key.length !== 32) {
-          throw new Error(
-            `Key at index ${i} must be 32 bytes, got ${key ? key.length : "undefined"}`,
-          );
-        }
-        memoryView.set(key, keysPtr + i * 32);
+      for (let i = 0; i < decodedKeys.length; i++) {
+        memoryView.set(decodedKeys[i], keysPtr + i * 32);
       }
 
       return { ptr: keysPtr, count: keyList.length };
@@ -131,11 +163,18 @@ async function loadCryptoVote(wasmFile) {
 
   // String to Uint8Array conversion
   function stringToUint8Array(str) {
+    if (typeof str !== "string") {
+      throw new Error("Input must be a string");
+    }
     return new TextEncoder().encode(str);
   }
 
   // Uint8Array to String conversion with null byte truncation
   function uint8ArrayToString(array) {
+    if (!(array instanceof Uint8Array)) {
+      throw new Error("Input must be a Uint8Array");
+    }
+
     // Find the first null byte and truncate there
     const nullIndex = array.indexOf(0);
     if (nullIndex !== -1) {
@@ -148,6 +187,39 @@ async function loadCryptoVote(wasmFile) {
     }
 
     return new TextDecoder().decode(array);
+  }
+
+  // Input validation helpers
+  function validateKeyList(keyList, name) {
+    if (!Array.isArray(keyList) || keyList.length === 0) {
+      throw new Error(`${name} must be a non-empty array`);
+    }
+    if (keyList.length > 1000) {
+      // Reasonable limit
+      throw new Error(`${name} list too large: ${keyList.length} keys`);
+    }
+  }
+
+  function validateMessage(message, maxSize) {
+    if (!message || typeof message !== "string") {
+      throw new Error("Message must be a non-empty string");
+    }
+    if (message.length === 0) {
+      throw new Error("Message cannot be empty");
+    }
+    if (message.length > maxSize) {
+      throw new Error(
+        `Message is bigger than max_size: ${message.length} > ${maxSize}`,
+      );
+    }
+  }
+
+  function validatePositiveInteger(value, name, max = 1000000) {
+    if (!Number.isInteger(value) || value <= 0 || value > max) {
+      throw new Error(
+        `${name} must be a positive integer <= ${max}, got: ${value}`,
+      );
+    }
   }
 
   return {
@@ -200,26 +272,28 @@ async function loadCryptoVote(wasmFile) {
     },
 
     encrypt: (mixnetPublicKeyList, trusteePublicKeyList, message, maxSize) => {
-      try {
-        if (!message || typeof message !== "string" || message.length === 0) {
-          throw new Error("Message must be a non-empty string");
-        }
+      let mixnetKeys = null;
+      let trusteeKeys = null;
+      let messageData = null;
 
-        if (message.length > maxSize) {
-          throw new Error("Message is bigger then max_size");
-        }
+      try {
+        // Input validation
+        validateKeyList(mixnetPublicKeyList, "Mixnet public key list");
+        validateKeyList(trusteePublicKeyList, "Trustee public key list");
+        validatePositiveInteger(maxSize, "maxSize");
+        validateMessage(message, maxSize);
 
         // Convert string message to Uint8Array
         const messageBytes = stringToUint8Array(message);
 
         // Prepare mixnet keys
-        const mixnetKeys = copyKeysToWasm(mixnetPublicKeyList);
+        mixnetKeys = copyKeysToWasm(mixnetPublicKeyList);
 
         // Prepare trustee keys
-        const trusteeKeys = copyKeysToWasm(trusteePublicKeyList);
+        trusteeKeys = copyKeysToWasm(trusteePublicKeyList);
 
         // Prepare message
-        const messageData = copyToWasm(messageBytes);
+        messageData = copyToWasm(messageBytes);
 
         // Call WASM encrypt function
         const resultPtr = wasm_encrypt(
@@ -232,8 +306,6 @@ async function loadCryptoVote(wasmFile) {
           maxSize,
         );
 
-        // The WASM function deallocates the inputs
-
         if (!resultPtr) {
           throw new Error("Encryption failed");
         }
@@ -243,6 +315,13 @@ async function loadCryptoVote(wasmFile) {
 
         // Get cypher size to split the result
         const cypherSize = wasm_cypher_size(mixnetKeys.count, maxSize);
+        if (cypherSize === 0) {
+          throw new Error("Invalid cypher size");
+        }
+
+        if (encryptedData.length < cypherSize * 2) {
+          throw new Error("Encrypted data too small");
+        }
 
         // Split the data into cyphers and control data
         const cypher1 = encryptedData.slice(0, cypherSize);
@@ -256,48 +335,98 @@ async function loadCryptoVote(wasmFile) {
       } catch (error) {
         console.error("Error during encryption:", error);
         throw new Error("Encryption failed: " + error.message);
+      } finally {
+        // Clean up allocated memory - WASM function handles this now
+        // but we keep this for safety in case of early errors
       }
     },
 
     decrypt_mixnet: (secretKey, cypherBlock, cypherCount) => {
-      // Allocate and copy the secret key
-      const keyPtr = alloc(32);
-      if (!keyPtr) {
-        throw new Error("Failed to allocate memory for secret key");
+      let keyPtr = null;
+      let cypherData = null;
+
+      try {
+        // Input validation
+        if (!secretKey || typeof secretKey !== "string") {
+          throw new Error("Secret key must be a non-empty string");
+        }
+        if (!(cypherBlock instanceof Uint8Array) || cypherBlock.length === 0) {
+          throw new Error("Cypher block must be a non-empty Uint8Array");
+        }
+        validatePositiveInteger(cypherCount, "cypherCount");
+
+        if (cypherBlock.length % cypherCount !== 0) {
+          throw new Error("Cypher block size not divisible by cypher count");
+        }
+
+        // Allocate and copy the secret key
+        keyPtr = alloc(32);
+        if (!keyPtr) {
+          throw new Error("Failed to allocate memory for secret key");
+        }
+
+        const keyView = new Uint8Array(memory.buffer, keyPtr, 32);
+        const key = Uint8Array.fromBase64(secretKey);
+        if (key.length !== 32) {
+          throw new Error("Secret key must be 32 bytes");
+        }
+        keyView.set(key);
+
+        // Copy the cypher block
+        cypherData = copyToWasm(cypherBlock);
+
+        // Call WASM decrypt_mixnet function
+        const resultPtr = wasm_decrypt_mixnet(
+          keyPtr,
+          cypherCount,
+          cypherData.ptr,
+          cypherData.size,
+        );
+
+        // WASM function now handles cleanup of inputs
+        keyPtr = null;
+        cypherData = null;
+
+        if (!resultPtr) {
+          throw new Error("Mixnet decryption failed");
+        }
+
+        // Read the result (sized buffer)
+        return readSizedBuffer(resultPtr);
+      } catch (error) {
+        // Clean up allocated memory on error
+        if (keyPtr) {
+          free(keyPtr, 32);
+        }
+        if (cypherData) {
+          free(cypherData.ptr, cypherData.size);
+        }
+        console.error("Error during mixnet decryption:", error);
+        throw new Error("Mixnet decryption failed: " + error.message);
       }
-
-      const keyView = new Uint8Array(memory.buffer, keyPtr, 32);
-      const key = Uint8Array.fromBase64(secretKey);
-      keyView.set(key);
-
-      // Copy the cypher block
-      const cypherData = copyToWasm(cypherBlock);
-
-      // Call WASM decrypt_mixnet function
-      const resultPtr = wasm_decrypt_mixnet(
-        keyPtr,
-        cypherCount,
-        cypherData.ptr,
-        cypherData.size,
-      );
-
-      // The WASM function deallocates the inputs
-
-      if (!resultPtr) {
-        throw new Error("Mixnet decryption failed");
-      }
-
-      // Read the result (sized buffer)
-      return readSizedBuffer(resultPtr);
     },
 
     decrypt_trustee: (secretKeyList, cypherBlock, cypherCount) => {
+      let trusteeKeys = null;
+      let cypherData = null;
+
       try {
+        // Input validation
+        validateKeyList(secretKeyList, "Secret key list");
+        if (!(cypherBlock instanceof Uint8Array) || cypherBlock.length === 0) {
+          throw new Error("Cypher block must be a non-empty Uint8Array");
+        }
+        validatePositiveInteger(cypherCount, "cypherCount");
+
+        if (cypherBlock.length % cypherCount !== 0) {
+          throw new Error("Cypher block size not divisible by cypher count");
+        }
+
         // Prepare trustee secret keys
-        const trusteeKeys = copyKeysToWasm(secretKeyList);
+        trusteeKeys = copyKeysToWasm(secretKeyList);
 
         // Copy the cypher block
-        const cypherData = copyToWasm(cypherBlock);
+        cypherData = copyToWasm(cypherBlock);
 
         // Call WASM decrypt_trustee function
         const resultPtr = wasm_decrypt_trustee(
@@ -308,6 +437,10 @@ async function loadCryptoVote(wasmFile) {
           cypherData.size,
         );
 
+        // WASM function now handles cleanup of inputs
+        trusteeKeys = null;
+        cypherData = null;
+
         if (!resultPtr) {
           throw new Error("Trustee decryption failed");
         }
@@ -316,15 +449,13 @@ async function loadCryptoVote(wasmFile) {
         const decryptedData = readSizedBuffer(resultPtr);
 
         // Parse decrypted data into individual messages
-        // Assuming each message is a UTF-8 encoded string and messages are
-        // packed one after another with no delimiter
-
-        // Since we don't know how the messages are delimited in the binary data,
-        // we need to implement a method to separate them
-
         // If cypherCount is 1, we assume the entire buffer is a single message
         if (cypherCount === 1) {
           return [uint8ArrayToString(decryptedData)];
+        }
+
+        if (decryptedData.length % cypherCount !== 0) {
+          throw new Error("Decrypted data size not divisible by cypher count");
         }
 
         const messageSize = decryptedData.length / cypherCount;
@@ -339,6 +470,13 @@ async function loadCryptoVote(wasmFile) {
 
         return messages;
       } catch (error) {
+        // Clean up allocated memory on error
+        if (trusteeKeys) {
+          free(trusteeKeys.ptr, trusteeKeys.count * 32);
+        }
+        if (cypherData) {
+          free(cypherData.ptr, cypherData.size);
+        }
         console.error("Error during trustee decryption:", error);
         throw new Error("Trustee decryption failed: " + error.message);
       }
@@ -353,11 +491,47 @@ async function loadCryptoVote(wasmFile) {
       maxSize,
       userCount,
     ) => {
+      let userDataPtr = null;
+      let mixnetSizePtr = null;
+      let mixnetDataPtr = null;
+      let mixnetKeys = null;
+      let trusteePublicKeys = null;
+      let trusteeSecretKeys = null;
+
       try {
+        // Input validation
+        if (
+          !Array.isArray(encryptResultList) ||
+          encryptResultList.length === 0
+        ) {
+          throw new Error("Encrypt result list must be a non-empty array");
+        }
+        if (!Array.isArray(mixnetDataList) || mixnetDataList.length === 0) {
+          throw new Error("Mixnet data list must be a non-empty array");
+        }
+        validateKeyList(mixnetPublicKeyList, "Mixnet public key list");
+        validateKeyList(trusteePublicKeyList, "Trustee public key list");
+        validateKeyList(trusteeSecretKeyList, "Trustee secret key list");
+        validatePositiveInteger(maxSize, "maxSize");
+        validatePositiveInteger(userCount, "userCount");
+
+        if (encryptResultList.length !== userCount) {
+          throw new Error("Encrypt result list length must match user count");
+        }
+
         // Convert encryptResultList to userDataBlock by concatenating all entries
-        // For each encryptionResult, concatenate the cyphers and the control_data
         let totalSize = 0;
         for (const encryptResult of encryptResultList) {
+          if (
+            !encryptResult.cyphers ||
+            !Array.isArray(encryptResult.cyphers) ||
+            encryptResult.cyphers.length !== 2
+          ) {
+            throw new Error("Each encrypt result must have exactly 2 cyphers");
+          }
+          if (!encryptResult.controlData) {
+            throw new Error("Each encrypt result must have control data");
+          }
           totalSize += encryptResult.cyphers[0].length;
           totalSize += encryptResult.cyphers[1].length;
           totalSize += encryptResult.controlData.length;
@@ -381,16 +555,19 @@ async function loadCryptoVote(wasmFile) {
         }
 
         // Copy user data block to WASM
-        const userDataPtr = copyToWasm(userDataBlock);
+        userDataPtr = copyToWasm(userDataBlock);
 
         // Prepare mixnet size list
         const mixnetSizeList = new Uint8Array(mixnetDataList.length * 4);
         for (let i = 0; i < mixnetDataList.length; i++) {
+          if (!(mixnetDataList[i] instanceof Uint8Array)) {
+            throw new Error(`Mixnet data at index ${i} must be a Uint8Array`);
+          }
           const size = mixnetDataList[i].length;
           const view = new DataView(mixnetSizeList.buffer);
           view.setUint32(i * 4, size, true); // Little endian
         }
-        const mixnetSizePtr = copyToWasm(mixnetSizeList);
+        mixnetSizePtr = copyToWasm(mixnetSizeList);
 
         // Concatenate mixnet data blocks
         const totalMixnetSize = mixnetDataList.reduce(
@@ -403,16 +580,16 @@ async function loadCryptoVote(wasmFile) {
           mixnetDataBlock.set(data, mixnetOffset);
           mixnetOffset += data.length;
         }
-        const mixnetDataPtr = copyToWasm(mixnetDataBlock);
+        mixnetDataPtr = copyToWasm(mixnetDataBlock);
 
         // Prepare mixnet public keys
-        const mixnetKeys = copyKeysToWasm(mixnetPublicKeyList);
+        mixnetKeys = copyKeysToWasm(mixnetPublicKeyList);
 
         // Prepare trustee public keys
-        const trusteePublicKeys = copyKeysToWasm(trusteePublicKeyList);
+        trusteePublicKeys = copyKeysToWasm(trusteePublicKeyList);
 
         // Prepare trustee secret keys
-        const trusteeSecretKeys = copyKeysToWasm(trusteeSecretKeyList);
+        trusteeSecretKeys = copyKeysToWasm(trusteeSecretKeyList);
 
         // Call WASM validate function
         const result = wasm_validate(
@@ -430,10 +607,35 @@ async function loadCryptoVote(wasmFile) {
           trusteeSecretKeys.ptr,
         );
 
-        // The WASM function deallocates the inputs
+        // WASM function now handles cleanup of inputs
+        userDataPtr = null;
+        mixnetSizePtr = null;
+        mixnetDataPtr = null;
+        mixnetKeys = null;
+        trusteePublicKeys = null;
+        trusteeSecretKeys = null;
 
         return result;
       } catch (error) {
+        // Clean up allocated memory on error
+        if (userDataPtr) {
+          free(userDataPtr.ptr, userDataPtr.size);
+        }
+        if (mixnetSizePtr) {
+          free(mixnetSizePtr.ptr, mixnetSizePtr.size);
+        }
+        if (mixnetDataPtr) {
+          free(mixnetDataPtr.ptr, mixnetDataPtr.size);
+        }
+        if (mixnetKeys) {
+          free(mixnetKeys.ptr, mixnetKeys.count * 32);
+        }
+        if (trusteePublicKeys) {
+          free(trusteePublicKeys.ptr, trusteePublicKeys.count * 32);
+        }
+        if (trusteeSecretKeys) {
+          free(trusteeSecretKeys.ptr, trusteeSecretKeys.count * 32);
+        }
         console.error("Error during validation:", error);
         throw new Error("Validation failed: " + error.message);
       }

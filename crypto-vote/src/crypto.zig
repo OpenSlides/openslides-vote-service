@@ -18,20 +18,20 @@ const InvalidCypherError = error{InvalidCypher};
 const WeakPublicKeyError = std.crypto.errors.WeakPublicKeyError;
 
 pub const KeyPairMixnet = struct {
-    key_secred: [32]u8,
+    key_secret: [32]u8,
     key_public: [32]u8,
 
     pub fn generate() KeyPairMixnet {
         const key = X25519.KeyPair.generate();
         return KeyPairMixnet{
-            .key_secred = key.secret_key,
+            .key_secret = key.secret_key,
             .key_public = key.public_key,
         };
     }
 };
 
 pub const KeyPairTrustee = struct {
-    key_secred: [32]u8,
+    key_secret: [32]u8,
     key_public: [32]u8,
 
     pub fn generate() KeyPairTrustee {
@@ -48,7 +48,7 @@ pub const KeyPairTrustee = struct {
     fn generateDeterministic(seed: [32]u8) error{InvalidKey}!KeyPairTrustee {
         const scalar = generate_scalar(seed);
         return KeyPairTrustee{
-            .key_secred = scalar,
+            .key_secret = scalar,
             .key_public = (calc_pk(scalar) catch return error.InvalidKey).toBytes(),
         };
     }
@@ -66,8 +66,8 @@ pub const KeyPairTrustee = struct {
     }
 };
 
-fn encrypt_symmetric(shared_secred: [32]u8, message: []const u8, buf: []u8) void {
-    const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secred);
+fn encrypt_symmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void {
+    const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
 
     // With uses a static nonce. Since the data_key is only used once, this
     // should be secure.
@@ -86,8 +86,8 @@ fn encrypt_symmetric(shared_secred: [32]u8, message: []const u8, buf: []u8) void
     }
 }
 
-fn decrypt_symmetric(shared_secred: [32]u8, cypher: []const u8, buf: []u8) AuthenticationError!void {
-    const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secred);
+fn decrypt_symmetric(shared_secret: [32]u8, cypher: []const u8, buf: []u8) AuthenticationError!void {
+    const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
     const nonce = blk: {
         var n: [Aes256Gcm.nonce_length]u8 = undefined;
         @memset(&n, 0);
@@ -115,9 +115,9 @@ fn encrypt_x25519_deterministic(
     assert(encrypted_size <= buf.len);
 
     const key_ephemeral = try X25519.KeyPair.generateDeterministic(seed);
-    const shared_secred = try X25519.scalarmult(key_ephemeral.secret_key, key_public);
+    const shared_secret = try X25519.scalarmult(key_ephemeral.secret_key, key_public);
 
-    encrypt_symmetric(shared_secred, message, buf[32..]);
+    encrypt_symmetric(shared_secret, message, buf[32..]);
     // Write the public ephemeral key at the end. This is important, when buf and message are the same.
     buf[0..X25519.public_length].* = key_ephemeral.public_key;
     return buf[0..encrypted_size];
@@ -128,7 +128,7 @@ fn decrypted_bufsize(cypher_len: usize) usize {
 }
 
 fn decrypt_x25519(
-    key_secred: [32]u8,
+    key_secret: [32]u8,
     cypher: []const u8,
     buf: []u8,
 ) (IdentityElementError || AuthenticationError)![]u8 {
@@ -138,8 +138,8 @@ fn decrypt_x25519(
     const key_ephemeral_public = cypher[0..X25519.public_length].*;
     const encrypted = cypher[X25519.public_length..];
 
-    const shared_secred = try X25519.scalarmult(key_secred, key_ephemeral_public);
-    try decrypt_symmetric(shared_secred, encrypted, buf);
+    const shared_secret = try X25519.scalarmult(key_secret, key_ephemeral_public);
+    try decrypt_symmetric(shared_secret, encrypted, buf);
 
     return buf[0..decrypted_size];
 }
@@ -153,7 +153,7 @@ test "x25519 encrypt and decrypt" {
     const encrypted_message = try encrypt_x25519_deterministic(key.key_public, msg, seed, &buf_encrypt);
 
     var buf_decrypt: [msg.len]u8 = undefined;
-    const decrypted = try decrypt_x25519(key.key_secred, encrypted_message, &buf_decrypt);
+    const decrypted = try decrypt_x25519(key.key_secret, encrypted_message, &buf_decrypt);
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
@@ -170,13 +170,13 @@ fn combine_public_keys(
     return combined;
 }
 
-fn combine_key_secred(
-    key_secred_list: []const EDCurve.scalar.CompressedScalar,
+fn combine_key_secret(
+    key_secret_list: []const EDCurve.scalar.CompressedScalar,
 ) [32]u8 {
-    assert(key_secred_list.len > 0);
+    assert(key_secret_list.len > 0);
 
-    var combined = key_secred_list[0];
-    for (key_secred_list[1..]) |other| {
+    var combined = key_secret_list[0];
+    for (key_secret_list[1..]) |other| {
         combined = EDCurve.scalar.add(combined, other);
     }
     return combined;
@@ -213,12 +213,12 @@ fn encrypt_ed25519_deterministric(
     const combined_key_public = combine_public_keys(key_public_list) catch return error.InvalidPublicKey;
 
     const key_ephemeral = try Ed25519.KeyPair.generateDeterministic(seed);
-    const key_ephemeral_secred = extract_scalar(key_ephemeral);
+    const key_ephemeral_secret = extract_scalar(key_ephemeral);
     const key_ephemeral_public = EDCurve.fromBytes(key_ephemeral.public_key.toBytes()) catch unreachable;
     const public_key_bytes = key_ephemeral_public.toBytes();
 
-    const shared_secred = (try EDCurve.mul(combined_key_public, key_ephemeral_secred)).toBytes();
-    encrypt_symmetric(shared_secred, message, buf[32..]);
+    const shared_secret = (try EDCurve.mul(combined_key_public, key_ephemeral_secret)).toBytes();
+    encrypt_symmetric(shared_secret, message, buf[32..]);
     // Write the public ephemeral key at the end. This is important, when buf and message are the same.
     buf[0..32].* = public_key_bytes;
     return buf[0..encrypted_size];
@@ -234,21 +234,21 @@ fn extract_scalar(kp: Ed25519.KeyPair) [32]u8 {
 }
 
 fn decrypt_ed25519(
-    key_secred_list: []const EDCurve.scalar.CompressedScalar,
+    key_secret_list: []const EDCurve.scalar.CompressedScalar,
     cypher: []const u8,
     buf: []u8,
 ) (InvalidCypherError || IdentityElementError || WeakPublicKeyError || AuthenticationError)![]u8 {
     const decrypted_size = decrypted_bufsize(cypher.len);
     assert(buf.len >= decrypted_size);
-    assert(key_secred_list.len > 0);
+    assert(key_secret_list.len > 0);
 
-    const combined_key_secred = combine_key_secred(key_secred_list);
+    const combined_key_secret = combine_key_secret(key_secret_list);
 
     const key_ephemeral_public = EDCurve.fromBytes(cypher[0..32].*) catch return error.InvalidCypher;
     const encrypted = cypher[32..];
 
-    const shared_secred = (try EDCurve.mul(key_ephemeral_public, combined_key_secred)).toBytes();
-    try decrypt_symmetric(shared_secred, encrypted, buf);
+    const shared_secret = (try EDCurve.mul(key_ephemeral_public, combined_key_secret)).toBytes();
+    try decrypt_symmetric(shared_secret, encrypted, buf);
     return buf[0..decrypted_size];
 }
 
@@ -271,15 +271,15 @@ test "encrypt and decrypt with ed25519" {
         &buf_encrypt,
     );
 
-    const key_secred_list = &[_]EDCurve.scalar.CompressedScalar{
-        key1.key_secred,
-        key2.key_secred,
-        key3.key_secred,
+    const key_secret_list = &[_]EDCurve.scalar.CompressedScalar{
+        key1.key_secret,
+        key2.key_secret,
+        key3.key_secret,
     };
 
     var buf_decrypt: [msg.len]u8 = undefined;
     const decrypted = try decrypt_ed25519(
-        key_secred_list,
+        key_secret_list,
         encrypted_message,
         &buf_decrypt,
     );
@@ -373,9 +373,9 @@ test "encrypt_full" {
     const seed = std.mem.zeroes([128]u8);
 
     const trustee_sk_list = &[_][32]u8{
-        trustee_key1.key_secred,
-        trustee_key2.key_secred,
-        trustee_key3.key_secred,
+        trustee_key1.key_secret,
+        trustee_key2.key_secret,
+        trustee_key3.key_secret,
     };
 
     const trustee_pk_list = &[_][32]u8{
@@ -394,9 +394,9 @@ test "encrypt_full" {
     var cypher = try encrypt_full(mixnet_pk_list, trustee_pk_list, msg, &seed, &buf);
 
     var decrypt_buf: [1024]u8 = undefined;
-    cypher = try decrypt_x25519(mixnet_key1.key_secred, cypher, &decrypt_buf);
-    cypher = try decrypt_x25519(mixnet_key2.key_secred, cypher, &decrypt_buf);
-    cypher = try decrypt_x25519(mixnet_key3.key_secred, cypher, &decrypt_buf);
+    cypher = try decrypt_x25519(mixnet_key1.key_secret, cypher, &decrypt_buf);
+    cypher = try decrypt_x25519(mixnet_key2.key_secret, cypher, &decrypt_buf);
+    cypher = try decrypt_x25519(mixnet_key3.key_secret, cypher, &decrypt_buf);
 
     const decrypted = try decrypt_ed25519(trustee_sk_list, cypher, &decrypt_buf);
 
@@ -552,9 +552,9 @@ test "encrypt_message" {
     const max_size = msg.len + 10;
 
     const trustee_sk_list = &[_][32]u8{
-        trustee_key1.key_secred,
-        trustee_key2.key_secred,
-        trustee_key3.key_secred,
+        trustee_key1.key_secret,
+        trustee_key2.key_secret,
+        trustee_key3.key_secret,
     };
 
     const trustee_pk_list = &[_][32]u8{
@@ -583,7 +583,7 @@ test "encrypt_message" {
 
     const decrypted_from_mixnet1 = try decrypt_mixnet(
         allocator,
-        mixnet_key1.key_secred,
+        mixnet_key1.key_secret,
         2,
         cypher_block,
     );
@@ -591,7 +591,7 @@ test "encrypt_message" {
 
     const decrypted_from_mixnet2 = try decrypt_mixnet(
         allocator,
-        mixnet_key2.key_secred,
+        mixnet_key2.key_secret,
         2,
         decrypted_from_mixnet1,
     );
@@ -599,7 +599,7 @@ test "encrypt_message" {
 
     const decrypted_from_mixnet3 = try decrypt_mixnet(
         allocator,
-        mixnet_key3.key_secred,
+        mixnet_key3.key_secret,
         2,
         decrypted_from_mixnet2,
     );
@@ -652,7 +652,7 @@ test "encrypt_message" {
 
 pub fn decrypt_mixnet(
     allocator: std.mem.Allocator,
-    key_secred: [32]u8,
+    key_secret: [32]u8,
     cypher_count: usize,
     cypher_block: []const u8,
 ) (IdentityElementError || AuthenticationError || OutOfMemoryError)![]u8 {
@@ -671,9 +671,9 @@ pub fn decrypt_mixnet(
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
         const buf = decrypted_buf[i * decrypted_message_size ..][0..decrypted_message_size];
 
-        // TODO: Handle error by ignoring message. It probalby has to add a
-        // 0-byte placeholder to keep the amount of cypher_blount.
-        _ = try decrypt_x25519(key_secred, cypher, buf);
+        // TODO: Handle error by ignoring message. It probably has to add a
+        // 0-byte placeholder to keep the amount of cypher_count.
+        _ = try decrypt_x25519(key_secret, cypher, buf);
         decrypted_list[i] = buf;
     }
 
@@ -692,7 +692,7 @@ pub fn decrypt_trustee_buf_size(cypher_block_size: usize, cypher_count: usize) u
 }
 
 pub fn decrypt_trustee(
-    key_secred_list: []const EDCurve.scalar.CompressedScalar,
+    key_secret_list: []const EDCurve.scalar.CompressedScalar,
     cypher_count: usize,
     cypher_block: []const u8,
     buf: []u8,
@@ -708,7 +708,7 @@ pub fn decrypt_trustee(
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
         // TODO: Ignore messages, that can not be decrypted.
-        _ = try decrypt_ed25519(key_secred_list, cypher, buf[i * decrypted_size ..]);
+        _ = try decrypt_ed25519(key_secret_list, cypher, buf[i * decrypted_size ..]);
     }
 
     // TODO: Maybe return individual messages, since this is the cleartext. This
@@ -733,9 +733,9 @@ test "decrypt many messages" {
     assert(msg1.len == msg2.len); // All messages need to have the same len
 
     const trustee_sk_list = &[_][32]u8{
-        trustee_key1.key_secred,
-        trustee_key2.key_secred,
-        trustee_key3.key_secred,
+        trustee_key1.key_secret,
+        trustee_key2.key_secret,
+        trustee_key3.key_secret,
     };
 
     const trustee_pk_list = &[_][32]u8{
@@ -765,7 +765,7 @@ test "decrypt many messages" {
 
     const decrypted_from_mixnet1 = try decrypt_mixnet(
         allocator,
-        mixnet_key1.key_secred,
+        mixnet_key1.key_secret,
         msg_count,
         cypher_block[0 .. cypher1.len * 2],
     );
@@ -773,7 +773,7 @@ test "decrypt many messages" {
 
     const decrypted_from_mixnet2 = try decrypt_mixnet(
         allocator,
-        mixnet_key2.key_secred,
+        mixnet_key2.key_secret,
         msg_count,
         decrypted_from_mixnet1,
     );
@@ -781,7 +781,7 @@ test "decrypt many messages" {
 
     const decrypted_from_mixnet3 = try decrypt_mixnet(
         allocator,
-        mixnet_key3.key_secred,
+        mixnet_key3.key_secret,
         msg_count,
         decrypted_from_mixnet2,
     );
@@ -812,7 +812,7 @@ pub fn validate(
     mixnet_data_list: []const []const u8,
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
-    trustee_key_secred_list: []const [32]u8,
+    trustee_key_secret_list: []const [32]u8,
     max_size: u32,
     user_count: usize,
 ) !i32 {
@@ -827,7 +827,7 @@ pub fn validate(
         const user_data = EncryptResult.fromBytes(cypher, mixnet_data_list.len, max_size);
 
         const seed = try decrypt_ed25519(
-            trustee_key_secred_list,
+            trustee_key_secret_list,
             user_data.control_data,
             seed_decrypt_buf,
         );
