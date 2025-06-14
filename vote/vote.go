@@ -14,27 +14,51 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
+	cryptovote "github.com/OpenSlides/openslides-vote-service/crypto-vote/wrapper"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
+
+var cryptoVote = true
 
 // Vote holds the state of the service.
 //
 // Vote has to be initializes with vote.New().
 type Vote struct {
-	fastBackend Backend
-	longBackend Backend
-	flow        flow.Flow
+	fastBackend    Backend
+	longBackend    Backend
+	flow           flow.Flow
+	cryptoVoteWasm *cryptovote.CryptoVote
 
 	votedMu sync.Mutex
 	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
+
+	boardMu       sync.RWMutex
+	boards        map[int]bulletin_board.BulletinBoard
+	secredKeyList map[int]*secredKeyCache
+}
+
+type secredKeyCache struct {
+	mu          sync.Mutex
+	done        chan struct{}
+	keys        []string
+	requireKeys int
 }
 
 // New creates an initializes vote service.
 func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance bool) (*Vote, func(context.Context, func(error)), error) {
+	wasm, err := cryptovote.NewCryptoVote(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("init wasm module: %w", err)
+	}
+
 	v := &Vote{
-		fastBackend: fast,
-		longBackend: long,
-		flow:        flow,
+		fastBackend:    fast,
+		longBackend:    long,
+		flow:           flow,
+		boards:         make(map[int]bulletin_board.BulletinBoard),
+		secredKeyList:  make(map[int]*secredKeyCache),
+		cryptoVoteWasm: wasm,
 	}
 
 	if err := v.loadVoted(ctx); err != nil {
@@ -103,6 +127,23 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return fmt.Errorf("starting poll in the backend: %w", err)
 	}
 
+	if cryptoVote {
+		message, err := bulletin_board.MessageCreate(poll)
+		if err != nil {
+			return fmt.Errorf("creating create message for bulletin board: %w", err)
+		}
+		v.boardMu.Lock()
+		v.boards[poll.ID], err = bulletin_board.New(message)
+		v.secredKeyList[pollID] = &secredKeyCache{
+			done:        make(chan struct{}),
+			requireKeys: 2, // TODO: Read from poll
+		}
+		v.boardMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("creating bulletin board: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -127,6 +168,78 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 		return StopResult{}, fmt.Errorf("loading poll: %w", err)
 	}
 
+	if cryptoVote {
+		v.boardMu.RLock()
+		board, ok1 := v.boards[pollID]
+		skc, ok2 := v.secredKeyList[pollID]
+		v.boardMu.RUnlock()
+		if !ok1 || !ok2 {
+			return StopResult{}, fmt.Errorf("no bulletin board for poll %d", pollID)
+		}
+
+		message, err := bulletin_board.MessageStop()
+		if err != nil {
+			return StopResult{}, fmt.Errorf("creating stop message for bulletin board: %w", err)
+		}
+
+		if err := board.Add(message); err != nil {
+			return StopResult{}, fmt.Errorf("add stop message to bulletin board: %w", err)
+		}
+
+		select {
+		case <-skc.done:
+		case <-time.After(15 * time.Second):
+			return StopResult{}, fmt.Errorf("timeout after 15 seconds")
+		case <-ctx.Done():
+			return StopResult{}, fmt.Errorf("Waiting to get secred keys: %w", ctx.Err())
+		}
+
+		_, events, err := board.Receive(ctx, 0)
+		if err != nil {
+			return StopResult{}, fmt.Errorf("reading bulleting board: %w", err)
+		}
+
+		var lastMixedData struct {
+			Message struct {
+				Type      string `json:"type"`
+				MixedData []byte `json:"mixed_data"`
+				Amount    int    `json:"amount"`
+			} `json:"message"`
+		}
+		for _, event := range events {
+			if err := json.Unmarshal([]byte(event), &lastMixedData); err != nil {
+				continue
+			}
+		}
+
+		if lastMixedData.Message.MixedData == nil {
+			return StopResult{}, fmt.Errorf("can not find mixed data in bulletin board")
+		}
+
+		votes, err := v.cryptoVoteWasm.DecryptTrustee(skc.keys, lastMixedData.Message.MixedData, lastMixedData.Message.Amount)
+		if err != nil {
+			return StopResult{}, fmt.Errorf("decrypt votes: %w", err)
+		}
+
+		// Filter out empty votes (from control data)
+		var filteredVotes [][]byte
+		for _, vote := range votes {
+			if vote != "" {
+				filteredVotes = append(filteredVotes, []byte(vote))
+			}
+		}
+
+		sr := StopResult{
+			Votes: filteredVotes,
+		}
+
+		for _, vote := range sr.Votes {
+			fmt.Println(string(vote))
+		}
+
+		return sr, nil
+	}
+
 	backend := v.backend(poll)
 	ballots, userIDs, err := backend.Stop(ctx, pollID)
 	if err != nil {
@@ -139,6 +252,34 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 	}
 
 	return StopResult{ballots, userIDs}, nil
+}
+
+// Publish is a function for a crypto-poll to publish the result in the poll
+// result in the bulletin board and returns an archive of the bulletin board.
+func (v *Vote) Publish(ctx context.Context, pollID int, result json.RawMessage) ([]string, error) {
+	v.boardMu.RLock()
+	board, ok1 := v.boards[pollID]
+	skc, ok2 := v.secredKeyList[pollID]
+	v.boardMu.RUnlock()
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("no bulletin board for poll %d", pollID)
+	}
+
+	// TODO: Check if result was published before and if so, don't do it again.
+	message, err := bulletin_board.MessagePublishResult(skc.keys, result)
+	if err != nil {
+		return nil, fmt.Errorf("creating vote message: %w", err)
+	}
+	if err := board.Add(message); err != nil {
+		return nil, fmt.Errorf("publishing message: %w", err)
+	}
+
+	_, events, err := board.Receive(ctx, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting all events: %w", err)
+	}
+
+	return events, nil
 }
 
 // Clear removes all knowlage of a poll.
@@ -178,6 +319,7 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 
 	v.votedMu.Lock()
 	v.voted = make(map[int][]int)
+	v.boards = make(map[int]bulletin_board.BulletinBoard)
 	v.votedMu.Unlock()
 
 	return nil
@@ -195,6 +337,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("loading poll: %w", err)
 	}
 	log.Debug("Poll config: %v", poll)
+
+	if cryptoVote {
+		// TODO: Only for crypto votes and first check, that the user has not voted
+		// an is allowed to vote.
+		return v.voteCrypto(pollID, requestUser, r)
+	}
 
 	if err := ensurePresent(ctx, &ds.Fetch, poll.MeetingID, requestUser); err != nil {
 		return err
@@ -301,6 +449,33 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 	v.votedMu.Lock()
 	v.voted[pollID] = append(v.voted[pollID], voteUser)
 	v.votedMu.Unlock()
+
+	return nil
+}
+
+func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
+	v.boardMu.RLock()
+	board := v.boards[pollID]
+	v.boardMu.RUnlock()
+
+	// TODO: Support vote delegation
+
+	var data struct {
+		EncryptedVotes []string `json:"encrypted_vote_list"`
+		ControlData    string   `json:"controll_data"`
+	}
+
+	if err := json.NewDecoder(r).Decode(&data); err != nil {
+		return fmt.Errorf("decode body: %w", err)
+	}
+
+	message, err := bulletin_board.MessageVote(requestUser, data.EncryptedVotes, data.ControlData)
+	if err != nil {
+		return fmt.Errorf("creating vote message: %w", err)
+	}
+	if err := board.Add(message); err != nil {
+		return fmt.Errorf("publishing message: %w", err)
+	}
 
 	return nil
 }
@@ -478,6 +653,41 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 	}
 
 	return out, nil
+}
+
+func (v *Vote) Board(pollID int) (bulletin_board.BulletinBoard, error) {
+	// TODO: When a poll is finished, then the board was cleared, but saved in
+	// the Database. Return this instead.
+	v.boardMu.RLock()
+	board, ok := v.boards[pollID]
+	v.boardMu.RUnlock()
+
+	if !ok {
+		return bulletin_board.BulletinBoard{}, fmt.Errorf("unknown board")
+	}
+
+	return board, nil
+}
+
+func (v *Vote) ReceiveKeySecred(pollID int, userID int, keySecred string) error {
+	// TODO: make sure poll exists and is in the right state.
+	v.boardMu.RLock()
+	skc, ok := v.secredKeyList[pollID]
+	v.boardMu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("poll %d has no bulletin board", pollID)
+	}
+
+	skc.mu.Lock()
+	defer skc.mu.Unlock()
+
+	skc.keys = append(skc.keys, keySecred)
+	if len(skc.keys) == skc.requireKeys {
+		close(skc.done)
+	}
+
+	return nil
 }
 
 // AllVotedIDs returns the user_id of each user, that has voted for every active

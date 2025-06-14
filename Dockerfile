@@ -1,4 +1,4 @@
-FROM golang:1.24.3-alpine as base
+FROM golang:1.24.3-alpine AS base
 WORKDIR /root/openslides-vote-service
 
 RUN apk add git
@@ -9,12 +9,12 @@ RUN go mod download
 COPY . .
 
 # Build service in seperate stage.
-FROM base as builder
+FROM base AS builder
 RUN go build
 
 
 # Test build.
-FROM base as testing
+FROM base AS testing
 
 RUN apk add build-base
 
@@ -22,7 +22,7 @@ CMD go vet ./... && go test ./...
 
 
 # Development build.
-FROM base as development
+FROM base AS development
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 EXPOSE 9012

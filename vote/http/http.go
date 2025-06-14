@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-go/environment"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
@@ -89,11 +90,14 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 type voteService interface {
 	starter
 	stopper
+	publisher
 	clearer
 	clearAller
 	allVotedIDer
 	voter
 	haveIvoteder
+	boarder
+	keySecredReceiver
 }
 
 type authenticater interface {
@@ -111,14 +115,34 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 
 	mux.Handle(internal+"/start", handleInternal(handleStart(service)))
 	mux.Handle(internal+"/stop", handleInternal(handleStop(service)))
+	mux.Handle(internal+"/publish", handleInternal(handlePublish(service)))
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
 	mux.Handle(internal+"/all_voted_ids", handleInternal(handleAllVotedIDs(service, ticketProvider)))
-	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
+	mux.Handle(external+"", enableCORS(handleExternal(handleVote(service, auth))))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
+	mux.Handle(external+"/board", enableCORS(handleExternal(handleBoard(service, auth))))
+	mux.Handle(external+"/board/publish_public_key", enableCORS(handleExternal(handleBoardPublishKey(service, auth))))
+	mux.Handle(external+"/board/publish_mixed_data", enableCORS(handleExternal(handleBoardPublishMixedData(service, auth))))
+	mux.Handle(external+"/board/publish_secred_key", enableCORS(handleExternal(handleReceiveKeySecred(service, auth))))
 
 	return mux
+}
+
+func enableCORS(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
 }
 
 type starter interface {
@@ -185,6 +209,37 @@ func handleStop(stop stopper) HandlerFunc {
 	}
 }
 
+type publisher interface {
+	Publish(ctx context.Context, pollID int, result json.RawMessage) ([]string, error)
+}
+
+func handlePublish(publish publisher) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		log.Info("Receiving publish request")
+		w.Header().Set("Content-Type", "application/json")
+
+		id, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return fmt.Errorf("reading body: %w", err)
+		}
+
+		result, err := publish.Publish(r.Context(), id, body)
+		if err != nil {
+			return err
+		}
+
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			return fmt.Errorf("encoding bulletin board events: %w", err)
+		}
+		return nil
+	}
+}
+
 type clearer interface {
 	Clear(ctx context.Context, pollID int) error
 }
@@ -225,15 +280,19 @@ func handleVote(service voter, auth authenticater) HandlerFunc {
 		log.Info("Receiving vote request")
 		w.Header().Set("Content-Type", "application/json")
 
-		ctx, err := auth.Authenticate(w, r)
-		if err != nil {
-			return err
-		}
+		// TODO: Deactivate auth for the moment
+		uid := 0
+		ctx := r.Context()
 
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
-		}
+		// ctx, err := auth.Authenticate(w, r)
+		// if err != nil {
+		// 	return err
+		// }
+
+		// uid := auth.FromContext(ctx)
+		// if uid == 0 {
+		// 	return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
+		// }
 
 		id, err := pollID(r)
 		if err != nil {
@@ -362,6 +421,166 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 	}
 }
 
+type boarder interface {
+	Board(pollID int) (bulletin_board.BulletinBoard, error)
+}
+
+func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		log.Info("request board")
+		ctx := r.Context()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// TODO: Deactivate auth for the moment for an easier demo.
+		// ctx, err := auth.Authenticate(w, r)
+		// if err != nil {
+		// 	return err
+		// }
+
+		// TODO: Who can see the board?
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		board, err := bordProvider.Board(pollID)
+		if err != nil {
+			return fmt.Errorf("getting board: %w", err)
+		}
+
+		// TODO: Maybe make sse optional, so the page can be requested without
+		// the data prefixes.
+		sseWriter := NewSSEWriter(w)
+
+		var tid uint64
+		for {
+			newTID, eventList, err := board.Receive(ctx, tid)
+			if err != nil {
+				return fmt.Errorf("receiving next message: %w", err)
+			}
+			tid = newTID
+
+			for _, event := range eventList {
+				eventJson := json.RawMessage(event)
+				// TODO: Think about the event.time format and if message should
+				// be a string or part of the json object. Also make sure, that
+				// the hash fits.
+				if err := json.NewEncoder(sseWriter).Encode(eventJson); err != nil {
+					return fmt.Errorf("encode data: %w", err)
+				}
+			}
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
+func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		// TODO: Auth
+		//
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		board, err := bordProvider.Board(pollID)
+		if err != nil {
+			return fmt.Errorf("getting board: %w", err)
+		}
+
+		var body struct {
+			KeyMixnet  string `json:"key_mixnet"`
+			KeyTrustee string `json:"key_trustee"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid body: %w", err)
+		}
+
+		message, err := bulletin_board.MessagePublishKeyPublic(0, body.KeyMixnet, body.KeyTrustee)
+		if err != nil {
+			return fmt.Errorf("createing bb message: %w", err)
+		}
+
+		// TODO: make the message functions methods of board, so they get published automaticly
+		if err := board.Add(message); err != nil {
+			return fmt.Errorf("publishing message: %w", err)
+		}
+
+		return nil
+	}
+}
+
+func handleBoardPublishMixedData(bordProvider boarder, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		// TODO: Auth
+		//
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		board, err := bordProvider.Board(pollID)
+		if err != nil {
+			return fmt.Errorf("getting board: %w", err)
+		}
+
+		var body struct {
+			MixedData string `json:"mixed_data"`
+			Amount    int    `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid body: %w", err)
+		}
+
+		message, err := bulletin_board.MessageMixed(0, body.MixedData, body.Amount)
+		if err != nil {
+			return fmt.Errorf("creating bb message: %w", err)
+		}
+
+		// TODO: make the message functions methods of board, so they get published automaticly
+		if err := board.Add(message); err != nil {
+			return fmt.Errorf("publishing message: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type keySecredReceiver interface {
+	ReceiveKeySecred(pollID int, userID int, keySecred string) error
+}
+
+func handleReceiveKeySecred(service keySecredReceiver, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		// TODO: Auth
+		//
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
+		}
+
+		var body struct {
+			KeySecred string `json:"key_secred"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid body: %w", err)
+		}
+
+		if err := service.ReceiveKeySecred(pollID, 0, body.KeySecred); err != nil {
+			return fmt.Errorf("send private key to service: %w", err)
+		}
+
+		return nil
+	}
+}
+
 func handleHealth() HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
@@ -459,4 +678,29 @@ type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
+}
+
+type SSEWriter struct {
+	writer io.Writer
+}
+
+func NewSSEWriter(w io.Writer) *SSEWriter {
+	return &SSEWriter{writer: w}
+}
+
+func (s *SSEWriter) Write(p []byte) (n int, err error) {
+	if _, err := s.writer.Write([]byte("data: ")); err != nil {
+		return 0, err
+	}
+
+	written, err := s.writer.Write(p)
+	if err != nil {
+		return written, err
+	}
+
+	if _, err := s.writer.Write([]byte("\n")); err != nil {
+		return written, err
+	}
+
+	return written, nil
 }
