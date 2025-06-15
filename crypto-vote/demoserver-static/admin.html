@@ -1,1 +1,349 @@
-// TODO
+<!doctype html>
+<html lang="de">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Demo Server Admin</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 30px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+                color: #333;
+            }
+            input[type="text"],
+            input[type="number"] {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 16px;
+            }
+            .help-text {
+                font-size: 12px;
+                color: #666;
+                margin-top: 5px;
+            }
+            button {
+                padding: 12px 24px;
+                font-size: 16px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-right: 10px;
+                margin-bottom: 10px;
+            }
+            .btn-primary {
+                background-color: #007bff;
+                color: white;
+            }
+            .btn-primary:hover {
+                background-color: #0056b3;
+            }
+            .btn-danger {
+                background-color: #dc3545;
+                color: white;
+            }
+            .btn-danger:hover {
+                background-color: #c82333;
+            }
+            .btn-secondary {
+                background-color: #6c757d;
+                color: white;
+            }
+            .btn-secondary:hover {
+                background-color: #545b62;
+            }
+            .status {
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 4px;
+            }
+            .status.running {
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+            .status.stopped {
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+            .status.idle {
+                background-color: #fff3cd;
+                color: #856404;
+                border: 1px solid #ffeaa7;
+            }
+            .button-group {
+                text-align: center;
+                margin-top: 30px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Demo Server Admin Panel</h1>
+
+            <div style="text-align: center; margin-bottom: 20px">
+                <a
+                    href="/"
+                    style="
+                        color: #007bff;
+                        text-decoration: none;
+                        font-size: 14px;
+                    "
+                >
+                    → Zur Client-Oberfläche
+                </a>
+            </div>
+
+            <div id="status" class="status idle">
+                Status: Keine Abstimmung aktiv
+            </div>
+
+            <div id="config-form">
+                <div class="form-group">
+                    <label for="voterIds">User-IDs der Wähler:</label>
+                    <input
+                        type="text"
+                        id="voterIds"
+                        placeholder="z.B. 1-5,10,12,17-18"
+                    />
+                    <div class="help-text">
+                        Eingabe von Bereichen (1-5) oder einzelnen IDs (10,12)
+                        möglich
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="pollWorkerIds">User-IDs der Poll-Worker:</label>
+                    <input
+                        type="text"
+                        id="pollWorkerIds"
+                        placeholder="z.B. 100-102,105"
+                    />
+                    <div class="help-text">
+                        Eingabe von Bereichen (100-102) oder einzelnen IDs (105)
+                        möglich
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="voteSize">Maximale Stimmen-Größe:</label>
+                    <input type="number" id="voteSize" min="1" value="1024" />
+                    <div class="help-text">
+                        Maximale Anzahl von Bytes pro Stimme
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="startBtn" class="btn-primary" onclick="startPoll()">
+                    Abstimmung starten
+                </button>
+                <button
+                    id="stopBtn"
+                    class="btn-danger"
+                    onclick="stopPoll()"
+                    disabled
+                >
+                    Abstimmung stoppen
+                </button>
+                <button
+                    class="btn-secondary"
+                    onclick="window.open('/', '_blank')"
+                >
+                    Client-Seite öffnen
+                </button>
+            </div>
+        </div>
+
+        <script>
+            let pollRunning = false;
+
+            function parseIdRange(input) {
+                if (!input.trim()) return [];
+
+                const result = [];
+                const parts = input.split(",");
+
+                for (const part of parts) {
+                    const trimmed = part.trim();
+                    if (trimmed.includes("-")) {
+                        const [start, end] = trimmed
+                            .split("-")
+                            .map((x) => parseInt(x.trim()));
+                        if (isNaN(start) || isNaN(end) || start > end) {
+                            throw new Error(`Ungültiger Bereich: ${trimmed}`);
+                        }
+                        for (let i = start; i <= end; i++) {
+                            result.push(i);
+                        }
+                    } else {
+                        const id = parseInt(trimmed);
+                        if (isNaN(id)) {
+                            throw new Error(`Ungültige ID: ${trimmed}`);
+                        }
+                        result.push(id);
+                    }
+                }
+
+                return [...new Set(result)].sort((a, b) => a - b);
+            }
+
+            function updateStatus(status, message) {
+                const statusDiv = document.getElementById("status");
+                statusDiv.className = `status ${status}`;
+                statusDiv.textContent = message;
+            }
+
+            function updateButtons() {
+                const startBtn = document.getElementById("startBtn");
+                const stopBtn = document.getElementById("stopBtn");
+                const configForm = document.getElementById("config-form");
+
+                if (pollRunning) {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    configForm.style.opacity = "0.5";
+                    configForm.style.pointerEvents = "none";
+                } else {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    configForm.style.opacity = "1";
+                    configForm.style.pointerEvents = "auto";
+                }
+            }
+
+            async function startPoll() {
+                try {
+                    const voterIdsStr =
+                        document.getElementById("voterIds").value;
+                    const pollWorkerIdsStr =
+                        document.getElementById("pollWorkerIds").value;
+                    const voteSize = parseInt(
+                        document.getElementById("voteSize").value,
+                    );
+
+                    if (!voterIdsStr.trim()) {
+                        alert("Bitte geben Sie User-IDs für Wähler an");
+                        return;
+                    }
+
+                    if (!pollWorkerIdsStr.trim()) {
+                        alert("Bitte geben Sie User-IDs für Poll-Worker an");
+                        return;
+                    }
+
+                    if (isNaN(voteSize) || voteSize < 1) {
+                        alert("Bitte geben Sie eine gültige Stimmen-Größe an");
+                        return;
+                    }
+
+                    const voterIds = parseIdRange(voterIdsStr);
+                    const pollWorkerIds = parseIdRange(pollWorkerIdsStr);
+
+                    if (voterIds.length === 0) {
+                        alert("Keine gültigen Wähler-IDs gefunden");
+                        return;
+                    }
+
+                    if (pollWorkerIds.length === 0) {
+                        alert("Keine gültigen Poll-Worker-IDs gefunden");
+                        return;
+                    }
+
+                    const requestBody = {
+                        vote_user_ids: voterIds,
+                        poll_worker_ids: pollWorkerIds,
+                        vote_size: voteSize,
+                    };
+
+                    updateStatus("running", "Starte Abstimmung...");
+
+                    const response = await fetch("/start", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(requestBody),
+                    });
+
+                    if (response.ok) {
+                        pollRunning = true;
+                        updateStatus(
+                            "running",
+                            `Abstimmung läuft - ${voterIds.length} Wähler, ${pollWorkerIds.length} Poll-Worker`,
+                        );
+                        updateButtons();
+                    } else {
+                        const errorText = await response.text();
+                        updateStatus(
+                            "idle",
+                            "Fehler beim Starten der Abstimmung",
+                        );
+                        alert(`Fehler beim Starten: ${errorText}`);
+                    }
+                } catch (error) {
+                    updateStatus("idle", "Fehler beim Starten der Abstimmung");
+                    alert(`Fehler: ${error.message}`);
+                    console.error("Error starting poll:", error);
+                }
+            }
+
+            async function stopPoll() {
+                try {
+                    updateStatus("running", "Stoppe Abstimmung...");
+
+                    const response = await fetch("/stop", {
+                        method: "POST",
+                    });
+
+                    if (response.ok) {
+                        pollRunning = false;
+                        updateStatus("stopped", "Abstimmung wurde gestoppt");
+                        updateButtons();
+                    } else {
+                        const errorText = await response.text();
+                        updateStatus(
+                            "running",
+                            "Fehler beim Stoppen der Abstimmung",
+                        );
+                        alert(`Fehler beim Stoppen: ${errorText}`);
+                    }
+                } catch (error) {
+                    updateStatus(
+                        "running",
+                        "Fehler beim Stoppen der Abstimmung",
+                    );
+                    alert(`Fehler: ${error.message}`);
+                    console.error("Error stopping poll:", error);
+                }
+            }
+
+            // Initialize page
+            updateButtons();
+        </script>
+    </body>
+</html>

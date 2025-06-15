@@ -68,17 +68,17 @@ func NewServer() *Server {
 func (s *Server) registerHandlers() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("/", s.handleStatic(client_html))
-	mux.Handle("/admin", s.handleStatic(admin_html))
-	mux.Handle("/htmx.js", s.handleStatic(htmx_js))
-	mux.Handle("/crypto_vote.wasm", s.handleStatic(crypto_vote_wasm))
-	mux.Handle("/crypto_vote.js", s.handleStatic(crypto_vote_js))
+	mux.Handle("/", s.handleStaticWithContentType(client_html, "text/html"))
+	mux.Handle("/admin", s.handleStaticWithContentType(admin_html, "text/html"))
+	mux.Handle("/htmx.js", s.handleStaticWithContentType(htmx_js, "application/javascript"))
+	mux.Handle("/crypto_vote.wasm", s.handleStaticWithContentType(crypto_vote_wasm, "application/wasm"))
+	mux.Handle("/crypto_vote.js", s.handleStaticWithContentType(crypto_vote_js, "application/javascript"))
 	mux.Handle("/start", s.handleStart())
 	mux.Handle("/stop", s.handleStop())
 	mux.Handle("/board", s.handleBoard())
-	mux.Handle("/publish_key_public", s.handlePublishKeyPublic())
-	mux.Handle("/publish_key_secret", s.handlePublishKeySecret())
-	mux.Handle("/vote", s.handleVote())
+	mux.Handle("/publish_key_public", s.auth(s.handlePublishKeyPublic()))
+	mux.Handle("/publish_key_secret", s.auth(s.handlePublishKeySecret()))
+	mux.Handle("/vote", s.auth(s.handleVote()))
 
 	return mux
 }
@@ -111,8 +111,9 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return <-wait
 }
 
-func (s *Server) handleStatic(file []byte) http.HandlerFunc {
+func (s *Server) handleStaticWithContentType(file []byte, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", contentType)
 		w.Write(file)
 	}
 }
@@ -124,31 +125,60 @@ func (s *Server) handleStart() http.HandlerFunc {
 			return
 		}
 
-		// TODO: Read values from body, return an error, if wrong
-		var voteUserIDs []int
-		var pollWorkerIDs []int
-		var voteSize int
+		// Read JSON body
+		var requestData struct {
+			VoteUserIDs   []int `json:"vote_user_ids"`
+			PollWorkerIDs []int `json:"poll_worker_ids"`
+			VoteSize      int   `json:"vote_size"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Error parsing JSON: %v", err)
+			return
+		}
+
+		fmt.Println(requestData)
+
+		// Validate input
+		if len(requestData.VoteUserIDs) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Error: vote_user_ids cannot be empty")
+			return
+		}
+
+		if len(requestData.PollWorkerIDs) < 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Error: There must be at least two poll worker IDs")
+			return
+		}
+
+		if requestData.VoteSize < 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Error: vote_size must be positive")
+			return
+		}
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
 		var err error
-		s.board, err = boardStart(voteUserIDs, pollWorkerIDs, voteSize)
+		s.board, err = boardStart(requestData.VoteUserIDs, requestData.PollWorkerIDs, requestData.VoteSize)
 		if err != nil {
-			// TODO: Send error to the client
 			w.WriteHeader(400)
 			fmt.Fprintf(w, "Error: %v", err)
 			return
 		}
 
-		s.pollWorkerAmount = len(pollWorkerIDs)
+		s.pollWorkerAmount = len(requestData.PollWorkerIDs)
 		s.secredKeys = nil
 
 		if r.Header.Get("HX-Request") == "true" {
 			// TODO: On HTMX request, retun some HTML
 		}
 
-		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Poll started successfully")
 	}
 }
 
@@ -172,13 +202,17 @@ func (s *Server) handleStop() http.HandlerFunc {
 			// TODO: On HTMX request, retun some HTML
 		}
 
-		http.Redirect(w, r, "/admin", http.StatusTemporaryRedirect)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Poll stopped successfully")
 	}
 }
 
 func (s *Server) handleBoard() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
 		bb := s.board
+		s.mu.Unlock()
+
 		if bb == nil {
 			w.WriteHeader(404)
 			w.Write([]byte("Poll not started"))
@@ -213,6 +247,35 @@ func (s *Server) handleBoard() http.HandlerFunc {
 	}
 }
 
+func (s *Server) auth(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract user ID from Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, "Authorization header required")
+			return
+		}
+
+		// Parse "Bearer <userID>" format
+		userID := 0
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			if id, err := fmt.Sscanf(authHeader[7:], "%d", &userID); err != nil || id != 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "Invalid user ID in Authorization header")
+				return
+			}
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "Invalid Authorization header format")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "userID", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
 func (s *Server) handlePublishKeyPublic() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -220,15 +283,14 @@ func (s *Server) handlePublishKeyPublic() http.HandlerFunc {
 			return
 		}
 
-		// TODO: Auth
-		var userID int
-
 		var publicKey string
 		if err := json.NewDecoder(r.Body).Decode(&publicKey); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, "Error: %v", err)
 			return
 		}
+
+		userID := r.Context().Value("userID").(int)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -238,6 +300,9 @@ func (s *Server) handlePublishKeyPublic() http.HandlerFunc {
 			fmt.Fprintf(w, "Error: %v", err)
 			return
 		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Public key published successfully")
 	}
 }
 
@@ -254,6 +319,10 @@ func (s *Server) handlePublishKeySecret() http.HandlerFunc {
 			fmt.Fprintf(w, "Error: %v", err)
 			return
 		}
+
+		userID := r.Context().Value("userID").(int)
+		// TODO: Check that userID is a poll worker
+		_ = userID
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -278,8 +347,7 @@ func (s *Server) handleVote() http.HandlerFunc {
 			return
 		}
 
-		// TODO: Auth
-		var userID int
+		userID := r.Context().Value("userID").(int)
 
 		var vote string
 		if err := json.NewDecoder(r.Body).Decode(&vote); err != nil {
@@ -288,11 +356,17 @@ func (s *Server) handleVote() http.HandlerFunc {
 			return
 		}
 
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
 		if err := boardVote(s.board, userID, vote); err != nil {
 			w.WriteHeader(400)
 			fmt.Fprintf(w, "Error: %v", err)
 			return
 		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Vote submitted successfully")
 	}
 }
 
@@ -332,7 +406,7 @@ func (s *SSEWriter) Write(p []byte) (n int, err error) {
 		return written, err
 	}
 
-	if _, err := s.writer.Write([]byte("\n")); err != nil {
+	if _, err := s.writer.Write([]byte("\n\n")); err != nil {
 		return written, err
 	}
 
