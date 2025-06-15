@@ -14,7 +14,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
-	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/board"
 	cryptovote "github.com/OpenSlides/openslides-vote-service/crypto-vote/wrapper"
 	"github.com/OpenSlides/openslides-vote-service/log"
 )
@@ -34,7 +34,7 @@ type Vote struct {
 	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
 
 	boardMu       sync.RWMutex
-	boards        map[int]bulletin_board.BulletinBoard
+	boards        map[int]board.Board
 	secredKeyList map[int]*secredKeyCache
 }
 
@@ -56,7 +56,7 @@ func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance
 		fastBackend:    fast,
 		longBackend:    long,
 		flow:           flow,
-		boards:         make(map[int]bulletin_board.BulletinBoard),
+		boards:         make(map[int]board.Board),
 		secredKeyList:  make(map[int]*secredKeyCache),
 		cryptoVoteWasm: wasm,
 	}
@@ -128,12 +128,13 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 	}
 
 	if cryptoVote {
-		message, err := bulletin_board.MessageCreate(poll)
+		message, err := board.MessageCreate(poll)
 		if err != nil {
 			return fmt.Errorf("creating create message for bulletin board: %w", err)
 		}
 		v.boardMu.Lock()
-		v.boards[poll.ID], err = bulletin_board.New(message)
+		bb, err := board.New(message)
+		v.boards[poll.ID] = *bb
 		v.secredKeyList[pollID] = &secredKeyCache{
 			done:        make(chan struct{}),
 			requireKeys: 2, // TODO: Read from poll
@@ -170,19 +171,19 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 
 	if cryptoVote {
 		v.boardMu.RLock()
-		board, ok1 := v.boards[pollID]
+		bb, ok1 := v.boards[pollID]
 		skc, ok2 := v.secredKeyList[pollID]
 		v.boardMu.RUnlock()
 		if !ok1 || !ok2 {
 			return StopResult{}, fmt.Errorf("no bulletin board for poll %d", pollID)
 		}
 
-		message, err := bulletin_board.MessageStop()
+		message, err := board.MessageStop()
 		if err != nil {
 			return StopResult{}, fmt.Errorf("creating stop message for bulletin board: %w", err)
 		}
 
-		if err := board.Add(message); err != nil {
+		if err := bb.Add("TODO", message); err != nil {
 			return StopResult{}, fmt.Errorf("add stop message to bulletin board: %w", err)
 		}
 
@@ -194,7 +195,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 			return StopResult{}, fmt.Errorf("Waiting to get secred keys: %w", ctx.Err())
 		}
 
-		_, events, err := board.Receive(ctx, 0)
+		_, events, err := bb.Receive(ctx, 0)
 		if err != nil {
 			return StopResult{}, fmt.Errorf("reading bulleting board: %w", err)
 		}
@@ -258,7 +259,7 @@ func (v *Vote) Stop(ctx context.Context, pollID int) (StopResult, error) {
 // result in the bulletin board and returns an archive of the bulletin board.
 func (v *Vote) Publish(ctx context.Context, pollID int, result json.RawMessage) ([]string, error) {
 	v.boardMu.RLock()
-	board, ok1 := v.boards[pollID]
+	bb, ok1 := v.boards[pollID]
 	skc, ok2 := v.secredKeyList[pollID]
 	v.boardMu.RUnlock()
 	if !ok1 || !ok2 {
@@ -266,15 +267,15 @@ func (v *Vote) Publish(ctx context.Context, pollID int, result json.RawMessage) 
 	}
 
 	// TODO: Check if result was published before and if so, don't do it again.
-	message, err := bulletin_board.MessagePublishResult(skc.keys, result)
+	message, err := board.MessagePublishResult(skc.keys, result)
 	if err != nil {
 		return nil, fmt.Errorf("creating vote message: %w", err)
 	}
-	if err := board.Add(message); err != nil {
+	if err := bb.Add("TODO", message); err != nil {
 		return nil, fmt.Errorf("publishing message: %w", err)
 	}
 
-	_, events, err := board.Receive(ctx, 0)
+	_, events, err := bb.Receive(ctx, 0)
 	if err != nil {
 		return nil, fmt.Errorf("getting all events: %w", err)
 	}
@@ -319,7 +320,7 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 
 	v.votedMu.Lock()
 	v.voted = make(map[int][]int)
-	v.boards = make(map[int]bulletin_board.BulletinBoard)
+	v.boards = make(map[int]board.Board)
 	v.votedMu.Unlock()
 
 	return nil
@@ -455,7 +456,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
 	v.boardMu.RLock()
-	board := v.boards[pollID]
+	bb := v.boards[pollID]
 	v.boardMu.RUnlock()
 
 	// TODO: Support vote delegation
@@ -469,11 +470,11 @@ func (v *Vote) voteCrypto(pollID, requestUser int, r io.Reader) error {
 		return fmt.Errorf("decode body: %w", err)
 	}
 
-	message, err := bulletin_board.MessageVote(requestUser, data.EncryptedVotes, data.ControlData)
+	message, err := board.MessageVote(requestUser, data.EncryptedVotes, data.ControlData)
 	if err != nil {
 		return fmt.Errorf("creating vote message: %w", err)
 	}
-	if err := board.Add(message); err != nil {
+	if err := bb.Add("TODO", message); err != nil {
 		return fmt.Errorf("publishing message: %w", err)
 	}
 
@@ -655,18 +656,18 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 	return out, nil
 }
 
-func (v *Vote) Board(pollID int) (bulletin_board.BulletinBoard, error) {
+func (v *Vote) Board(pollID int) (board.Board, error) {
 	// TODO: When a poll is finished, then the board was cleared, but saved in
 	// the Database. Return this instead.
 	v.boardMu.RLock()
-	board, ok := v.boards[pollID]
+	bb, ok := v.boards[pollID]
 	v.boardMu.RUnlock()
 
 	if !ok {
-		return bulletin_board.BulletinBoard{}, fmt.Errorf("unknown board")
+		return board.Board{}, fmt.Errorf("unknown board")
 	}
 
-	return board, nil
+	return bb, nil
 }
 
 func (v *Vote) ReceiveKeySecred(pollID int, userID int, keySecred string) error {

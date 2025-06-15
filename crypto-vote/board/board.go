@@ -1,4 +1,4 @@
-package bulletin_board
+package board
 
 import (
 	"context"
@@ -11,32 +11,33 @@ import (
 	"github.com/ostcar/topic"
 )
 
-type BulletinBoard struct {
+type Board struct {
 	events *topic.Topic[string]
 }
 
-func New(message json.RawMessage) (BulletinBoard, error) {
+func New(message json.RawMessage) (*Board, error) {
 	now := time.Now() // TODO: Add a way to set the time for testing.
 	event := Event{
 		Time:    now,
+		Type:    "start",
 		Message: message,
 		Hash:    "",
 	}
 
 	encoded, err := json.Marshal(event)
 	if err != nil {
-		return BulletinBoard{}, fmt.Errorf("convert event: %w", err)
+		return nil, fmt.Errorf("convert event: %w", err)
 	}
 
 	topic := topic.New[string]()
 	topic.Publish(string(encoded))
 
-	return BulletinBoard{
+	return &Board{
 		events: topic,
 	}, nil
 }
 
-func (bb *BulletinBoard) Add(message json.RawMessage) error {
+func (bb *Board) Add(type_ string, message json.RawMessage) error {
 	now := time.Now() // TODO: Add a way to set the time for testing.
 
 	// TODO: maybe update topic to get an easier method to fetch the last event.
@@ -51,6 +52,7 @@ func (bb *BulletinBoard) Add(message json.RawMessage) error {
 
 	event := Event{
 		Time:    now,
+		Type:    type_,
 		Message: message,
 		Hash:    hash,
 	}
@@ -64,12 +66,13 @@ func (bb *BulletinBoard) Add(message json.RawMessage) error {
 	return nil
 }
 
-func (bb *BulletinBoard) Receive(ctx context.Context, id uint64) (uint64, []string, error) {
+func (bb *Board) Receive(ctx context.Context, id uint64) (uint64, []string, error) {
 	return bb.events.Receive(ctx, id)
 }
 
 type Event struct {
 	Time    time.Time       `json:"time"`
+	Type    string          `json:"type"`
 	Message json.RawMessage `json:"message"`
 	Hash    string          `json:"hash,omitempty"`
 }

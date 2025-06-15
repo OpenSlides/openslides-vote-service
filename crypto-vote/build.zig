@@ -3,23 +3,41 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
 
-    const wasm = b.addExecutable(.{
-        .name = "crypto_vote",
-        .root_source_file = b.path("src/wasm.zig"),
+    const wasmCrypto = b.addExecutable(.{
+        .name = "crypto",
+        .root_source_file = b.path("src/wasm_crypto.zig"),
         .target = target,
         .optimize = .ReleaseSmall,
     });
 
-    wasm.rdynamic = true;
-    wasm.entry = .disabled;
+    wasmCrypto.rdynamic = true;
+    wasmCrypto.entry = .disabled;
 
-    const wf = b.addUpdateSourceFiles();
-    wf.addCopyFileToSource(wasm.getEmittedBin(), "wrapper/crypto_vote.wasm");
+    const wcf = b.addUpdateSourceFiles();
+    wcf.addCopyFileToSource(wasmCrypto.getEmittedBin(), "wrapper/crypto.wasm");
 
-    const update_wasm_step = b.step("wasm", "Update crypto_vote.wasm");
-    update_wasm_step.dependOn(&wf.step);
+    var update_wasm_crypto_step = b.step("crypto", "Update crypto.wasm");
+    update_wasm_crypto_step.dependOn(&wcf.step);
 
-    b.default_step = update_wasm_step;
+    const wasmApp = b.addExecutable(.{
+        .name = "crypto_vote",
+        .root_source_file = b.path("src/wasm_app.zig"),
+        .target = target,
+        .optimize = .ReleaseSmall,
+    });
 
-    //b.installArtifact(wasm);
+    wasmApp.rdynamic = true;
+    wasmApp.entry = .disabled;
+
+    const waf = b.addUpdateSourceFiles();
+    waf.addCopyFileToSource(wasmApp.getEmittedBin(), "wrapper/crypto_vote.wasm");
+
+    var update_wasm_app_step = b.step("crypto_vote", "Update crpto_vote.wasm");
+    update_wasm_app_step.dependOn(&waf.step);
+
+    const default_step = b.step("default", "Default step");
+    default_step.dependOn(update_wasm_crypto_step);
+    default_step.dependOn(update_wasm_app_step);
+
+    b.default_step = default_step;
 }

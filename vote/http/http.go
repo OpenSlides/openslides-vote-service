@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/OpenSlides/openslides-go/environment"
-	"github.com/OpenSlides/openslides-vote-service/crypto-vote/bulletin_board"
+	"github.com/OpenSlides/openslides-vote-service/crypto-vote/board"
 	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
@@ -422,7 +422,7 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 }
 
 type boarder interface {
-	Board(pollID int) (bulletin_board.BulletinBoard, error)
+	Board(pollID int) (board.Board, error)
 }
 
 func handleBoard(bordProvider boarder, auth authenticater) HandlerFunc {
@@ -488,7 +488,7 @@ func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc
 			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
 		}
 
-		board, err := bordProvider.Board(pollID)
+		bb, err := bordProvider.Board(pollID)
 		if err != nil {
 			return fmt.Errorf("getting board: %w", err)
 		}
@@ -501,13 +501,13 @@ func handleBoardPublishKey(bordProvider boarder, auth authenticater) HandlerFunc
 			return fmt.Errorf("invalid body: %w", err)
 		}
 
-		message, err := bulletin_board.MessagePublishKeyPublic(0, body.KeyMixnet, body.KeyTrustee)
+		message, err := board.MessagePublishKeyPublic(0, body.KeyMixnet, body.KeyTrustee)
 		if err != nil {
 			return fmt.Errorf("createing bb message: %w", err)
 		}
 
 		// TODO: make the message functions methods of board, so they get published automaticly
-		if err := board.Add(message); err != nil {
+		if err := bb.Add("publish_key_public", message); err != nil {
 			return fmt.Errorf("publishing message: %w", err)
 		}
 
@@ -525,7 +525,7 @@ func handleBoardPublishMixedData(bordProvider boarder, auth authenticater) Handl
 			return vote.WrapError(vote.ErrInvalid, fmt.Errorf("getting poll id from request: %w", err))
 		}
 
-		board, err := bordProvider.Board(pollID)
+		bb, err := bordProvider.Board(pollID)
 		if err != nil {
 			return fmt.Errorf("getting board: %w", err)
 		}
@@ -538,13 +538,13 @@ func handleBoardPublishMixedData(bordProvider boarder, auth authenticater) Handl
 			return fmt.Errorf("invalid body: %w", err)
 		}
 
-		message, err := bulletin_board.MessageMixed(0, body.MixedData, body.Amount)
+		message, err := board.MessageMixed(0, body.MixedData, body.Amount)
 		if err != nil {
 			return fmt.Errorf("creating bb message: %w", err)
 		}
 
 		// TODO: make the message functions methods of board, so they get published automaticly
-		if err := board.Add(message); err != nil {
+		if err := bb.Add("TODO", message); err != nil {
 			return fmt.Errorf("publishing message: %w", err)
 		}
 

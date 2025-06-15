@@ -1,4 +1,4 @@
-package bulletin_board
+package board
 
 import (
 	"encoding/json"
