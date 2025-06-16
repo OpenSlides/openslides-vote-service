@@ -28,9 +28,6 @@ EXPOSE 9013
 
 ## Command
 HEALTHCHECK CMD ["/openslides-vote-service", "health"]
-COPY ./dev/command.sh ./
-RUN chmod +x command.sh
-CMD ["./command.sh"]
 
 
 
@@ -40,12 +37,9 @@ FROM base as dev
 
 WORKDIR /root
 
-## Command (workdir reset)
-COPY ./dev/command.sh ./
-RUN chmod +x command.sh
-CMD ["./command.sh"]
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 
+CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
 
 
 # Testing Image
@@ -54,6 +48,7 @@ FROM base as tests
 
 RUN apk add --no-cache build-base
 
+CMD go test -test.short -race -timeout 12s ./...
 
 
 # Production Image
