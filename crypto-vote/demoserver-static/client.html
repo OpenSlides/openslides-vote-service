@@ -67,6 +67,18 @@
                 background-color: #6c757d;
                 cursor: not-allowed;
             }
+            .btn-vote {
+                background-color: #28a745;
+                color: white;
+                margin-top: 10px;
+            }
+            .btn-vote:hover {
+                background-color: #218838;
+            }
+            .btn-vote:disabled {
+                background-color: #6c757d;
+                cursor: not-allowed;
+            }
             .status {
                 padding: 15px;
                 margin: 20px 0;
@@ -81,12 +93,17 @@
             .status.connected {
                 background-color: #d4edda;
                 color: #155724;
-                border: 1x solid #c3e6cb;
+                border: 1px solid #c3e6cb;
             }
             .status.error {
                 background-color: #f8d7da;
                 color: #721c24;
                 border: 1px solid #f5c6cb;
+            }
+            .status.success {
+                background-color: #d1ecf1;
+                color: #0c5460;
+                border: 1px solid #b8daff;
             }
             .hidden {
                 display: none;
@@ -121,6 +138,10 @@
                 margin-top: 20px;
                 background-color: #f8f9fa;
             }
+            .vote-section.can-vote {
+                border-color: #28a745;
+                background-color: #e8f5e8;
+            }
             .events-log {
                 margin-top: 30px;
                 padding: 15px;
@@ -144,6 +165,27 @@
             }
             .event-item:last-child {
                 border-bottom: none;
+            }
+            .log-section {
+                margin-top: 20px;
+                padding: 15px;
+                background-color: #f1f3f4;
+                border-radius: 4px;
+                max-height: 200px;
+                overflow-y: auto;
+                border: 1px solid #dadce0;
+            }
+            .log-section h4 {
+                margin-top: 0;
+                margin-bottom: 10px;
+                color: #5f6368;
+                font-size: 14px;
+            }
+            .log-item {
+                padding: 2px 0;
+                font-family: monospace;
+                font-size: 11px;
+                color: #5f6368;
             }
         </style>
     </head>
@@ -189,7 +231,7 @@
             </div>
 
             <div id="pollSection" class="hidden">
-                <div class="vote-section">
+                <div id="voteSection" class="vote-section">
                     <div class="form-group">
                         <label for="voteMessage">Ihre Stimme:</label>
                         <textarea
@@ -197,9 +239,31 @@
                             placeholder="Geben Sie hier Ihre Stimme ein..."
                         ></textarea>
                         <div class="help-text">
-                            Diese Nachricht wird später für die Abstimmung
-                            verwendet
+                            Diese Nachricht wird verschlüsselt und für die
+                            Abstimmung verwendet
                         </div>
+                    </div>
+                    <button
+                        id="voteBtn"
+                        class="btn-vote"
+                        onclick="submitVote()"
+                        disabled
+                    >
+                        Stimme abgeben
+                    </button>
+                    <div
+                        id="voteStatus"
+                        class="help-text"
+                        style="margin-top: 10px"
+                    >
+                        Warten auf Abstimmungsfreigabe...
+                    </div>
+                </div>
+
+                <div class="log-section">
+                    <h4>WASM-Modul Log:</h4>
+                    <div id="wasmLogContainer">
+                        <div class="log-item">WASM-Modul wird geladen...</div>
                     </div>
                 </div>
 
@@ -212,12 +276,12 @@
             </div>
         </div>
 
-        <script src="/crypto_vote.js"></script>
+        <script src="/crypto_vote_wrapper.js"></script>
         <script>
             let currentUserId = null;
             let eventSource = null;
-            let cryptoVoteModule = null;
-            let wasmInitialized = false;
+            let cryptoVoteWrapper = null;
+            let canVote = false;
 
             function updateStatus(type, message) {
                 const statusDiv = document.getElementById("status");
@@ -247,42 +311,178 @@
                 }
             }
 
+            function addWasmLog(message) {
+                const container = document.getElementById("wasmLogContainer");
+                const logItem = document.createElement("div");
+                logItem.className = "log-item";
+
+                const timestamp = new Date().toLocaleTimeString();
+                logItem.textContent = `[${timestamp}] ${message}`;
+
+                container.appendChild(logItem);
+                container.scrollTop = container.scrollHeight;
+
+                // Keep only last 30 log entries
+                while (container.children.length > 30) {
+                    container.removeChild(container.firstChild);
+                }
+            }
+
+            function updateVoteStatus(canVoteNow) {
+                canVote = canVoteNow;
+                const voteBtn = document.getElementById("voteBtn");
+                const voteSection = document.getElementById("voteSection");
+                const voteStatus = document.getElementById("voteStatus");
+
+                voteBtn.disabled = !canVote;
+
+                if (canVote) {
+                    voteSection.classList.add("can-vote");
+                    voteStatus.textContent = "✅ Sie können jetzt abstimmen!";
+                    voteStatus.style.color = "#28a745";
+                } else {
+                    voteSection.classList.remove("can-vote");
+                    voteStatus.textContent =
+                        "⏳ Warten auf Abstimmungsfreigabe...";
+                    voteStatus.style.color = "#6c757d";
+                }
+            }
+
             async function initializeWasm() {
-                if (wasmInitialized) return;
-
                 try {
-                    updateStatus("waiting", "Lade WebAssembly-Modul...");
+                    updateStatus("waiting", "Initialisiere WASM-Modul...");
+                    addWasmLog("Initialisiere CryptoVote Wrapper...");
 
-                    // Load the WASM module
-                    cryptoVoteModule =
-                        await loadCryptoVote("/crypto_vote.wasm");
+                    cryptoVoteWrapper = new CryptoVoteWrapper();
 
-                    updateStatus("waiting", "WebAssembly-Modul geladen");
-                    wasmInitialized = true;
+                    await cryptoVoteWrapper.init("/crypto_vote.wasm", {
+                        onPublishKeyPublic: async (keyBase64) => {
+                            addWasmLog(
+                                `📤 Veröffentliche Public Key (${keyBase64.length} Zeichen)`,
+                            );
+
+                            try {
+                                const response = await fetch(
+                                    "/publish_key_public",
+                                    {
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/json",
+                                            Authorization: `Bearer ${currentUserId}`,
+                                        },
+                                        body: JSON.stringify(keyBase64),
+                                    },
+                                );
+
+                                if (response.ok) {
+                                    addWasmLog(
+                                        "✅ Public Key erfolgreich veröffentlicht",
+                                    );
+                                    return { success: true };
+                                } else {
+                                    const errorText = await response.text();
+                                    addWasmLog(
+                                        `❌ Fehler beim Veröffentlichen des Public Keys: ${response.status} - ${errorText}`,
+                                    );
+                                    throw new Error(
+                                        `HTTP ${response.status}: ${errorText}`,
+                                    );
+                                }
+                            } catch (error) {
+                                addWasmLog(
+                                    `❌ Netzwerkfehler beim Veröffentlichen des Public Keys: ${error.message}`,
+                                );
+                                throw error;
+                            }
+                        },
+
+                        onPublishVote: async (voteData) => {
+                            addWasmLog(
+                                `📤 Veröffentliche verschlüsselte Stimme (${voteData.length} Bytes)`,
+                            );
+
+                            try {
+                                // Convert byte array back to string for the API
+                                const voteString = String.fromCharCode(
+                                    ...voteData,
+                                );
+
+                                const response = await fetch("/vote", {
+                                    method: "POST",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        Authorization: `Bearer ${currentUserId}`,
+                                    },
+                                    body: JSON.stringify(voteString),
+                                });
+
+                                if (response.ok) {
+                                    addWasmLog(
+                                        "✅ Stimme erfolgreich abgegeben!",
+                                    );
+                                    updateStatus(
+                                        "success",
+                                        "Stimme erfolgreich abgegeben!",
+                                    );
+                                    return { success: true };
+                                } else {
+                                    const errorText = await response.text();
+                                    addWasmLog(
+                                        `❌ Fehler beim Abgeben der Stimme: ${response.status} - ${errorText}`,
+                                    );
+                                    throw new Error(
+                                        `HTTP ${response.status}: ${errorText}`,
+                                    );
+                                }
+                            } catch (error) {
+                                addWasmLog(
+                                    `❌ Netzwerkfehler beim Abgeben der Stimme: ${error.message}`,
+                                );
+                                throw error;
+                            }
+                        },
+
+                        onSetCanVote: (canVoteFlag, size) => {
+                            addWasmLog(
+                                `🗳️ Abstimmungsstatus geändert: ${canVoteFlag ? "KANN ABSTIMMEN" : "KANN NICHT ABSTIMMEN"} (Size: ${size})`,
+                            );
+                            updateVoteStatus(canVoteFlag);
+                        },
+
+                        onLog: (message) => {
+                            addWasmLog(`📝 ${message}`);
+                        },
+                    });
+
+                    addWasmLog("✅ WASM-Modul erfolgreich initialisiert");
+                    return true;
                 } catch (error) {
                     console.error("Failed to initialize WASM:", error);
-                    updateStatus(
-                        "error",
-                        "Fehler beim Laden des WebAssembly-Moduls",
+                    addWasmLog(
+                        `❌ WASM-Initialisierung fehlgeschlagen: ${error.message}`,
                     );
+                    updateStatus("error", "Fehler beim Laden des WASM-Moduls");
                     throw error;
                 }
             }
 
-            function startWasmApp() {
-                if (!wasmInitialized || !cryptoVoteModule || !currentUserId) {
+            async function startWasmApp() {
+                if (!cryptoVoteWrapper || !currentUserId) {
                     console.error("WASM not initialized or no user ID");
                     return;
                 }
 
                 try {
-                    // Call the start function with user ID
-                    cryptoVoteModule.start(currentUserId);
-                    console.log(
-                        `WASM app started with user ID: ${currentUserId}`,
+                    addWasmLog(
+                        `🚀 Starte Anwendung mit User ID: ${currentUserId}`,
                     );
+                    await cryptoVoteWrapper.start(currentUserId);
+                    addWasmLog("✅ Anwendung erfolgreich gestartet");
                 } catch (error) {
                     console.error("Failed to start WASM app:", error);
+                    addWasmLog(
+                        `❌ Fehler beim Starten der Anwendung: ${error.message}`,
+                    );
                     updateStatus(
                         "error",
                         "Fehler beim Starten der WASM-Anwendung",
@@ -331,28 +531,32 @@
 
                 eventSource = new EventSource("/board");
 
-                eventSource.onopen = function (event) {
+                eventSource.onopen = async function (event) {
                     updateStatus("connected", "Verbunden mit Abstimmung");
                     document
                         .getElementById("pollSection")
                         .classList.remove("hidden");
 
                     // Start the WASM app now that we're connected
-                    startWasmApp();
+                    await startWasmApp();
                 };
 
-                eventSource.onmessage = function (event) {
+                eventSource.onmessage = async function (event) {
                     try {
                         const eventData = JSON.parse(event.data);
                         addEventToLog(eventData);
 
                         // Forward message to WASM module
-                        if (
-                            wasmInitialized &&
-                            cryptoVoteModule &&
-                            cryptoVoteModule.onmessage
-                        ) {
-                            cryptoVoteModule.onmessage(event.data);
+                        if (cryptoVoteWrapper) {
+                            try {
+                                await cryptoVoteWrapper.processEvent(
+                                    event.data,
+                                );
+                            } catch (error) {
+                                addWasmLog(
+                                    `⚠️ Fehler beim Verarbeiten des Events: ${error.message}`,
+                                );
+                            }
                         }
                     } catch (error) {
                         console.error("Error processing event:", error);
@@ -379,7 +583,51 @@
                 };
             }
 
-            async function connect() {
+            window.submitVote = async function submitVote() {
+                if (!canVote) {
+                    alert("Abstimmung ist noch nicht freigegeben!");
+                    return;
+                }
+
+                const voteMessage = document
+                    .getElementById("voteMessage")
+                    .value.trim();
+                if (!voteMessage) {
+                    alert("Bitte geben Sie eine Stimme ein!");
+                    return;
+                }
+
+                if (!cryptoVoteWrapper) {
+                    alert("WASM-Modul nicht initialisiert!");
+                    return;
+                }
+
+                try {
+                    updateStatus(
+                        "waiting",
+                        "Verschlüssele und sende Stimme...",
+                    );
+                    addWasmLog(
+                        `🗳️ Verarbeite Stimme: "${voteMessage.substring(0, 50)}${voteMessage.length > 50 ? "..." : ""}"`,
+                    );
+
+                    await cryptoVoteWrapper.encryptAndSendVote(voteMessage);
+
+                    // Clear the vote message
+                    document.getElementById("voteMessage").value = "";
+                } catch (error) {
+                    console.error("Vote submission failed:", error);
+                    addWasmLog(
+                        `❌ Fehler beim Abgeben der Stimme: ${error.message}`,
+                    );
+                    updateStatus(
+                        "error",
+                        `Fehler beim Abgeben der Stimme: ${error.message}`,
+                    );
+                }
+            };
+
+            window.connect = async function connect() {
                 const userIdInput = document.getElementById("userId");
                 const userId = parseInt(userIdInput.value);
 
@@ -408,13 +656,22 @@
                         .getElementById("loginSection")
                         .classList.remove("hidden");
                     currentUserId = null;
+
+                    // Cleanup WASM wrapper if it was created
+                    if (cryptoVoteWrapper) {
+                        cryptoVoteWrapper.destroy();
+                        cryptoVoteWrapper = null;
+                    }
                 }
-            }
+            };
 
             // Cleanup on page unload
             window.addEventListener("beforeunload", function () {
                 if (eventSource) {
                     eventSource.close();
+                }
+                if (cryptoVoteWrapper) {
+                    cryptoVoteWrapper.destroy();
                 }
             });
 
@@ -424,6 +681,15 @@
                 .addEventListener("keypress", function (e) {
                     if (e.key === "Enter") {
                         connect();
+                    }
+                });
+
+            // Allow Enter key to submit vote
+            document
+                .getElementById("voteMessage")
+                .addEventListener("keypress", function (e) {
+                    if (e.key === "Enter" && e.ctrlKey) {
+                        submitVote();
                     }
                 });
 

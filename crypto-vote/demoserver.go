@@ -20,8 +20,11 @@ import (
 //go:embed wrapper/crypto_vote.wasm
 var crypto_vote_wasm []byte
 
-//go:embed wrapper/crypto_vote.js
-var crypto_vote_js []byte
+//go:embed wrapper/crypto_vote_wrapper.js
+var crypto_vote_wrapper_js []byte
+
+//go:embed wrapper/crypto_vote_worker.js
+var crypto_vote_worker_js []byte
 
 //go:embed demoserver-static/admin.html
 var admin_html []byte
@@ -72,7 +75,8 @@ func (s *Server) registerHandlers() http.Handler {
 	mux.Handle("/admin", s.handleStaticWithContentType(admin_html, "text/html"))
 	mux.Handle("/htmx.js", s.handleStaticWithContentType(htmx_js, "application/javascript"))
 	mux.Handle("/crypto_vote.wasm", s.handleStaticWithContentType(crypto_vote_wasm, "application/wasm"))
-	mux.Handle("/crypto_vote.js", s.handleStaticWithContentType(crypto_vote_js, "application/javascript"))
+	mux.Handle("/crypto_vote_wrapper.js", s.handleStaticWithContentType(crypto_vote_wrapper_js, "application/javascript"))
+	mux.Handle("/crypto_vote_worker.js", s.handleStaticWithContentType(crypto_vote_worker_js, "application/javascript"))
 	mux.Handle("/start", s.handleStart())
 	mux.Handle("/stop", s.handleStop())
 	mux.Handle("/board", s.handleBoard())
@@ -137,8 +141,6 @@ func (s *Server) handleStart() http.HandlerFunc {
 			fmt.Fprintf(w, "Error parsing JSON: %v", err)
 			return
 		}
-
-		fmt.Println(requestData)
 
 		// Validate input
 		if len(requestData.VoteUserIDs) == 0 {
