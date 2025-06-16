@@ -14,7 +14,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: go fmt
-        run: test -z $(gofmt -l .)
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            exit 1
+          fi
+
 
       - name: go vet
         run: go vet ./...
@@ -23,7 +27,7 @@ jobs:
         run: go install golang.org/x/lint/golint@latest && golint ./...
 
       - name: test
-        run: go test -timeout 60s -race ./...
+        run: go test -timeout 60s -race ./...   
 
   system-test:
     name: System Test
