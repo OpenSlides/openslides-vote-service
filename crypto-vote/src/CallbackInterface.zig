@@ -5,14 +5,30 @@ const Self = @This();
 pub const publicKeySize = std.base64.standard_no_pad.Encoder.calcSize(64);
 
 publishKeyPublicFn: *const fn (key: [publicKeySize]u8) CallbackError!void,
+publishVoteFn: *const fn (vote: []const u8) CallbackError!void,
+setCanVoteFn: *const fn (size: ?u32) void,
 logFn: *const fn (message: []const u8) void,
 
 pub fn publishKeyPublic(self: *const Self, key: [publicKeySize]u8) CallbackError!void {
     return self.publishKeyPublicFn(key);
 }
 
+pub fn setCanVote(self: *const Self, size: ?u32) void {
+    self.setCanVoteFn(size);
+}
+
+pub fn publishVote(self: *const Self, vote: []const u8) CallbackError!void {
+    return self.publishVoteFn(vote);
+}
+
 pub fn log(self: *const Self, message: []const u8) void {
-    self.printFn(message);
+    self.logFn(message);
+}
+
+pub fn print(self: *const Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
+    const msg = try std.fmt.allocPrint(allocator, fmt, args);
+    defer allocator.free(msg);
+    self.log(msg);
 }
 
 pub const ErrorCode = enum(i32) {

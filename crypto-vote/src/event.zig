@@ -42,6 +42,10 @@ const ParsedEvent = union(enum) {
         user_id: u32,
         vote: []const u8,
     },
+
+    pub fn free(self: ParsedEvent, allocator: Allocator) void {
+        freeParsedEvent(allocator, self);
+    }
 };
 
 // Enum for Event types
@@ -242,7 +246,7 @@ pub fn parseEvent(allocator: Allocator, json_string: []const u8, last_hash: ?[32
 }
 
 // Helper function to free memory
-pub fn freeParsedEvent(allocator: Allocator, event: ParsedEvent) void {
+fn freeParsedEvent(allocator: Allocator, event: ParsedEvent) void {
     switch (event) {
         .start => |start| {
             allocator.free(start.time);

@@ -744,6 +744,18 @@ pub const EncryptResult = struct {
         };
     }
 
+    pub fn toBytes(self: Self, allocator: std.mem.Allocator) ![]u8 {
+        assert(self.cyphers[0].len == self.cyphers[1].len);
+
+        const cypher_len = self.cyphers[0].len;
+        const size = cypher_len * 2 + self.control_data.len;
+        const result = try allocator.alloc(u8, size);
+        @memcpy(result[0..cypher_len], self.cyphers[0]);
+        @memcpy(result[cypher_len..][0..cypher_len], self.cyphers[1]);
+        @memcpy(result[cypher_len * 2 ..][0..self.control_data.len], self.control_data);
+        return result;
+    }
+
     /// Frees all allocated memory in this EncryptResult.
     ///
     /// Args:

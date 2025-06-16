@@ -22,6 +22,15 @@ const Env = struct {
     extern fn console_log(ptr: [*]const u8, len: usize) void;
     extern fn get_random(ptr: [*]u8, amount: u32) void;
     extern fn publish_key_public(ptr: *const [CallbackInterface.publicKeySize]u8) i32;
+    extern fn publish_vote(ptr: [*]const u8, len: usize) i32;
+    extern fn set_can_vote(size: u32) void; // 0 means, can not vote.
+};
+
+const wasm_callbacks = CallbackInterface{
+    .publishKeyPublicFn = publishKeyPublic,
+    .publishVoteFn = publishVote,
+    .setCanVoteFn = setCanVote,
+    .logFn = consoleLog,
 };
 
 fn consoleLog(msg: []const u8) void {
@@ -39,10 +48,21 @@ fn publishKeyPublic(key: [CallbackInterface.publicKeySize]u8) CallbackInterface.
     }
 }
 
-const wasm_callbacks = CallbackInterface{
-    .publishKeyPublicFn = publishKeyPublic,
-    .logFn = consoleLog,
-};
+fn publishVote(vote: []const u8) CallbackInterface.CallbackError!void {
+    const result = Env.publish_vote(vote.ptr, vote.len);
+    if (result != 0) {
+        return CallbackInterface.fromErrorCode(@enumFromInt(result));
+    }
+}
+
+fn setCanVote(size: ?u32) void {
+    Env.set_can_vote(size orelse 0);
+}
+
+fn readBufWithSize(buf: [*]const u8) []const u8 {
+    const size = std.mem.readInt(u32, buf[0..4], .little);
+    return buf[4..][0..size];
+}
 
 var app: ?App = null;
 
@@ -51,7 +71,10 @@ export fn start(user_id: u32) void {
 }
 
 export fn onmessage(event_ptr: [*]const u8, event_len: usize) void {
-    var loaded_app = app orelse return;
+    var loaded_app = app orelse {
+        consoleLog("App not initialized");
+        return;
+    };
 
     loaded_app.processEvent(
         allocator,
@@ -61,4 +84,21 @@ export fn onmessage(event_ptr: [*]const u8, event_len: usize) void {
         consoleLog(msg);
         return;
     };
+}
+
+export fn encrypt_and_send_vote(vote_ptr: [*]const u8, vote_len: usize) u32 {
+    var loaded_app = app orelse {
+        consoleLog("App not initialized");
+        return 1;
+    };
+
+    const vote = vote_ptr[0..vote_len];
+    loaded_app.encryptAndSendVote(allocator, vote) catch |err| {
+        const msg = std.fmt.allocPrint(allocator, "Error encrypting and sending vote: {}", .{err}) catch "OOM";
+        defer allocator.free(msg);
+        consoleLog(msg);
+        return 1;
+    };
+
+    return 0;
 }
