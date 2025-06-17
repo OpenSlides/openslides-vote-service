@@ -12,10 +12,5 @@ build-test:
 run-tests:
 	bash dev/run-tests.sh
 
-run-test:
-	make build-aio context=tests submodule=vote
-	docker run openslides-vote-tests
-#   docker build . --target testing --tag openslides-vote-test
-
 system-test:
 	VOTE_SYSTEM_TEST=1 go test ./system_test/

@@ -73,3 +73,5 @@ EXPOSE 9013
 
 ## Command
 ENTRYPOINT ["/openslides-vote-service"]
+
+HEALTHCHECK CMD ["/openslides-vote-service", "health"]
