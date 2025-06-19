@@ -35,11 +35,9 @@ HEALTHCHECK CMD ["/openslides-vote-service", "health"]
 
 FROM base as dev
 
-WORKDIR /app
-
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 
-CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
+CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
 
 
 # Testing Image
