@@ -3,7 +3,7 @@ ARG CONTEXT=prod
 FROM golang:1.24.3-alpine as base
 
 ARG CONTEXT
-WORKDIR /root/openslides-vote-service
+WORKDIR /app/openslides-vote-service
 
 ## Context-based setup
 ### Add context value as a helper env variable
@@ -35,7 +35,7 @@ HEALTHCHECK CMD ["/openslides-vote-service", "health"]
 
 FROM base as dev
 
-WORKDIR /root
+WORKDIR /app
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 
@@ -61,7 +61,7 @@ FROM scratch as prod
 
 WORKDIR /
 
-COPY --from=builder /root/openslides-vote-service/openslides-vote-service .
+COPY --from=builder /app/openslides-vote-service/openslides-vote-service .
 
 ## External Information
 LABEL org.opencontainers.image.title="OpenSlides Vote Service"
