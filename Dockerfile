@@ -27,7 +27,7 @@ LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-
 EXPOSE 9013
 
 ## Command
-HEALTHCHECK CMD ["/openslides-vote-service", "health"]
+HEALTHCHECK CMD ["/app/openslides-vote-service/openslides-vote-service", "health"]
 
 
 
