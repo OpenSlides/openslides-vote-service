@@ -2,17 +2,13 @@ ARG CONTEXT=prod
 
 FROM golang:1.24.4-alpine as base
 
+## Setup
 ARG CONTEXT
 WORKDIR /app/openslides-vote-service
-
-## Context-based setup
-# Used for easy target differentiation
-ARG ${CONTEXT}=1 
 ENV APP_CONTEXT=${CONTEXT}
 
 ## Install
 RUN apk add --no-cache git
-    
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -30,8 +26,6 @@ EXPOSE 9013
 ## Command
 HEALTHCHECK CMD ["/app/openslides-vote-service/openslides-vote-service", "health"]
 
-
-
 # Development Image
 
 FROM base as dev
@@ -39,7 +33,6 @@ FROM base as dev
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
 
 CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
-
 
 # Testing Image
 
@@ -49,12 +42,10 @@ RUN apk add --no-cache build-base
 
 CMD go test -test.short -race -timeout 12s ./...
 
-
 # Production Image
 
 FROM base as builder
 RUN go build
-
 
 FROM scratch as prod
 
