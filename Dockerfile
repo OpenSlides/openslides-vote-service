@@ -6,8 +6,9 @@ ARG CONTEXT
 WORKDIR /app/openslides-vote-service
 
 ## Context-based setup
-### Add context value as a helper env variable
-ENV ${CONTEXT}=1
+# Used for easy target differentiation
+ARG ${CONTEXT}=1 
+ENV APP_CONTEXT=${CONTEXT}
 
 ## Install
 RUN apk add --no-cache git
@@ -58,6 +59,7 @@ RUN go build
 FROM scratch as prod
 
 WORKDIR /
+ENV APP_CONTEXT=prod
 
 COPY --from=builder /app/openslides-vote-service/openslides-vote-service .
 
