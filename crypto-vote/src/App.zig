@@ -52,8 +52,10 @@ pub fn encryptAndSendVote(self: *App, allocator: Allocator, vote: []const u8) !v
 }
 
 pub fn processEvent(self: *App, allocator: Allocator, event_data: []const u8) !void {
+    try self.callback.print(allocator, "event_data: {s}, last_hash: {any}", .{ event_data, self.last_hash });
     const parsedEvent = try event.parseEvent(allocator, event_data, self.last_hash);
     defer parsedEvent.free(allocator);
+    self.callback.log("hier bin ich...");
     self.last_hash = event.hashEvent(event_data);
 
     switch (parsedEvent) {
@@ -78,6 +80,7 @@ pub fn processEvent(self: *App, allocator: Allocator, event_data: []const u8) !v
 
             var as_base64: [CallbackInterface.publicKeySize]u8 = undefined;
             _ = Base64Encoder.encode(&as_base64, &both_keys);
+            // TODO: Try not to send key a second time. This will be complicated...
             try self.callback.publishKeyPublic(as_base64);
         },
         .publish_key_public => |value| {

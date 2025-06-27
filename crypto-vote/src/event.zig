@@ -79,9 +79,9 @@ pub fn hashEvent(event: []const u8) [32]u8 {
 // Helper function to decode base64 hash
 fn decodeBase64Hash(hash_str: []const u8) ![32]u8 {
     var hash_bytes: [32]u8 = undefined;
-    const decoder = base64.standard.Decoder;
+    const decoder = base64.standard_no_pad.Decoder;
 
-    if (hash_str.len != base64.standard.Encoder.calcSize(32)) {
+    if (hash_str.len != base64.standard_no_pad.Encoder.calcSize(32)) {
         return ParseError.InvalidBase64Hash;
     }
 

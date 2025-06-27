@@ -49,6 +49,7 @@ func (bb *Board) Add(type_ string, message json.RawMessage) error {
 	lastEvent := eventList[0]
 
 	hash := createEventHash(lastEvent)
+	fmt.Println(hash)
 
 	event := Event{
 		Time:    now,

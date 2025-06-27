@@ -71,34 +71,34 @@ export fn start(user_id: u32) void {
 }
 
 export fn onmessage(event_ptr: [*]const u8, event_len: usize) void {
-    var loaded_app = app orelse {
+    if (app) |*loaded_app| {
+        loaded_app.processEvent(
+            allocator,
+            event_ptr[0..event_len],
+        ) catch |err| {
+            const msg = std.fmt.allocPrint(allocator, "Error processing event: {}", .{err}) catch "OOM";
+            consoleLog(msg);
+            return;
+        };
+    } else {
         consoleLog("App not initialized");
         return;
-    };
-
-    loaded_app.processEvent(
-        allocator,
-        event_ptr[0..event_len],
-    ) catch |err| {
-        const msg = std.fmt.allocPrint(allocator, "Error processing event: {}", .{err}) catch "OOM";
-        consoleLog(msg);
-        return;
-    };
+    }
 }
 
 export fn encrypt_and_send_vote(vote_ptr: [*]const u8, vote_len: usize) u32 {
-    var loaded_app = app orelse {
+    if (app) |*loaded_app| {
+        const vote = vote_ptr[0..vote_len];
+        loaded_app.encryptAndSendVote(allocator, vote) catch |err| {
+            const msg = std.fmt.allocPrint(allocator, "Error encrypting and sending vote: {}", .{err}) catch "OOM";
+            defer allocator.free(msg);
+            consoleLog(msg);
+            return 1;
+        };
+
+        return 0;
+    } else {
         consoleLog("App not initialized");
         return 1;
-    };
-
-    const vote = vote_ptr[0..vote_len];
-    loaded_app.encryptAndSendVote(allocator, vote) catch |err| {
-        const msg = std.fmt.allocPrint(allocator, "Error encrypting and sending vote: {}", .{err}) catch "OOM";
-        defer allocator.free(msg);
-        consoleLog(msg);
-        return 1;
-    };
-
-    return 0;
+    }
 }
