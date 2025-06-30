@@ -73,13 +73,15 @@ pub const KeyPairTrustee = struct {
     ///   error.InvalidKey: If the seed produces an invalid key (very rare)
     fn generateDeterministic(seed: [32]u8) error{InvalidKey}!KeyPairTrustee {
         const scalar = generate_scalar(seed);
+
         return KeyPairTrustee{
             .key_secret = scalar,
             .key_public = (calc_pk(scalar) catch return error.InvalidKey).toBytes(),
         };
     }
 
-    /// Generates an Ed25519 scalar from a random seed using SHA-512.
+    /// Generates an Ed25519 scalar from a random seed using SHA-512 and
+    /// clamping it.
     ///
     /// Args:
     ///   random_seed: 32-byte random input
@@ -91,6 +93,7 @@ pub const KeyPairTrustee = struct {
         var h = Sha512.init(.{});
         h.update(&random_seed);
         h.final(&az);
+        EDCurve.scalar.clamp(az[0..32]);
         return az[0..32].*;
     }
 
