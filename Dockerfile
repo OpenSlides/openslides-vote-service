@@ -42,6 +42,8 @@ RUN apk add --no-cache build-base
 
 RUN go install golang.org/x/lint/golint@latest
 
+CMD ["sleep", "infinity"]
+
 # Production Image
 
 FROM base as builder
