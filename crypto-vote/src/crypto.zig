@@ -39,16 +39,18 @@ pub const KeyPairMixnet = struct {
     }
 };
 
-/// Key pair for trustee nodes using Ed25519 cryptography.
-/// Trustees collectively decrypt the final voting results after mixnet processing.
+/// Key pair for trustee nodes.
+///
+/// This keypair uses the Edwards-Curve instead of the Montgomery form. The
+/// reason is, that x25519 only uses the X-Coordinate of the curve. But for our
+/// key-combination algorithm, we need the exact point.
 pub const KeyPairTrustee = struct {
-    /// Secret key used for decryption (32 bytes, Ed25519 scalar)
+    /// Secret key used for decryption.
     key_secret: [32]u8,
-    /// Public key used for encryption (32 bytes, Ed25519 point)
+    /// Public key used for encryption.
     key_public: [32]u8,
 
     /// Generates a new random key pair for a trustee.
-    /// Uses rejection sampling to ensure valid Ed25519 keys.
     ///
     /// Returns:
     ///   KeyPairTrustee: A new key pair with cryptographically secure random keys
@@ -70,44 +72,20 @@ pub const KeyPairTrustee = struct {
     ///
     /// Returns:
     ///   KeyPairTrustee: Generated key pair
-    ///   error.InvalidKey: If the seed produces an invalid key (very rare)
-    fn generateDeterministic(seed: [32]u8) error{InvalidKey}!KeyPairTrustee {
-        const scalar = generate_scalar(seed);
-
+    ///   error.IdentityElementError or WeakPublicKeyError: If the seed produces an invalid key (very rare)
+    fn generateDeterministic(seed: [32]u8) (IdentityElementError || WeakPublicKeyError)!KeyPairTrustee {
         return KeyPairTrustee{
-            .key_secret = scalar,
-            .key_public = (calc_pk(scalar) catch return error.InvalidKey).toBytes(),
+            .key_secret = seed,
+            .key_public = try recoverPublicKey(seed),
         };
     }
 
-    /// Generates an Ed25519 scalar from a random seed using SHA-512 and
-    /// clamping it.
+    /// Calculates the public key for a secred key.
     ///
-    /// Args:
-    ///   random_seed: 32-byte random input
-    ///
-    /// Returns:
-    ///   EDCurve.scalar.CompressedScalar: Valid Ed25519 scalar
-    fn generate_scalar(random_seed: [32]u8) EDCurve.scalar.CompressedScalar {
-        var az: [Sha512.digest_length]u8 = undefined;
-        var h = Sha512.init(.{});
-        h.update(&random_seed);
-        h.final(&az);
-        EDCurve.scalar.clamp(az[0..32]);
-        return az[0..32].*;
-    }
-
-    /// Calculates the public key from a private scalar.
-    ///
-    /// Args:
-    ///   scalar: Ed25519 private scalar
-    ///
-    /// Returns:
-    ///   EDCurve: The corresponding public key point
-    ///   IdentityElementError: If the result is the identity element
-    ///   WeakPublicKeyError: If the key is cryptographically weak
-    fn calc_pk(scalar: EDCurve.scalar.CompressedScalar) (IdentityElementError || WeakPublicKeyError)!EDCurve {
-        return EDCurve.basePoint.mul(scalar);
+    /// The same as x25519.recoverPublicKey, but uses the Edwards curve.
+    fn recoverPublicKey(secret_key: [32]u8) (IdentityElementError || WeakPublicKeyError)![32]u8 {
+        const q = try EDCurve.basePoint.clampedMul(secret_key);
+        return q.toBytes();
     }
 };
 
@@ -119,7 +97,7 @@ pub const KeyPairTrustee = struct {
 ///   message: Plaintext message to encrypt
 ///   buf: Output buffer (must be at least message.len + 16 bytes for tag)
 fn encrypt_symmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void {
-    assert(buf.len > message.len + 16);
+    assert(buf.len >= message.len + 16);
 
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
 
@@ -149,7 +127,7 @@ fn encrypt_symmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void
 /// Returns:
 ///   AuthenticationError: If authentication tag verification fails
 fn decrypt_symmetric(shared_secret: [32]u8, cypher: []const u8, buf: []u8) AuthenticationError!void {
-    assert(buf.len > cypher.len - 16);
+    assert(buf.len >= cypher.len - 16);
 
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
     const nonce = blk: {
@@ -205,6 +183,35 @@ fn encrypt_x25519_deterministic(
     return buf[0..encrypted_size];
 }
 
+/// Encrypts a message with x25519 using a random ephemeral key.
+///
+/// Args:
+///   key_public_list: List of Ed25519 public keys to encrypt for
+///   message: Plaintext message to encrypt
+///   buf: Output buffer for encrypted data
+///
+/// Returns:
+///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
+///   InvalidPublicKeyError: If any public key is invalid
+///   WeakPublicKeyError: If ephemeral key generation produces weak key
+fn encrypt_x25519(
+    key_public: [32]u8,
+    message: []const u8,
+    buf: []u8,
+) (InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
+    var random_seed: [32]u8 = undefined;
+    while (true) {
+        std.crypto.random.bytes(&random_seed);
+        return encrypt_x25519_deterministic(key_public, message, random_seed, buf) catch |err| {
+            @branchHint(.unlikely);
+            switch (err) {
+                IdentityElementError.IdentityElement => continue,
+                else => |leftover| return leftover,
+            }
+        };
+    }
+}
+
 /// Calculates the size of decrypted message from cypher length.
 ///
 /// Args:
@@ -244,6 +251,32 @@ fn decrypt_x25519(
     return buf[0..decrypted_size];
 }
 
+/// Like decrypt_x25519 but without clamping the secret key.
+///
+/// The combined trustee key can not be clamped. When decrypting a message
+/// encrypted with the combined trustee key, it can not be clamped.
+fn decrypt_x25519_no_clamp(
+    key_secret: [32]u8,
+    cypher: []const u8,
+    buf: []u8,
+) (IdentityElementError || AuthenticationError || WeakPublicKeyError)![]u8 {
+    const decrypted_size = decrypted_bufsize(cypher.len);
+    assert(buf.len >= decrypted_size);
+
+    const key_ephemeral_public = cypher[0..X25519.public_length].*;
+    const encrypted = cypher[X25519.public_length..];
+
+    const shared_secret = try scalarmultNoClap(key_secret, key_ephemeral_public);
+    try decrypt_symmetric(shared_secret, encrypted, buf);
+
+    return buf[0..decrypted_size];
+}
+
+fn scalarmultNoClap(secret_key: [32]u8, public_key: [32]u8) ![32]u8 {
+    const q = try XCurve.fromBytes(public_key).mul(secret_key);
+    return q.toBytes();
+}
+
 test "x25519 encrypt and decrypt" {
     const key = KeyPairMixnet.generate();
     const msg = "my message to be encrypted";
@@ -257,18 +290,31 @@ test "x25519 encrypt and decrypt" {
     try std.testing.expectEqualDeep(msg, decrypted);
 }
 
-/// Combines multiple Ed25519 public keys into a single aggregated key.
-/// Used for threshold cryptography where multiple trustees share decryption.
+/// Combines multiple trustee public keys into a single aggregated key.
+///
+/// Normaly, a public key is clamped. This is not possible here. A public key
+/// can not be clamped direcly. The secred key has to be clamped before
+/// calculating the secred key. But since all public keys where clamped before
+/// publishing them, the aggregated key does not need clamping.
+///
+/// Clamping has to reasons. The lowest bits are set so zero to get a multible
+/// of 8. This is important to get a point on the correct subgroup of the curve.
+/// But since all points are on the secure curve, the addition of all points
+/// still is a point on the secure subgroup.
+///
+/// The other reason for claming is to get a key, that is not vulnerable to
+/// timing attacs. Since the secure trustee key is known publicly, this a timing
+/// attack is useless here.
 ///
 /// Args:
-///   key_public_list: Array of Ed25519 public keys to combine
+///   key_public_list: Array of trustee public keys to combine.
 ///
 /// Returns:
-///   EDCurve: Combined public key point
-///   InvalidPublicKeyError: If any public key is invalid
-fn combine_public_keys(
+///   x25519 public key: Combined public key point converted for x25519.
+///   InvalidPublicKeyError: If any public key is invalid.
+fn combine_public_keys_to_x25519(
     key_public_list: []const [32]u8,
-) InvalidPublicKeyError!EDCurve {
+) InvalidPublicKeyError![32]u8 {
     assert(key_public_list.len > 0);
 
     var combined = EDCurve.fromBytes(key_public_list[0]) catch return error.InvalidPublicKey;
@@ -276,11 +322,15 @@ fn combine_public_keys(
         const other_decoded = EDCurve.fromBytes(other) catch return error.InvalidPublicKey;
         combined = combined.add(other_decoded);
     }
-    return combined;
+
+    const key_public_x25519 = XCurve.fromEdwards25519(combined) catch return error.InvalidPublicKey;
+    return key_public_x25519.toBytes();
 }
 
-/// Combines multiple Ed25519 secret scalars into a single aggregated scalar.
-/// Used for threshold decryption by trustees.
+/// Combines multiple trustee secret keys into a single aggregated key.
+///
+/// This key can be used for x25519, but the result is not clamped. Therefore
+/// the function decrypt_x25519_no_clamp has to be used for decryption.
 ///
 /// Args:
 ///   key_secret_list: Array of Ed25519 secret scalars to combine
@@ -292,132 +342,25 @@ fn combine_key_secret(
 ) [32]u8 {
     assert(key_secret_list.len > 0);
 
+    // When generating the keys, the secred keys where clamped before calculating
+    // the public keys. But the secred keys where saved in there unclamped form.
+    // Therefore they have to be clamped before adding them together.
     var combined = key_secret_list[0];
+    EDCurve.scalar.clamp(&combined);
     for (key_secret_list[1..]) |other| {
-        combined = EDCurve.scalar.add(combined, other);
+        var other_clamped = other;
+        EDCurve.scalar.clamp(&other_clamped);
+        combined = EDCurve.scalar.add(combined, other_clamped);
     }
     return combined;
 }
 
-/// Encrypts a message using Ed25519 ECIES with random ephemeral key.
-///
-/// Args:
-///   key_public_list: List of Ed25519 public keys to encrypt for
-///   message: Plaintext message to encrypt
-///   buf: Output buffer for encrypted data
-///
-/// Returns:
-///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
-///   InvalidPublicKeyError: If any public key is invalid
-///   WeakPublicKeyError: If ephemeral key generation produces weak key
-fn encrypt_ed25519(
-    key_public_list: []const [32]u8,
-    message: []const u8,
-    buf: []u8,
-) (InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
-    var random_seed: [32]u8 = undefined;
-    while (true) {
-        std.crypto.random.bytes(&random_seed);
-        return encrypt_ed25519_deterministric(key_public_list, message, random_seed, buf) catch |err| {
-            @branchHint(.unlikely);
-            switch (err) {
-                IdentityElementError.IdentityElement => continue,
-                else => |leftover| return leftover,
-            }
-        };
-    }
-}
-
-/// Encrypts a message using Ed25519 ECIES with deterministic ephemeral key.
-///
-/// Args:
-///   key_public_list: List of Ed25519 public keys to encrypt for
-///   message: Plaintext message to encrypt
-///   seed: 32-byte seed for deterministic ephemeral key generation
-///   buf: Output buffer for encrypted data
-///
-/// Returns:
-///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
-///   InvalidPublicKeyError: If any public key is invalid
-///   IdentityElementError: If key exchange results in identity element
-///   WeakPublicKeyError: If ephemeral key generation produces weak key
-fn encrypt_ed25519_deterministric(
-    key_public_list: []const [32]u8,
-    message: []const u8,
-    seed: [32]u8,
-    buf: []u8,
-) (InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
-    const encrypted_size = encrypt_bufsize(message.len);
-    assert(encrypted_size <= buf.len);
-    assert(key_public_list.len > 0);
-
-    const combined_key_public = combine_public_keys(key_public_list) catch return error.InvalidPublicKey;
-
-    const key_ephemeral = try Ed25519.KeyPair.generateDeterministic(seed);
-    const key_ephemeral_secret = extract_scalar(key_ephemeral);
-    const key_ephemeral_public = EDCurve.fromBytes(key_ephemeral.public_key.toBytes()) catch unreachable;
-    const public_key_bytes = key_ephemeral_public.toBytes();
-
-    const shared_secret = (try EDCurve.mul(combined_key_public, key_ephemeral_secret)).toBytes();
-    encrypt_symmetric(shared_secret, message, buf[32..]);
-    // Write the public ephemeral key at the end. This is important, when buf and message are the same.
-    buf[0..32].* = public_key_bytes;
-    return buf[0..encrypted_size];
-}
-
-/// Extracts the scalar component from an Ed25519 key pair.
-///
-/// Args:
-///   kp: Ed25519 key pair
-///
-/// Returns:
-///   [32]u8: Extracted and clamped scalar
-fn extract_scalar(kp: Ed25519.KeyPair) [32]u8 {
-    var az: [Sha512.digest_length]u8 = undefined;
-    var h = Sha512.init(.{});
-    h.update(&kp.secret_key.seed());
-    h.final(&az);
-    EDCurve.scalar.clamp(az[0..32]);
-    return az[0..32].*;
-}
-
-/// Decrypts a message encrypted with Ed25519 ECIES using combined secret keys.
-///
-/// Args:
-///   key_secret_list: List of Ed25519 secret scalars for decryption
-///   cypher: Encrypted data (ephemeral_public_key || encrypted_message || tag)
-///   buf: Output buffer for decrypted message
-///
-/// Returns:
-///   []u8: Decrypted message
-///   InvalidCypherError: If cypher format is invalid
-///   IdentityElementError: If key exchange results in identity element
-///   WeakPublicKeyError: If ephemeral public key is weak
-///   AuthenticationError: If authentication tag verification fails
-fn decrypt_ed25519(
-    key_secret_list: []const EDCurve.scalar.CompressedScalar,
-    cypher: []const u8,
-    buf: []u8,
-) (InvalidCypherError || IdentityElementError || WeakPublicKeyError || AuthenticationError)![]u8 {
-    const decrypted_size = decrypted_bufsize(cypher.len);
-    assert(buf.len >= decrypted_size);
-    assert(key_secret_list.len > 0);
-
-    const combined_key_secret = combine_key_secret(key_secret_list);
-
-    const key_ephemeral_public = EDCurve.fromBytes(cypher[0..32].*) catch return error.InvalidCypher;
-    const encrypted = cypher[32..];
-
-    const shared_secret = (try EDCurve.mul(key_ephemeral_public, combined_key_secret)).toBytes();
-    try decrypt_symmetric(shared_secret, encrypted, buf);
-    return buf[0..decrypted_size];
-}
-
-test "encrypt and decrypt with ed25519" {
+test "encrypt and decrypt trustee" {
     const key1 = KeyPairTrustee.generate();
     const key2 = KeyPairTrustee.generate();
     const key3 = KeyPairTrustee.generate();
     const msg = "my message to be encrypted";
+    const seed = std.mem.zeroes([32]u8);
 
     const key_public_list = &[_][32]u8{
         key1.key_public,
@@ -425,10 +368,13 @@ test "encrypt and decrypt with ed25519" {
         key3.key_public,
     };
 
+    const key_public_x25519 = try combine_public_keys_to_x25519(key_public_list);
+
     var buf_encrypt: [encrypt_bufsize(msg.len)]u8 = undefined;
-    const encrypted_message = try encrypt_ed25519(
-        key_public_list,
+    const encrypted_message = try encrypt_x25519_deterministic(
+        key_public_x25519,
         msg,
+        seed,
         &buf_encrypt,
     );
 
@@ -438,9 +384,11 @@ test "encrypt and decrypt with ed25519" {
         key3.key_secret,
     };
 
+    const key_secret_combined = combine_key_secret(key_secret_list);
+
     var buf_decrypt: [msg.len]u8 = undefined;
-    const decrypted = try decrypt_ed25519(
-        key_secret_list,
+    const decrypted = try decrypt_x25519_no_clamp(
+        key_secret_combined,
         encrypted_message,
         &buf_decrypt,
     );
@@ -499,7 +447,13 @@ fn encrypt_full(
     assert(buf.len >= full);
     assert(seed.len == (mixnet_key_public_list.len + 1) * 32);
 
-    var cypher = try encrypt_ed25519_deterministric(trustee_key_public_list, message, seed[0..32].*, buf[buffer_mid..]);
+    const trustee_key_public_x25519 = try combine_public_keys_to_x25519(trustee_key_public_list);
+    var cypher = try encrypt_x25519_deterministic(
+        trustee_key_public_x25519,
+        message,
+        seed[0..32].*,
+        buf[buffer_mid..],
+    );
     @memcpy(buf[0..cypher.len], buf[buffer_mid..][0..cypher.len]);
     cypher = buf[0..cypher.len];
 
@@ -547,8 +501,14 @@ fn encrypt_fake_steps(
         allocator.free(result);
     }
 
+    const trustee_key_public_x25519 = try combine_public_keys_to_x25519(trustee_key_public_list);
     var cypher = try allocator.alloc(u8, encrypt_bufsize(message.len));
-    _ = try encrypt_ed25519_deterministric(trustee_key_public_list, message, seed[0..32].*, cypher);
+    _ = try encrypt_x25519_deterministic(
+        trustee_key_public_x25519,
+        message,
+        seed[0..32].*,
+        cypher,
+    );
     result[result.len - 1] = cypher;
 
     var cypher_size = cypher.len;
@@ -603,7 +563,8 @@ test "encrypt_full" {
     cypher = try decrypt_x25519(mixnet_key2.key_secret, cypher, &decrypt_buf);
     cypher = try decrypt_x25519(mixnet_key3.key_secret, cypher, &decrypt_buf);
 
-    const decrypted = try decrypt_ed25519(trustee_sk_list, cypher, &decrypt_buf);
+    const trustee_key_secret = combine_key_secret(trustee_sk_list);
+    const decrypted = try decrypt_x25519_no_clamp(trustee_key_secret, cypher, &decrypt_buf);
 
     try std.testing.expectEqualDeep(msg, decrypted);
 }
@@ -823,8 +784,9 @@ pub fn encrypt_message(
     const cypher_fake = try encrypt_fixed_size(allocator, mixnet_key_public_list, trustee_key_public_list, zeros, size);
     defer allocator.free(cypher_fake.seed);
 
+    const trustee_key_public_combined = try combine_public_keys_to_x25519(trustee_key_public_list);
     const buf = try allocator.alloc(u8, encrypt_bufsize(cypher_fake.seed.len));
-    const control_data = try encrypt_ed25519(trustee_key_public_list, cypher_fake.seed, buf);
+    const control_data = try encrypt_x25519(trustee_key_public_combined, cypher_fake.seed, buf);
 
     return if (std.Random.boolean(std.crypto.random))
         .{ .cyphers = [2][]u8{ cypher_real.cypher, cypher_fake.cypher }, .control_data = control_data }
@@ -1046,10 +1008,12 @@ pub fn decrypt_trustee(
 
     const decrypted_size = decrypted_bufsize(cypher_size);
 
+    const key_secret = combine_key_secret(key_secret_list);
+
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
         // TODO: Ignore messages, that can not be decrypted.
-        _ = try decrypt_ed25519(key_secret_list, cypher, buf[i * decrypted_size ..]);
+        _ = try decrypt_x25519_no_clamp(key_secret, cypher, buf[i * decrypted_size ..]);
     }
 
     // TODO: Maybe return individual messages, since this is the cleartext. This
@@ -1179,12 +1143,14 @@ pub fn validate(
     const seed_decrypt_buf = try allocator.alloc(u8, seed_size);
     defer allocator.free(seed_decrypt_buf);
 
+    const key_secret_combined = combine_key_secret(trustee_key_secret_list);
+
     for (0..user_count) |i| {
         const cypher = user_data_list[i * user_data_size ..][0..user_data_size];
         const user_data = EncryptResult.fromBytes(cypher, mixnet_data_list.len, max_size);
 
-        const seed = try decrypt_ed25519(
-            trustee_key_secret_list,
+        const seed = try decrypt_x25519_no_clamp(
+            key_secret_combined,
             user_data.control_data,
             seed_decrypt_buf,
         );
