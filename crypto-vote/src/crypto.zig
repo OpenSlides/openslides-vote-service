@@ -80,7 +80,7 @@ pub const KeyPairTrustee = struct {
         };
     }
 
-    /// Calculates the public key for a secred key.
+    /// Calculates the public key for a secret key.
     ///
     /// The same as x25519.recoverPublicKey, but uses the Edwards curve.
     fn recoverPublicKey(secret_key: [32]u8) (IdentityElementError || WeakPublicKeyError)![32]u8 {
@@ -266,13 +266,22 @@ fn decrypt_x25519_no_clamp(
     const key_ephemeral_public = cypher[0..X25519.public_length].*;
     const encrypted = cypher[X25519.public_length..];
 
-    const shared_secret = try scalarmultNoClap(key_secret, key_ephemeral_public);
+    const shared_secret = try scalarmultNoClamp(key_secret, key_ephemeral_public);
     try decrypt_symmetric(shared_secret, encrypted, buf);
 
     return buf[0..decrypted_size];
 }
 
-fn scalarmultNoClap(secret_key: [32]u8, public_key: [32]u8) ![32]u8 {
+/// Performs scalar multiplication without clamping the secret key.
+///
+/// Args:
+///   secret_key: 32-byte secret key
+///   public_key: 32-byte X25519 public key
+///
+/// Returns:
+///   [32]u8: Result of scalar multiplication
+///   IdentityElementError or WeakPublicKeyError: If the operation fails
+fn scalarmultNoClamp(secret_key: [32]u8, public_key: [32]u8) ![32]u8 {
     const q = try XCurve.fromBytes(public_key).mul(secret_key);
     return q.toBytes();
 }
@@ -292,19 +301,19 @@ test "x25519 encrypt and decrypt" {
 
 /// Combines multiple trustee public keys into a single aggregated key.
 ///
-/// Normaly, a public key is clamped. This is not possible here. A public key
-/// can not be clamped direcly. The secred key has to be clamped before
-/// calculating the secred key. But since all public keys where clamped before
+/// Normally, a public key is clamped. This is not possible here. A public key
+/// cannot be clamped directly. The secret key has to be clamped before
+/// calculating the public key. But since all public keys were clamped before
 /// publishing them, the aggregated key does not need clamping.
 ///
-/// Clamping has to reasons. The lowest bits are set so zero to get a multible
+/// Clamping has two reasons. The lowest bits are set to zero to get a multiple
 /// of 8. This is important to get a point on the correct subgroup of the curve.
 /// But since all points are on the secure curve, the addition of all points
 /// still is a point on the secure subgroup.
 ///
-/// The other reason for claming is to get a key, that is not vulnerable to
-/// timing attacs. Since the secure trustee key is known publicly, this a timing
-/// attack is useless here.
+/// The other reason for clamping is to get a key that
+/// is not vulnerable to timing attacks. Since the combined trustee key is known
+/// publicly, there is not attack vector for a timing attack
 ///
 /// Args:
 ///   key_public_list: Array of trustee public keys to combine.
@@ -333,17 +342,17 @@ fn combine_public_keys_to_x25519(
 /// the function decrypt_x25519_no_clamp has to be used for decryption.
 ///
 /// Args:
-///   key_secret_list: Array of Ed25519 secret scalars to combine
+///   key_secret_list: Array of 32-byte secret keys to combine
 ///
 /// Returns:
 ///   [32]u8: Combined secret scalar
 fn combine_key_secret(
-    key_secret_list: []const EDCurve.scalar.CompressedScalar,
+    key_secret_list: []const [32]u8,
 ) [32]u8 {
     assert(key_secret_list.len > 0);
 
-    // When generating the keys, the secred keys where clamped before calculating
-    // the public keys. But the secred keys where saved in there unclamped form.
+    // When generating the keys, the secret keys were clamped before calculating
+    // the public keys. But the secret keys were saved in their unclamped form.
     // Therefore they have to be clamped before adding them together.
     var combined = key_secret_list[0];
     EDCurve.scalar.clamp(&combined);
@@ -378,7 +387,7 @@ test "encrypt and decrypt trustee" {
         &buf_encrypt,
     );
 
-    const key_secret_list = &[_]EDCurve.scalar.CompressedScalar{
+    const key_secret_list = &[_][32]u8{
         key1.key_secret,
         key2.key_secret,
         key3.key_secret,
@@ -995,7 +1004,7 @@ pub fn decrypt_trustee_buf_size(cypher_block_size: usize, cypher_count: usize) u
 ///   WeakPublicKeyError: If any ephemeral key is weak
 ///   AuthenticationError: If any message authentication fails
 pub fn decrypt_trustee(
-    key_secret_list: []const EDCurve.scalar.CompressedScalar,
+    key_secret_list: []const [32]u8,
     cypher_count: usize,
     cypher_block: []const u8,
     buf: []u8,
@@ -1012,7 +1021,7 @@ pub fn decrypt_trustee(
 
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
-        // TODO: Ignore messages, that can not be decrypted.
+        // TODO: Ignore messages that cannot be decrypted.
         _ = try decrypt_x25519_no_clamp(key_secret, cypher, buf[i * decrypted_size ..]);
     }
 
