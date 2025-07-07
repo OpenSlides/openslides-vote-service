@@ -38,10 +38,12 @@ RUN apk add --no-cache \
     docker \
     build-base && \
     go get -u github.com/ory/dockertest/v3 && \
-    go install golang.org/x/lint/golint@latest
+    go install golang.org/x/lint/golint@latest && \
+    chmod +x dev/container-tests.sh
 
-RUN chmod +x dev/container-tests.sh
-CMD ["./dev/container-tests.sh"]
+## Command
+STOPSIGNAL SIGKILL
+CMD ["sleep", "inf"]
 
 # Production Image
 
