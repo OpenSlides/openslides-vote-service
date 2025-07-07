@@ -15,7 +15,7 @@ CATCH=0
 
 # Execution
 if [ "$(docker images -q $IMAGE_TAG)" = "" ]; then make build-test || CATCH=1; fi
-docker run -v /var/run/docker.sock:/var/run/docker.sock ${IMAGE_TAG} || CATCH=1
+docker run --privileged ${IMAGE_TAG} || CATCH=1
 
 if [ -z "$PERSIST_CONTAINERS" ]; then docker stop $(docker ps -a -q --filter ancestor=${IMAGE_TAG} --format="{{.ID}}") || CATCH=1; fi
 
