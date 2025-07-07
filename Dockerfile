@@ -35,8 +35,8 @@ FROM base as tests
 
 # Install Dockertest & Docker
 RUN apk add --no-cache \
-    docker \
-    build-base && \
+    build-base \
+    docker && \
     go get -u github.com/ory/dockertest/v3 && \
     go install golang.org/x/lint/golint@latest && \
     chmod +x dev/container-tests.sh

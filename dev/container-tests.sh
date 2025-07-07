@@ -1,6 +1,6 @@
 #!/bin/sh
 
-dockerd &
+dockerd --storage-driver=vfs --log-level=error &
 
 # Close Dockerd savely on exit
 DOCKERD_PID=$!
