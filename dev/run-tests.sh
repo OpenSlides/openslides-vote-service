@@ -6,11 +6,11 @@ echo "########################################################################"
 echo "###################### Run Tests and Linters ###########################"
 echo "########################################################################"
 
-# Safe Exit
-trap 'docker stop $(docker ps -a -q --filter ancestor=${IMAGE_TAG} --format="{{.ID}}")' EXIT
-
 # Setup
 IMAGE_TAG=openslides-vote-tests
+
+# Safe Exit
+trap 'docker stop $(docker ps -a -q --filter ancestor=${IMAGE_TAG})' EXIT
 
 # Execution
 make build-test
