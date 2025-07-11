@@ -1,18 +1,23 @@
 # Features
 
-- analog
+- analog -> Nicht Einzelstimmen. Aber mit Mehrheit
 - Namentlich - offen - geheim
+- live
 - Mit oder ohne Enthaltung
-- Ungültig
+- Ungültig?
 - min_votes_amount: Doppeldeutig: Entweder Anzahl der Stimmen, die man auf alle Optionen aufteilen muss, oder die Anzahl die Optionen, die man auswählen muss
 - max_votes_amount: Wie min_votes_amount
 - max_votes_per_option: Man kann einer Option maximal X stimmen geben
+
 - onehundred_percent_base: Ist für die Auswertung wichtig
 - Negative Abstimmung: Man kann pro Option Nein sagen
 - global_option_id:
   It is possible to give global votes, so a user must not vote for one or more options. Enabling each global vote is done with global_yes, global_no and global_abstain. If such a global vote is given, the value is saved to the global option (poll/global_option_id).
 - Vote Delegation
 - Vote weight
+
+
+
 
 # Konzept
 
