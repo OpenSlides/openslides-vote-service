@@ -281,7 +281,7 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 }
 
 type allLiveVotes interface {
-	AllLiveVotes(ctx context.Context) map[int]map[int][]byte
+	AllLiveVotes(ctx context.Context) map[int]map[int]*string
 }
 
 // handleAllVotedIDs opens an http connection, that the server never closes.
@@ -306,11 +306,11 @@ func handleAllVotedIDs(voteCounter allLiveVotes, eventer func() (<-chan time.Tim
 		event, cancel := eventer()
 		defer cancel()
 
-		var voterMemory map[int]map[int][]byte
+		var voterMemory map[int]map[int]*string
 		firstData := true
 		for {
 			newLiveVotes := voteCounter.AllLiveVotes(r.Context())
-			diff := make(map[int]map[int][]byte)
+			diff := make(map[int]map[int]*string)
 
 			if voterMemory == nil {
 				voterMemory = newLiveVotes
@@ -325,7 +325,7 @@ func handleAllVotedIDs(voteCounter allLiveVotes, eventer func() (<-chan time.Tim
 						for newUserID, vote := range userID2Vote {
 							if _, contains := oldUserID2Vote[newUserID]; !contains {
 								if _, ok := diff[pollID]; !ok {
-									diff[pollID] = make(map[int][]byte)
+									diff[pollID] = make(map[int]*string)
 								}
 								voterMemory[pollID][newUserID] = vote
 								diff[pollID][newUserID] = vote

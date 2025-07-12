@@ -596,10 +596,10 @@ func TestHandleVoted(t *testing.T) {
 }
 
 type allLiveVotesStub struct {
-	expectCount map[int]map[int][]byte
+	expectCount map[int]map[int]*string
 }
 
-func (v *allLiveVotesStub) AllLiveVotes(ctx context.Context) map[int]map[int][]byte {
+func (v *allLiveVotesStub) AllLiveVotes(ctx context.Context) map[int]map[int]*string {
 	return v.expectCount
 }
 
@@ -616,7 +616,8 @@ func TestHandleAllVotedIDs_first_data(t *testing.T) {
 
 	url := "/vote/live_votes"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int]map[int][]byte{1: {1: []byte("vote"), 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
+	voteStr := "vote"
+	voteCounter.expectCount = map[int]map[int]*string{1: {1: &voteStr, 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
 
 	// TODO: find a better way then a timeout
 	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -629,7 +630,7 @@ func TestHandleAllVotedIDs_first_data(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int]map[int][]byte
+	var got map[int]map[int]*string
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -652,7 +653,7 @@ func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
 
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int]map[int][]byte{}
+	voteCounter.expectCount = map[int]map[int]*string{}
 
 	// TODO: find a better way then a timeout
 	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -664,7 +665,7 @@ func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int]map[int][]byte
+	var got map[int]map[int]*string
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -686,13 +687,16 @@ func TestHandleAllVotedIDs_second_data(t *testing.T) {
 
 	ctx := context.Background()
 
-	data := []map[int]map[int][]byte{
-		{1: {1: nil, 2: nil}, 2: {20: []byte("vote")}},
-		{1: {1: nil, 2: nil, 3: nil}, 2: {20: []byte("vote")}},  // Change only 1
-		{1: {1: nil, 2: nil, 3: nil}, 2: {20: []byte("vote")}},  // No Change
-		{1: {1: nil, 2: nil, 3: nil}},                           // Remove 2
-		{1: {1: nil, 2: nil, 3: nil}, 3: {30: []byte("vote2")}}, // Add 3
-		{1: {1: nil, 2: nil, 3: nil}},                           // Remove 3 (that was not there at the beginning)
+	vote1Str := "vote"
+	vote2Str := "vote2"
+
+	data := []map[int]map[int]*string{
+		{1: {1: nil, 2: nil}, 2: {20: &vote1Str}},
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // Change only 1
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // No Change
+		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 2
+		{1: {1: nil, 2: nil, 3: nil}, 3: {30: &vote2Str}}, // Add 3
+		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 3 (that was not there at the beginning)
 	}
 
 	url := "/vote/vote_count"
@@ -721,17 +725,17 @@ func TestHandleAllVotedIDs_second_data(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	expect := []map[int]map[int][]byte{
-		{1: {1: nil, 2: nil}, 2: {20: []byte("vote")}},
-		{1: {3: nil}},
+	expect := []map[int]map[int]string{
+		{1: {1: "", 2: ""}, 2: {20: "vote"}},
+		{1: {3: ""}},
 		{2: nil},
-		{3: {30: []byte("vote2")}},
+		{3: {30: "vote2"}},
 		{3: nil},
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	for i := range expect {
-		var got map[int]map[int][]byte
+		var got map[int]map[int]*string
 		if err := decoder.Decode(&got); err != nil {
 			if err == io.EOF {
 				t.Errorf("Got %d packages, expected %d", i, len(expect))
@@ -740,10 +744,29 @@ func TestHandleAllVotedIDs_second_data(t *testing.T) {
 			t.Fatalf("decoding: %v", err)
 		}
 
-		if !reflect.DeepEqual(got, expect[i]) {
+		if !reflect.DeepEqual(resolvePointers(got), expect[i]) {
 			t.Errorf("Data %d: Got %v, expected %v", i+1, got, expect[i])
 		}
 	}
+}
+
+func resolvePointers(in map[int]map[int]*string) map[int]map[int]string {
+	out := make(map[int]map[int]string)
+	for pollID, user2Vote := range in {
+		if user2Vote == nil {
+			out[pollID] = nil
+			continue
+		}
+		out[pollID] = make(map[int]string)
+		for userID, vote := range user2Vote {
+			if vote == nil {
+				out[pollID][userID] = ""
+				continue
+			}
+			out[pollID][userID] = *vote
+		}
+	}
+	return out
 }
 
 func TestHandleHealth(t *testing.T) {

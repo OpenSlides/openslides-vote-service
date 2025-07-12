@@ -1551,7 +1551,6 @@ func TestAllLiveVotesIDs_LiveVote_enabled_type_is_named(t *testing.T) {
 	ds := dsmock.NewFlow(dsmock.YAMLData(`---
 	poll:
 		23:
-
 			live_voting_enabled: true
 			type: named
 
@@ -1577,12 +1576,23 @@ func TestAllLiveVotesIDs_LiveVote_enabled_type_is_named(t *testing.T) {
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
-	liveVotes := v.AllLiveVotes(ctx)
+	liveVotes := resolvePointers(v.AllLiveVotes(ctx))
 
-	expect := map[int]map[int][]byte{23: {1: []byte("vote1")}, 42: {1: []byte("vote2"), 2: []byte("vote3")}}
+	expect := map[int]map[int]string{23: {1: "vote1"}, 42: {1: "vote2", 2: "vote3"}}
 	if !reflect.DeepEqual(liveVotes, expect) {
 		t.Errorf("Got %v, expected %v", liveVotes, expect)
 	}
+}
+
+func resolvePointers(in map[int]map[int]*string) map[int]map[int]string {
+	out := make(map[int]map[int]string)
+	for pollID, user2Vote := range in {
+		out[pollID] = make(map[int]string)
+		for userID, vote := range user2Vote {
+			out[pollID][userID] = *vote
+		}
+	}
+	return out
 }
 
 func TestAllLiveVotesIDs_LiveVote_disabled_or_type_is_not_named(t *testing.T) {
@@ -1625,7 +1635,7 @@ func TestAllLiveVotesIDs_LiveVote_disabled_or_type_is_not_named(t *testing.T) {
 
 	liveVotes := v.AllLiveVotes(ctx)
 
-	expect := map[int]map[int][]byte{23: {1: nil}, 42: {1: nil, 2: nil}}
+	expect := map[int]map[int]*string{23: {1: nil}, 42: {1: nil, 2: nil}}
 	if !reflect.DeepEqual(liveVotes, expect) {
 		t.Errorf("Got %v, expected %v", liveVotes, expect)
 	}

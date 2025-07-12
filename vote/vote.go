@@ -489,27 +489,35 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 }
 
 // AllLiveVotes returns for all running polls the vote from each user.
-func (v *Vote) AllLiveVotes(ctx context.Context) map[int]map[int][]byte {
+func (v *Vote) AllLiveVotes(ctx context.Context) map[int]map[int]*string {
 	v.liveVotesMu.Lock()
 	defer v.liveVotesMu.Unlock()
 
 	ds := dsmodels.New(v.flow)
 
-	out := make(map[int]map[int][]byte, len(v.liveVotes))
+	out := make(map[int]map[int]*string, len(v.liveVotes))
 	for pollID, userID2Vote := range v.liveVotes {
 		poll, err := ds.Poll(pollID).First(ctx)
 		if err != nil {
 			continue
 		}
 
+		out[pollID] = make(map[int]*string, len(userID2Vote))
+
 		if poll.LiveVotingEnabled && poll.Type == "named" {
 			// Only send votes an votes, where live voting is enabled and its a
 			// named vote. Remove the votes for all other votes.
-			out[pollID] = maps.Clone(userID2Vote)
+			for userID, vote := range userID2Vote {
+				if vote == nil {
+					out[pollID] = nil
+					continue
+				}
+				str := string(vote)
+				out[pollID][userID] = &str
+			}
 			continue
 		}
 
-		out[pollID] = make(map[int][]byte, len(userID2Vote))
 		for userID := range userID2Vote {
 			out[pollID][userID] = nil
 		}
