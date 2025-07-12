@@ -1539,23 +1539,23 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 	}
 }
 
-func TestAllVotedIDs(t *testing.T) {
+func TestAllLiveVotesIDs(t *testing.T) {
 	ctx := context.Background()
 	backend1 := memory.New()
 	backend1.Start(ctx, 23)
-	backend1.Vote(ctx, 23, 1, []byte("vote"))
+	backend1.Vote(ctx, 23, 1, []byte("vote1"))
 	backend2 := memory.New()
 	backend2.Start(ctx, 42)
-	backend2.Vote(ctx, 42, 1, []byte("vote"))
-	backend2.Vote(ctx, 42, 2, []byte("vote"))
+	backend2.Vote(ctx, 42, 1, []byte("vote2"))
+	backend2.Vote(ctx, 42, 2, []byte("vote3"))
 	ds := dsmock.NewFlow(dsmock.YAMLData(``))
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
-	voted := v.AllVotedIDs(ctx)
+	liveVotes := v.AllLiveVotes(ctx)
 
-	expect := map[int][]int{23: {1}, 42: {1, 2}}
-	if !reflect.DeepEqual(voted, expect) {
-		t.Errorf("Got %v, expected %v", voted, expect)
+	expect := map[int]map[int][]byte{23: {1: []byte("vote1")}, 42: {1: []byte("vote2"), 2: []byte("vote3")}}
+	if !reflect.DeepEqual(liveVotes, expect) {
+		t.Errorf("Got %v, expected %v", liveVotes, expect)
 	}
 }
