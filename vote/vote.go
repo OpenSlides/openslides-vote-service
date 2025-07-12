@@ -499,7 +499,6 @@ func (v *Vote) AllLiveVotes(ctx context.Context) map[int]map[int][]byte {
 	for pollID, userID2Vote := range v.liveVotes {
 		poll, err := ds.Poll(pollID).First(ctx)
 		if err != nil {
-			fmt.Println(err)
 			continue
 		}
 

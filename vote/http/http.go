@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +90,7 @@ type voteService interface {
 	stopper
 	clearer
 	clearAller
-	allVotedIDer
+	allLiveVotes
 	voter
 	haveIvoteder
 }
@@ -113,7 +112,7 @@ func registerHandlers(service voteService, auth authenticater, ticketProvider fu
 	mux.Handle(internal+"/stop", handleInternal(handleStop(service)))
 	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
 	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
-	mux.Handle(internal+"/all_voted_ids", handleInternal(handleAllVotedIDs(service, ticketProvider)))
+	mux.Handle(internal+"/live_votes", handleInternal(handleAllVotedIDs(service, ticketProvider)))
 	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
 	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
 	mux.Handle(external+"/health", handleExternal(handleHealth()))
@@ -281,23 +280,23 @@ func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
 	}
 }
 
-type allVotedIDer interface {
-	AllVotedIDs(ctx context.Context) map[int][]int
+type allLiveVotes interface {
+	AllLiveVotes(ctx context.Context) map[int]map[int][]byte
 }
 
 // handleAllVotedIDs opens an http connection, that the server never closes.
 //
-// When the connection is established, it returns for all active poll all users,
-// that have voted.
+// When the connection is established, it returns for all active polls the votes
+// of each user.
 //
-// Every second, it checks for new users, that have voted. If there is new data,
-// it returns an dictonary from poll id to all new user_ids.
+// Every second, it checks for new votes or polls. If there is new data, it
+// returns an dictonary from poll id to user id to there vote.
 //
 // If an poll is not active anymore, it returns a `null`-value for it.
 //
 // This system can only add users. It can fail, if a poll is resettet and
 // started in less then a second.
-func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Time, func())) HandlerFunc {
+func handleAllVotedIDs(voteCounter allLiveVotes, eventer func() (<-chan time.Time, func())) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		log.Info("Receiving all voted ids")
 		w.Header().Set("Content-Type", "application/json")
@@ -307,31 +306,35 @@ func handleAllVotedIDs(voteCounter allVotedIDer, eventer func() (<-chan time.Tim
 		event, cancel := eventer()
 		defer cancel()
 
-		var voterMemory map[int][]int
+		var voterMemory map[int]map[int][]byte
 		firstData := true
 		for {
-			newAllVotedIDs := voteCounter.AllVotedIDs(r.Context())
-			diff := make(map[int][]int)
+			newLiveVotes := voteCounter.AllLiveVotes(r.Context())
+			diff := make(map[int]map[int][]byte)
 
 			if voterMemory == nil {
-				voterMemory = newAllVotedIDs
-				diff = newAllVotedIDs
+				voterMemory = newLiveVotes
+				diff = newLiveVotes
 			} else {
-				for pollID, newUserIDs := range newAllVotedIDs {
-					if oldUserIDs, ok := voterMemory[pollID]; !ok {
-						voterMemory[pollID] = newUserIDs
-						diff[pollID] = newUserIDs
+				for pollID, userID2Vote := range newLiveVotes {
+					if oldUserID2Vote, ok := voterMemory[pollID]; !ok {
+						voterMemory[pollID] = userID2Vote
+						diff[pollID] = userID2Vote
 					} else {
-						for _, newUserID := range newUserIDs {
-							if !slices.Contains(oldUserIDs, newUserID) {
-								voterMemory[pollID] = append(voterMemory[pollID], newUserID)
-								diff[pollID] = append(diff[pollID], newUserID)
+
+						for newUserID, vote := range userID2Vote {
+							if _, contains := oldUserID2Vote[newUserID]; !contains {
+								if _, ok := diff[pollID]; !ok {
+									diff[pollID] = make(map[int][]byte)
+								}
+								voterMemory[pollID][newUserID] = vote
+								diff[pollID][newUserID] = vote
 							}
 						}
 					}
 				}
 				for pollID := range voterMemory {
-					if _, ok := newAllVotedIDs[pollID]; !ok {
+					if _, ok := newLiveVotes[pollID]; !ok {
 						delete(voterMemory, pollID)
 						diff[pollID] = nil
 					}

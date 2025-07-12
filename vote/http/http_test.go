@@ -595,16 +595,16 @@ func TestHandleVoted(t *testing.T) {
 	})
 }
 
-type allVotedIDerStub struct {
-	expectCount map[int][]int
+type allLiveVotesStub struct {
+	expectCount map[int]map[int][]byte
 }
 
-func (v *allVotedIDerStub) AllVotedIDs(ctx context.Context) map[int][]int {
+func (v *allLiveVotesStub) AllLiveVotes(ctx context.Context) map[int]map[int][]byte {
 	return v.expectCount
 }
 
-func Test_handleAllVotedIDs_first_data(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_first_data(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
@@ -612,22 +612,22 @@ func Test_handleAllVotedIDs_first_data(t *testing.T) {
 
 	mux := handleAllVotedIDs(voteCounter, eventer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
+	ctx := t.Context()
 
-	url := "/vote/all_voted_ids"
+	url := "/vote/live_votes"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int][]int{1: {1, 2, 3}, 2: {4, 5, 6}}
+	voteCounter.expectCount = map[int]map[int][]byte{1: {1: []byte("vote"), 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
-	mux.ServeHTTP(resp, req)
+	go mux.ServeHTTP(resp, req)
+	time.Sleep(200 * time.Millisecond) // TODO: find a better way
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int][]int
+	var got map[int]map[int][]byte
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -637,8 +637,8 @@ func Test_handleAllVotedIDs_first_data(t *testing.T) {
 	}
 }
 
-func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
@@ -646,22 +646,22 @@ func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
 
 	mux := handleAllVotedIDs(voteCounter, eventer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
+	ctx := t.Context()
 
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int][]int{}
+	voteCounter.expectCount = map[int]map[int][]byte{}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 
-	mux.ServeHTTP(resp, req)
+	go mux.ServeHTTP(resp, req)
+	time.Sleep(200 * time.Millisecond) // TODO: find a better way
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int][]int
+	var got map[int]map[int][]byte
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -671,8 +671,8 @@ func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
 	}
 }
 
-func Test_handleAllVotedIDs_second_data(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_second_data(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	event := make(chan time.Time, 1)
 	eventer := func() (<-chan time.Time, func()) {
@@ -683,13 +683,13 @@ func Test_handleAllVotedIDs_second_data(t *testing.T) {
 
 	ctx := context.Background()
 
-	data := []map[int][]int{
-		{1: {1, 2}, 2: {20}},
-		{1: {1, 2, 3}, 2: {20}}, // Change only 1
-		{1: {1, 2, 3}, 2: {20}}, // No Change
-		{1: {1, 2, 3}},          // Remove 2
-		{1: {1, 2, 3}, 3: {30}}, // Add 3
-		{1: {1, 2, 3}},          // Remove 3 (that was not there at the beginning)
+	data := []map[int]map[int][]byte{
+		{1: {1: nil, 2: nil}, 2: {20: []byte("vote")}},
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: []byte("vote")}},  // Change only 1
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: []byte("vote")}},  // No Change
+		{1: {1: nil, 2: nil, 3: nil}},                           // Remove 2
+		{1: {1: nil, 2: nil, 3: nil}, 3: {30: []byte("vote2")}}, // Add 3
+		{1: {1: nil, 2: nil, 3: nil}},                           // Remove 3 (that was not there at the beginning)
 	}
 
 	url := "/vote/vote_count"
@@ -709,23 +709,24 @@ func Test_handleAllVotedIDs_second_data(t *testing.T) {
 		event <- time.Now()
 	}}
 
-	mux.ServeHTTP(flushResp, req)
+	go mux.ServeHTTP(flushResp, req)
+	time.Sleep(200 * time.Millisecond) // TODO: find a better way
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	expect := []map[int][]int{
-		{1: {1, 2}, 2: {20}},
-		{1: {3}},
+	expect := []map[int]map[int][]byte{
+		{1: {1: nil, 2: nil}, 2: {20: []byte("vote")}},
+		{1: {3: nil}},
 		{2: nil},
-		{3: {30}},
+		{3: {30: []byte("vote2")}},
 		{3: nil},
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	for i := range expect {
-		var got map[int][]int
+		var got map[int]map[int][]byte
 		if err := decoder.Decode(&got); err != nil {
 			if err == io.EOF {
 				t.Errorf("Got %d packages, expected %d", i, len(expect))
