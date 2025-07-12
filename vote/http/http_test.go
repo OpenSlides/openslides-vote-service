@@ -618,10 +618,12 @@ func TestHandleAllVotedIDs_first_data(t *testing.T) {
 	resp := httptest.NewRecorder()
 	voteCounter.expectCount = map[int]map[int][]byte{1: {1: []byte("vote"), 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 
-	go mux.ServeHTTP(resp, req)
-	time.Sleep(200 * time.Millisecond) // TODO: find a better way
+	mux.ServeHTTP(resp, req)
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
@@ -652,10 +654,11 @@ func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
 	resp := httptest.NewRecorder()
 	voteCounter.expectCount = map[int]map[int][]byte{}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-
-	go mux.ServeHTTP(resp, req)
-	time.Sleep(200 * time.Millisecond) // TODO: find a better way
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
+	mux.ServeHTTP(resp, req)
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
@@ -695,7 +698,10 @@ func TestHandleAllVotedIDs_second_data(t *testing.T) {
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 
 	voteCounter.expectCount = data[0]
 	i := 0
@@ -709,8 +715,7 @@ func TestHandleAllVotedIDs_second_data(t *testing.T) {
 		event <- time.Now()
 	}}
 
-	go mux.ServeHTTP(flushResp, req)
-	time.Sleep(200 * time.Millisecond) // TODO: find a better way
+	mux.ServeHTTP(flushResp, req)
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
