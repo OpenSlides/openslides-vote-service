@@ -6,6 +6,8 @@ package memory
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -19,18 +21,16 @@ const (
 
 // Backend is a vote backend that holds the data in memory.
 type Backend struct {
-	mu      sync.Mutex
-	voted   map[int]map[int]struct{}
-	objects map[int][][]byte
-	state   map[int]int
+	mu    sync.Mutex
+	votes map[int]map[int][]byte
+	state map[int]int
 }
 
 // New initializes a new memory.Backend.
 func New() *Backend {
 	b := Backend{
-		voted:   make(map[int]map[int]struct{}),
-		objects: make(map[int][][]byte),
-		state:   make(map[int]int),
+		votes: make(map[int]map[int][]byte),
+		state: make(map[int]int),
 	}
 	return &b
 }
@@ -62,16 +62,14 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 
 	b.state[pollID] = pollStateStopped
 
-	userIDs := make([]int, 0, len(b.voted[pollID]))
-	for id := range b.voted[pollID] {
-		userIDs = append(userIDs, id)
-	}
+	userIDs := slices.Collect(maps.Keys(b.votes[pollID]))
+	votes := slices.Collect(maps.Values(b.votes[pollID]))
 	sort.Ints(userIDs)
-	return b.objects[pollID], userIDs, nil
+	return votes, userIDs, nil
 }
 
 // Vote saves a vote.
-func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byte) error {
+func (b *Backend) Vote(ctx context.Context, pollID int, userID int, vote []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -83,16 +81,15 @@ func (b *Backend) Vote(ctx context.Context, pollID int, userID int, object []byt
 		return stoppedError{fmt.Errorf("poll is stopped")}
 	}
 
-	if b.voted[pollID] == nil {
-		b.voted[pollID] = make(map[int]struct{})
+	if b.votes[pollID] == nil {
+		b.votes[pollID] = make(map[int][]byte)
 	}
 
-	if _, ok := b.voted[pollID][userID]; ok {
+	if _, ok := b.votes[pollID][userID]; ok {
 		return doubleVoteError{fmt.Errorf("user has already voted")}
 	}
 
-	b.voted[pollID][userID] = struct{}{}
-	b.objects[pollID] = append(b.objects[pollID], object)
+	b.votes[pollID][userID] = vote
 	return nil
 }
 
@@ -101,8 +98,7 @@ func (b *Backend) Clear(ctx context.Context, pollID int) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	delete(b.voted, pollID)
-	delete(b.objects, pollID)
+	delete(b.votes, pollID)
 	delete(b.state, pollID)
 	return nil
 }
@@ -112,25 +108,19 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.voted = make(map[int]map[int]struct{})
-	b.objects = make(map[int][][]byte)
+	b.votes = make(map[int]map[int][]byte)
 	b.state = make(map[int]int)
 	return nil
 }
 
-// Voted returns for all polls, which users have voted.
-func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
+// LiveVotes returns all votes from each user. Returns nil on non named votes.
+func (b *Backend) LiveVotes(ctx context.Context) (map[int]map[int][]byte, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	out := make(map[int][]int, len(b.voted))
-	for pid, userIDs := range b.voted {
-		out[pid] = make([]int, 0, len(userIDs))
-		for userID := range userIDs {
-			out[pid] = append(out[pid], userID)
-		}
-
-		sort.Ints(out[pid])
+	out := make(map[int]map[int][]byte, len(b.votes))
+	for pollID, userID2Vote := range b.votes {
+		out[pollID] = maps.Clone(userID2Vote)
 	}
 
 	return out, nil
@@ -143,7 +133,7 @@ func (b *Backend) AssertUserHasVoted(t *testing.T, pollID, userID int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if _, ok := b.voted[pollID][userID]; !ok {
+	if _, ok := b.votes[pollID][userID]; !ok {
 		t.Errorf("User %d has not voted", userID)
 	}
 }

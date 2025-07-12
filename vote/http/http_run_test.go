@@ -16,7 +16,7 @@ import (
 )
 
 func waitForServer(addr string) error {
-	for i := 0; i < 100; i++ {
+	for _ = range 100 {
 		conn, err := net.Dial("tcp", addr)
 		if err == nil {
 			conn.Close()
@@ -40,8 +40,7 @@ func (a *autherStub) FromContext(context.Context) int {
 }
 
 func TestRun(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	backend := memory.New()
 	ds := dsmock.NewFlow(nil)
@@ -68,7 +67,7 @@ func TestRun(t *testing.T) {
 			"/internal/vote/stop",
 			"/internal/vote/clear",
 			"/internal/vote/clear_all",
-			"/internal/vote/all_voted_ids",
+			"/internal/vote/live_votes",
 			"/system/vote",
 			"/system/vote/voted",
 			"/system/vote/health",

@@ -245,16 +245,18 @@ func Backend(t *testing.T, backend vote.Backend) {
 
 	backend.ClearAll(ctx)
 	pollID++
-	t.Run("Voted", func(t *testing.T) {
+	t.Run("LiveVotes", func(t *testing.T) {
 		backend.Start(ctx, pollID)
 		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 
-		got, err := backend.Voted(ctx)
+		got, err := backend.LiveVotes(ctx)
 		if err != nil {
 			t.Fatalf("Voted returned unexpected error: %v", err)
 		}
 
-		expect := map[int][]int{pollID: {5}}
+		normalizeLiveVotes(got)
+
+		expect := map[int]map[int][]byte{pollID: {5: nil}}
 		if !reflect.DeepEqual(got, expect) {
 			t.Errorf("Voted returned %v, expected %v", got, expect)
 		}
@@ -267,12 +269,14 @@ func Backend(t *testing.T, backend vote.Backend) {
 		backend.Vote(ctx, pollID, 5, []byte("my vote"))
 		backend.Vote(ctx, pollID, 6, []byte("my vote"))
 
-		got, err := backend.Voted(ctx)
+		got, err := backend.LiveVotes(ctx)
 		if err != nil {
 			t.Fatalf("Voted returned unexpected error: %v", err)
 		}
 
-		expect := map[int][]int{pollID: {5, 6}}
+		normalizeLiveVotes(got)
+
+		expect := map[int]map[int][]byte{pollID: {5: nil, 6: nil}}
 		if !reflect.DeepEqual(got, expect) {
 			t.Errorf("Voted returned %v, expected %v", got, expect)
 		}
@@ -421,4 +425,17 @@ func Backend(t *testing.T, backend vote.Backend) {
 			}
 		})
 	})
+}
+
+// normalizeLiveVotes removes the vote from the data returned from
+// backend.LiveVotes.
+//
+// The postgres backend can not return a value and the current test-cases do not
+// need it.
+func normalizeLiveVotes(in map[int]map[int][]byte) {
+	for _, m := range in {
+		for k := range m {
+			m[k] = nil
+		}
+	}
 }

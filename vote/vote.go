@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
+	"maps"
 	"sync"
 	"time"
 
@@ -25,8 +25,8 @@ type Vote struct {
 	longBackend Backend
 	flow        flow.Flow
 
-	votedMu sync.Mutex
-	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
+	liveVotesMu sync.Mutex
+	liveVotes   map[int]map[int][]byte // voted holds for all running polls, the votes of a user
 }
 
 // New creates an initializes vote service.
@@ -151,9 +151,9 @@ func (v *Vote) Clear(ctx context.Context, pollID int) error {
 		return fmt.Errorf("clearing longBackend: %w", err)
 	}
 
-	v.votedMu.Lock()
-	v.voted[pollID] = nil
-	v.votedMu.Unlock()
+	v.liveVotesMu.Lock()
+	v.liveVotes[pollID] = nil
+	v.liveVotesMu.Unlock()
 
 	return nil
 }
@@ -176,9 +176,9 @@ func (v *Vote) ClearAll(ctx context.Context) error {
 		return fmt.Errorf("clearing long Backend: %w", err)
 	}
 
-	v.votedMu.Lock()
-	v.voted = make(map[int][]int)
-	v.votedMu.Unlock()
+	v.liveVotesMu.Lock()
+	v.liveVotes = make(map[int]map[int][]byte)
+	v.liveVotesMu.Unlock()
 
 	return nil
 }
@@ -298,9 +298,17 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("save vote: %w", err)
 	}
 
-	v.votedMu.Lock()
-	v.voted[pollID] = append(v.voted[pollID], voteUser)
-	v.votedMu.Unlock()
+	var liveVote []byte
+	if poll.Type == "named" {
+		liveVote = bs
+	}
+
+	v.liveVotesMu.Lock()
+	if v.liveVotes[pollID] == nil {
+		v.liveVotes[pollID] = make(map[int][]byte)
+	}
+	v.liveVotes[pollID][voteUser] = liveVote
+	v.liveVotesMu.Unlock()
 
 	return nil
 }
@@ -455,16 +463,16 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 		requestedPollIDs[pid] = struct{}{}
 	}
 
-	v.votedMu.Lock()
-	defer v.votedMu.Unlock()
+	v.liveVotesMu.Lock()
+	defer v.liveVotesMu.Unlock()
 
 	out := make(map[int][]int, len(pollIDs))
-	for pid, userIDs := range v.voted {
+	for pid, userID2Vote := range v.liveVotes {
 		if _, ok := requestedPollIDs[pid]; !ok {
 			continue
 		}
 
-		for _, uid := range userIDs {
+		for uid := range maps.Keys(userID2Vote) {
 			if _, ok := requestedUserIDs[uid]; ok {
 				out[pid] = append(out[pid], uid)
 			}
@@ -480,38 +488,60 @@ func (v *Vote) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[i
 	return out, nil
 }
 
-// AllVotedIDs returns the user_id of each user, that has voted for every active
-// poll.
-func (v *Vote) AllVotedIDs(ctx context.Context) map[int][]int {
-	v.votedMu.Lock()
-	defer v.votedMu.Unlock()
+// AllLiveVotes returns for all running polls the vote from each user.
+func (v *Vote) AllLiveVotes(ctx context.Context) map[int]map[int]*string {
+	v.liveVotesMu.Lock()
+	defer v.liveVotesMu.Unlock()
 
-	out := make(map[int][]int, len(v.voted))
-	for k, v := range v.voted {
-		out[k] = slices.Clone(v)
+	ds := dsmodels.New(v.flow)
+
+	out := make(map[int]map[int]*string, len(v.liveVotes))
+	for pollID, userID2Vote := range v.liveVotes {
+		poll, err := ds.Poll(pollID).First(ctx)
+		if err != nil {
+			continue
+		}
+
+		out[pollID] = make(map[int]*string, len(userID2Vote))
+
+		if poll.LiveVotingEnabled && poll.Type == "named" {
+			// Only send votes an votes, where live voting is enabled and its a
+			// named vote. Remove the votes for all other votes.
+			for userID, vote := range userID2Vote {
+				if vote == nil {
+					out[pollID] = nil
+					continue
+				}
+				str := string(vote)
+				out[pollID][userID] = &str
+			}
+			continue
+		}
+
+		for userID := range userID2Vote {
+			out[pollID][userID] = nil
+		}
 	}
 	return out
 }
 
 // loadVoted creates the value for v.voted by the backends.
 func (v *Vote) loadVoted(ctx context.Context) error {
-	fastData, err := v.fastBackend.Voted(ctx)
+	combinedData, err := v.fastBackend.LiveVotes(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching data from fast backend: %w", err)
 	}
 
-	longData, err := v.longBackend.Voted(ctx)
+	longData, err := v.longBackend.LiveVotes(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching data from long backend: %w", err)
 	}
 
-	for pid, userIDs := range longData {
-		fastData[pid] = userIDs
-	}
+	maps.Copy(combinedData, longData)
 
-	v.votedMu.Lock()
-	v.voted = fastData
-	v.votedMu.Unlock()
+	v.liveVotesMu.Lock()
+	v.liveVotes = combinedData
+	v.liveVotesMu.Unlock()
 	return nil
 }
 
@@ -544,8 +574,8 @@ type Backend interface {
 	// ClearAll removes all data from the backend.
 	ClearAll(ctx context.Context) error
 
-	// Voted returns for all polls the userIDs, that have voted.
-	Voted(ctx context.Context) (map[int][]int, error)
+	// LiveVotes returns all votes from each user.
+	LiveVotes(ctx context.Context) (map[int]map[int][]byte, error)
 
 	fmt.Stringer
 }

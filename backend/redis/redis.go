@@ -114,7 +114,7 @@ func (b *Backend) Start(ctx context.Context, pollID int) error {
 // Returns 3 if the user has already voted.
 const luaVoteScript = `
 local state = redis.call("GET",KEYS[1])
-if state == false then 
+if state == false then
 	return 1
 end
 
@@ -177,7 +177,7 @@ func (b *Backend) Stop(ctx context.Context, pollID int) ([][]byte, []int, error)
 		return nil, nil, fmt.Errorf("set key %s to 2: %w", sKey, err)
 	}
 
-	log.Debug("REDIS: HVALS %s", vKey)
+	log.Debug("REDIS: HGETALL %s", vKey)
 	data, err := redis.StringMap(conn.Do("HGETALL", vKey))
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting vote objects from %s: %w", vKey, err)
@@ -249,10 +249,10 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	return nil
 }
 
-// Voted returns for all polls the userIDs, that have voted.
+// LiveVotes returns all votes from each user. Returns nil on non named votes.
 //
 // This command is not atomic.
-func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
+func (b *Backend) LiveVotes(ctx context.Context) (map[int]map[int][]byte, error) {
 	conn := b.pool.Get()
 	defer conn.Close()
 
@@ -262,17 +262,25 @@ func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
 		return nil, fmt.Errorf("getting all known pollIDs: %w", err)
 	}
 
-	out := make(map[int][]int, len(pollIDs))
+	out := make(map[int]map[int][]byte, len(pollIDs))
 	for _, pollID := range pollIDs {
-		key := fmt.Sprintf(keyVote, pollID)
+		vKey := fmt.Sprintf(keyVote, pollID)
 
-		log.Debug("Redis: HKEYS %s", key)
-		userIDs, err := redis.Ints(conn.Do("HKEYS", key))
+		log.Debug("REDIS: HGETALL %s", vKey)
+		data, err := redis.StringMap(conn.Do("HGETALL", vKey))
 		if err != nil {
-			return nil, fmt.Errorf("HKEYS for key %s: %w", key, err)
+			return nil, fmt.Errorf("getting vote objects from %s: %w", vKey, err)
 		}
 
-		out[pollID] = userIDs
+		out[pollID] = make(map[int][]byte, len(data))
+
+		for uidString, vote := range data {
+			userID, err := strconv.Atoi(uidString)
+			if err != nil {
+				return nil, fmt.Errorf("invalid userID %s: %w", uidString, err)
+			}
+			out[pollID][userID] = []byte(vote)
+		}
 	}
 
 	return out, nil

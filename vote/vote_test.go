@@ -1539,23 +1539,104 @@ func TestVotedPollsWithDelegation(t *testing.T) {
 	}
 }
 
-func TestAllVotedIDs(t *testing.T) {
+func TestAllLiveVotesIDs_LiveVote_enabled_type_is_named(t *testing.T) {
 	ctx := context.Background()
 	backend1 := memory.New()
 	backend1.Start(ctx, 23)
-	backend1.Vote(ctx, 23, 1, []byte("vote"))
+	backend1.Vote(ctx, 23, 1, []byte("vote1"))
 	backend2 := memory.New()
 	backend2.Start(ctx, 42)
-	backend2.Vote(ctx, 42, 1, []byte("vote"))
-	backend2.Vote(ctx, 42, 2, []byte("vote"))
-	ds := dsmock.NewFlow(dsmock.YAMLData(``))
+	backend2.Vote(ctx, 42, 1, []byte("vote2"))
+	backend2.Vote(ctx, 42, 2, []byte("vote3"))
+	ds := dsmock.NewFlow(dsmock.YAMLData(`---
+	poll:
+		23:
+			live_voting_enabled: true
+			type: named
+
+			title: test_title_04k0y4TwPLpJKaSvIGm1
+			onehundred_percent_base: base
+			pollmethod: YNA
+			meeting_id: 404
+			backend: fast
+			sequential_number: 404
+			content_object_id: assignment/1
+		42:
+			live_voting_enabled: true
+			type: named
+
+			title: test_title_04k0y4TwPLpJKaSvIGm1
+			onehundred_percent_base: base
+			pollmethod: YNA
+			meeting_id: 404
+			backend: fast
+			sequential_number: 404
+			content_object_id: assignment/1
+	`))
 
 	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
 
-	voted := v.AllVotedIDs(ctx)
+	liveVotes := resolvePointers(v.AllLiveVotes(ctx))
 
-	expect := map[int][]int{23: {1}, 42: {1, 2}}
-	if !reflect.DeepEqual(voted, expect) {
-		t.Errorf("Got %v, expected %v", voted, expect)
+	expect := map[int]map[int]string{23: {1: "vote1"}, 42: {1: "vote2", 2: "vote3"}}
+	if !reflect.DeepEqual(liveVotes, expect) {
+		t.Errorf("Got %v, expected %v", liveVotes, expect)
+	}
+}
+
+func resolvePointers(in map[int]map[int]*string) map[int]map[int]string {
+	out := make(map[int]map[int]string)
+	for pollID, user2Vote := range in {
+		out[pollID] = make(map[int]string)
+		for userID, vote := range user2Vote {
+			out[pollID][userID] = *vote
+		}
+	}
+	return out
+}
+
+func TestAllLiveVotesIDs_LiveVote_disabled_or_type_is_not_named(t *testing.T) {
+	ctx := context.Background()
+	backend1 := memory.New()
+	backend1.Start(ctx, 23)
+	backend1.Vote(ctx, 23, 1, []byte("vote1"))
+	backend2 := memory.New()
+	backend2.Start(ctx, 42)
+	backend2.Vote(ctx, 42, 1, []byte("vote2"))
+	backend2.Vote(ctx, 42, 2, []byte("vote3"))
+	ds := dsmock.NewFlow(dsmock.YAMLData(`---
+	poll:
+		23:
+
+			live_voting_enabled: false
+			type: named
+
+			title: test_title_04k0y4TwPLpJKaSvIGm1
+			onehundred_percent_base: base
+			pollmethod: YNA
+			meeting_id: 404
+			backend: fast
+			sequential_number: 404
+			content_object_id: assignment/1
+		42:
+			live_voting_enabled: true
+			type: pseudoanonymous
+
+			title: test_title_04k0y4TwPLpJKaSvIGm1
+			onehundred_percent_base: base
+			pollmethod: YNA
+			meeting_id: 404
+			backend: fast
+			sequential_number: 404
+			content_object_id: assignment/1
+	`))
+
+	v, _, _ := vote.New(ctx, backend1, backend2, ds, true)
+
+	liveVotes := v.AllLiveVotes(ctx)
+
+	expect := map[int]map[int]*string{23: {1: nil}, 42: {1: nil, 2: nil}}
+	if !reflect.DeepEqual(liveVotes, expect) {
+		t.Errorf("Got %v, expected %v", liveVotes, expect)
 	}
 }

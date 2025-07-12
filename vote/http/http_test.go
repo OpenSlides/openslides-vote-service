@@ -595,16 +595,16 @@ func TestHandleVoted(t *testing.T) {
 	})
 }
 
-type allVotedIDerStub struct {
-	expectCount map[int][]int
+type allLiveVotesStub struct {
+	expectCount map[int]map[int]*string
 }
 
-func (v *allVotedIDerStub) AllVotedIDs(ctx context.Context) map[int][]int {
+func (v *allLiveVotesStub) AllLiveVotes(ctx context.Context) map[int]map[int]*string {
 	return v.expectCount
 }
 
-func Test_handleAllVotedIDs_first_data(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_first_data(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
@@ -612,14 +612,17 @@ func Test_handleAllVotedIDs_first_data(t *testing.T) {
 
 	mux := handleAllVotedIDs(voteCounter, eventer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
+	ctx := t.Context()
 
-	url := "/vote/all_voted_ids"
+	url := "/vote/live_votes"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int][]int{1: {1, 2, 3}, 2: {4, 5, 6}}
+	voteStr := "vote"
+	voteCounter.expectCount = map[int]map[int]*string{1: {1: &voteStr, 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 
 	mux.ServeHTTP(resp, req)
 
@@ -627,7 +630,7 @@ func Test_handleAllVotedIDs_first_data(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int][]int
+	var got map[int]map[int]*string
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -637,8 +640,8 @@ func Test_handleAllVotedIDs_first_data(t *testing.T) {
 	}
 }
 
-func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	eventer := func() (<-chan time.Time, func()) {
 		return make(chan time.Time), func() {}
@@ -646,22 +649,23 @@ func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
 
 	mux := handleAllVotedIDs(voteCounter, eventer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
+	ctx := t.Context()
 
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int][]int{}
+	voteCounter.expectCount = map[int]map[int]*string{}
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 	mux.ServeHTTP(resp, req)
 
 	if resp.Result().StatusCode != 200 {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	var got map[int][]int
+	var got map[int]map[int]*string
 	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
@@ -671,8 +675,8 @@ func Test_handleAllVotedIDs_first_data_empty(t *testing.T) {
 	}
 }
 
-func Test_handleAllVotedIDs_second_data(t *testing.T) {
-	voteCounter := &allVotedIDerStub{}
+func TestHandleAllVotedIDs_second_data(t *testing.T) {
+	voteCounter := &allLiveVotesStub{}
 
 	event := make(chan time.Time, 1)
 	eventer := func() (<-chan time.Time, func()) {
@@ -683,19 +687,25 @@ func Test_handleAllVotedIDs_second_data(t *testing.T) {
 
 	ctx := context.Background()
 
-	data := []map[int][]int{
-		{1: {1, 2}, 2: {20}},
-		{1: {1, 2, 3}, 2: {20}}, // Change only 1
-		{1: {1, 2, 3}, 2: {20}}, // No Change
-		{1: {1, 2, 3}},          // Remove 2
-		{1: {1, 2, 3}, 3: {30}}, // Add 3
-		{1: {1, 2, 3}},          // Remove 3 (that was not there at the beginning)
+	vote1Str := "vote"
+	vote2Str := "vote2"
+
+	data := []map[int]map[int]*string{
+		{1: {1: nil, 2: nil}, 2: {20: &vote1Str}},
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // Change only 1
+		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // No Change
+		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 2
+		{1: {1: nil, 2: nil, 3: nil}, 3: {30: &vote2Str}}, // Add 3
+		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 3 (that was not there at the beginning)
 	}
 
 	url := "/vote/vote_count"
 	resp := httptest.NewRecorder()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// TODO: find a better way then a timeout
+	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 
 	voteCounter.expectCount = data[0]
 	i := 0
@@ -715,17 +725,17 @@ func Test_handleAllVotedIDs_second_data(t *testing.T) {
 		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
 	}
 
-	expect := []map[int][]int{
-		{1: {1, 2}, 2: {20}},
-		{1: {3}},
+	expect := []map[int]map[int]string{
+		{1: {1: "", 2: ""}, 2: {20: "vote"}},
+		{1: {3: ""}},
 		{2: nil},
-		{3: {30}},
+		{3: {30: "vote2"}},
 		{3: nil},
 	}
 
 	decoder := json.NewDecoder(resp.Body)
 	for i := range expect {
-		var got map[int][]int
+		var got map[int]map[int]*string
 		if err := decoder.Decode(&got); err != nil {
 			if err == io.EOF {
 				t.Errorf("Got %d packages, expected %d", i, len(expect))
@@ -734,10 +744,29 @@ func Test_handleAllVotedIDs_second_data(t *testing.T) {
 			t.Fatalf("decoding: %v", err)
 		}
 
-		if !reflect.DeepEqual(got, expect[i]) {
+		if !reflect.DeepEqual(resolvePointers(got), expect[i]) {
 			t.Errorf("Data %d: Got %v, expected %v", i+1, got, expect[i])
 		}
 	}
+}
+
+func resolvePointers(in map[int]map[int]*string) map[int]map[int]string {
+	out := make(map[int]map[int]string)
+	for pollID, user2Vote := range in {
+		if user2Vote == nil {
+			out[pollID] = nil
+			continue
+		}
+		out[pollID] = make(map[int]string)
+		for userID, vote := range user2Vote {
+			if vote == nil {
+				out[pollID][userID] = ""
+				continue
+			}
+			out[pollID][userID] = *vote
+		}
+	}
+	return out
 }
 
 func TestHandleHealth(t *testing.T) {
