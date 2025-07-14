@@ -10,7 +10,7 @@ build-prod:
 build-dev:
 	docker build ./ --tag "openslides-$(SERVICE)-dev" --build-arg CONTEXT="dev" --target "dev"
 
-build-test:
+build-tests:
 	docker build ./ --tag "openslides-$(SERVICE)-tests" --build-arg CONTEXT="tests" --target "tests"
 
 # Development
@@ -30,3 +30,6 @@ run-lint:
 
 system-test:
 	VOTE_SYSTEM_TEST=1 go test ./system_test/
+
+gofmt:
+	gofmt -l -s -w .
