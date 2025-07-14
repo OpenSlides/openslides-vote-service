@@ -1,6 +1,6 @@
 ARG CONTEXT=prod
 
-FROM golang:1.24.4-alpine as base
+FROM golang:1.24.5-alpine as base
 
 ## Setup
 ARG CONTEXT
@@ -16,11 +16,6 @@ RUN go mod download
 COPY . .
 
 ## External Information
-LABEL org.opencontainers.image.title="OpenSlides Vote Service"
-LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles the votes for electronic polls."
-LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
-
 EXPOSE 9013
 
 ## Command
@@ -38,11 +33,17 @@ CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vot
 
 FROM base as tests
 
-RUN apk add --no-cache build-base
+# Install Dockertest & Docker
+RUN apk add --no-cache \
+    build-base \
+    docker && \
+    go get -u github.com/ory/dockertest/v3 && \
+    go install golang.org/x/lint/golint@latest && \
+    chmod +x dev/container-tests.sh
 
-RUN go install golang.org/x/lint/golint@latest
-
-CMD ["sleep", "infinity"]
+## Command
+STOPSIGNAL SIGKILL
+CMD ["sleep", "inf"]
 
 # Production Image
 
@@ -51,10 +52,11 @@ RUN go build
 
 FROM scratch as prod
 
-WORKDIR /
+## Setup
+ARG CONTEXT
 ENV APP_CONTEXT=prod
 
-COPY --from=builder /app/openslides-vote-service/openslides-vote-service .
+COPY --from=builder /app/openslides-vote-service/openslides-vote-service /
 
 ## External Information
 LABEL org.opencontainers.image.title="OpenSlides Vote Service"
