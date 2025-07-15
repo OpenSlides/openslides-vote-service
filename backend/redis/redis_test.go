@@ -30,6 +30,10 @@ func startRedis(t *testing.T) (string, func()) {
 }
 
 func TestImplementBackendInterface(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skip Redis Test")
+	}
+
 	port, close := startRedis(t)
 	defer close()
 

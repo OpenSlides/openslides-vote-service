@@ -12,7 +12,7 @@ services:
   redis:
     image: redis:alpine
     command: redis-server --save ""
-    
+
   vote:
     build:
       context: ..
@@ -31,7 +31,7 @@ services:
 
     ports:
       - 127.0.0.1:9013:9013
-    
+
 secrets:
   auth_token_key:
     file: ./secrets/auth_token_key
