@@ -7,78 +7,37 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"sync"
-	"time"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
-	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
-	"github.com/OpenSlides/openslides-vote-service/log"
+	"github.com/rs/zerolog/log"
 )
 
 // Vote holds the state of the service.
 //
 // Vote has to be initializes with vote.New().
 type Vote struct {
-	fastBackend Backend
-	longBackend Backend
-	flow        flow.Flow
-
-	votedMu sync.Mutex
-	voted   map[int][]int // voted holds for all running polls, which user ids have already voted.
+	flow flow.Flow
 }
 
 // New creates an initializes vote service.
 func New(ctx context.Context, fast, long Backend, flow flow.Flow, singleInstance bool) (*Vote, func(context.Context, func(error)), error) {
 	v := &Vote{
-		fastBackend: fast,
-		longBackend: long,
-		flow:        flow,
-	}
-
-	if err := v.loadVoted(ctx); err != nil {
-		return nil, nil, fmt.Errorf("loading voted: %w", err)
+		flow: flow,
 	}
 
 	bg := func(ctx context.Context, errorHandler func(error)) {
+		// TODO: listen to state changes
 		go v.flow.Update(ctx, nil)
-
-		if singleInstance {
-			return
-		}
-
-		go func() {
-			for {
-				if err := v.loadVoted(ctx); err != nil {
-					errorHandler(err)
-				}
-				time.Sleep(time.Second)
-			}
-		}()
 	}
 
 	return v, bg, nil
 }
 
-// backend returns the poll backend for a pollConfig object.
-func (v *Vote) backend(p dsmodels.Poll) Backend {
-	backend := v.longBackend
-	if p.Backend == "fast" {
-		backend = v.fastBackend
-	}
-	log.Debug("Used backend: %v", backend)
-	return backend
-}
-
-// Start an electronic vote.
-//
-// This function is idempotence. If you call it with the same input, you will
-// get the same output. This means, that when a poll is stopped, Start() will
-// not throw an error.
+// Start validates a poll and set its state to started.
 func (v *Vote) Start(ctx context.Context, pollID int) error {
-	recorder := dsrecorder.New(v.flow)
-	ds := dsmodels.New(recorder)
+	ds := dsmodels.New(v.flow)
 
 	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
@@ -89,19 +48,18 @@ func (v *Vote) Start(ctx context.Context, pollID int) error {
 		return fmt.Errorf("loading poll: %w", err)
 	}
 
-	if poll.Type == "analog" {
+	if poll.Visibility == "analog" {
 		return MessageError(ErrInvalid, "Analog poll can not be started")
 	}
 
+	// TODO: This only works for the current instance. Maybe we have to look for
+	// updates on poll/start to find out about starting polls from other vote
+	// services.
 	if err := preload(ctx, &ds.Fetch, poll); err != nil {
 		return fmt.Errorf("preloading data: %w", err)
 	}
-	log.Debug("Preload cache. Received keys: %v", recorder.Keys())
 
-	backend := v.backend(poll)
-	if err := backend.Start(ctx, pollID); err != nil {
-		return fmt.Errorf("starting poll in the backend: %w", err)
-	}
+	// TODO: SQL Query to start the poll.
 
 	return nil
 }

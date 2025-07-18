@@ -10,8 +10,8 @@ import (
 )
 
 // Flow initializes a cached connection to postgres.
-func Flow(lookup environment.Environmenter, messageBus flow.Updater) (flow.Flow, error) {
-	postgres, err := datastore.NewFlowPostgres(lookup, messageBus)
+func Flow(lookup environment.Environmenter) (flow.Flow, error) {
+	postgres, err := datastore.NewFlowPostgres(lookup)
 	if err != nil {
 		return nil, fmt.Errorf("init postgres: %w", err)
 	}
