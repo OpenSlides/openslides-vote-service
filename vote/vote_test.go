@@ -474,8 +474,8 @@ func TestVoteVote(t *testing.T) {
 			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
 		}
 
-		if errTyped != vote.ErrStopped {
-			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrStopped.Type())
+		if errTyped != vote.ErrNotStarted {
+			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrNotStarted.Type())
 		}
 	})
 }

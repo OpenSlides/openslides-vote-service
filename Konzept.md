@@ -16,8 +16,8 @@ bestimmte vote-Objekte erwartet und es entsteht daraus ein bestimmtes result.
 
 ## Zusammenspiel mit Backend und anderen Services
 
-Der Vote service übernimmt die "Actions" poll_start, poll_stop und poll_reset.
-Außerdem werden weiterhin die votes der Clients angenommen.
+Der Vote service übernimmt die "Actions" poll_start und poll_stop. Außerdem
+werden weiterhin die votes der Clients angenommen.
 
 Die Aufgabe des Backends ist es, ein valides poll-objekt zu erstellen. Nur der
 Vote-Service das das Feld `poll/state` auf `started` setzen. Solange das Feld
@@ -25,6 +25,14 @@ auf `started` gesetzt ist, ist der Vote-Service verantwortlich und das Backend
 darf das Objekt nicht anfassen. Das Backend sollte daher bei allen schreibenden
 Operationen kontrollieren, dass der state nicht `started` ist. Zum Beispiel mit
 `[...] WHERE state != "started"`.
+
+Für die `poll.reset` action bedeutet das, dass eine laufende Poll nicht resettet
+werden kann. Es spricht jedoch nichts dagegen, dass der Client über einen button
+erst poll-stop beim vote-service ausführt und anschließend poll.reset beim
+backend. Sollte es zur Fehlerbehebung erforderlich sein, könnte beim
+vote-service ein `poll/cancel` handler eingeführt werden, oder die Bedingung,
+dass das Backend keine poll mit `state = "started"` bearbeiten darf, gilt für
+`poll.reset` nicht.
 
 Nachdem der vote-service den `poll/state` auf `finished` gesetzt hat, geht die
 Verantwortung zurück an das Backend. Ab diesem Moment ist das Feld `poll/result`
@@ -39,20 +47,14 @@ Alle Handler sind abhängig von einer Poll-ID. Diese wird als http-argument
 `poll_id=XX` übergeben.
 
 
-### /start
+### /vote/start
 
 Validiert das Poll Objekt, vor allem poll/config, und setzt das Feld `poll/state` auf `started`
 
 
-### /stop
+### /vote/stop
 
 Erstellt `poll/result` und setzt `poll/state` auf `finished`.
-
-
-### /reset
-
-Löscht alle zur poll gehörenden vote-objekte und `poll/result` und setzt
-`poll/state` auf `created`.
 
 
 ### /vote

@@ -8,19 +8,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-func handleInternal(handler Handler) http.Handler {
-	return resolveError(handler, true)
-}
-
-func handleExternal(handler Handler) http.Handler {
-	return resolveError(handler, false)
-}
-
-func resolveError(handler Handler, internalRoute bool) http.HandlerFunc {
+func resolveError(handler Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := handler.ServeHTTP(w, r)
 		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -28,7 +19,7 @@ func resolveError(handler Handler, internalRoute bool) http.HandlerFunc {
 		}
 
 		writeStatusCode(w, err)
-		writeFormattedError(w, err, internalRoute)
+		writeFormattedError(w, err)
 	}
 }
 
@@ -46,11 +37,10 @@ func writeStatusCode(w http.ResponseWriter, err error) {
 		statusCode = 500
 	}
 
-	log.Debug("HTTP: Returning status %d", statusCode)
 	w.WriteHeader(statusCode)
 }
 
-func writeFormattedError(w io.Writer, err error, internalRoute bool) {
+func writeFormattedError(w io.Writer, err error) {
 	errType := "internal"
 	var errTyped interface {
 		error
@@ -62,10 +52,8 @@ func writeFormattedError(w io.Writer, err error, internalRoute bool) {
 
 	msg := err.Error()
 	if errType == "internal" {
-		log.Info("Error: %s", msg)
-		if !internalRoute {
-			msg = vote.ErrInternal.Error()
-		}
+		fmt.Printf("Error: %s\n", msg)
+		msg = vote.ErrInternal.Error()
 	}
 
 	out := struct {
@@ -77,7 +65,7 @@ func writeFormattedError(w io.Writer, err error, internalRoute bool) {
 	}
 
 	if err := json.NewEncoder(w).Encode(out); err != nil {
-		log.Info("Error encoding error message: %v", err)
+		fmt.Printf("Error encoding error message: %v\n", err)
 		fmt.Fprint(w, `{"error":"internal", "message":"Something went wrong encoding the error message"}`)
 	}
 }
