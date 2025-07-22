@@ -100,7 +100,7 @@ func MessageError(t TypeError, msg string) error {
 	}
 }
 
-// MessageError creates an typed error with a message from a formatted string.
+// MessageErrorf creates an typed error with a message from a formatted string.
 func MessageErrorf(t TypeError, format string, a ...any) error {
 	fmtStr := fmt.Sprintf(format, a...)
 	return MessageError(t, fmtStr)
