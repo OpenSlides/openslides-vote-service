@@ -305,8 +305,11 @@ func (b *Backend) ClearAll(ctx context.Context) error {
 	return nil
 }
 
-// Voted returns for all polls the userIDs, that have voted.
-func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
+// LiveVotes returns all votes from each user.
+//
+// This this is impossible for the current implementation, it only returns nil
+// for each vote.
+func (b *Backend) LiveVotes(ctx context.Context) (map[int]map[int][]byte, error) {
 	sql := `SELECT id, user_ids	FROM vote.poll;`
 
 	log.Debug("SQL: `%s`", sql)
@@ -315,7 +318,7 @@ func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
 		return nil, fmt.Errorf("fetching user_ids from all poll objects: %w", err)
 	}
 
-	out := make(map[int][]int)
+	out := make(map[int]map[int][]byte)
 	for rows.Next() {
 		var pid int
 		var rawUIDs []byte
@@ -328,9 +331,9 @@ func (b *Backend) Voted(ctx context.Context) (map[int][]int, error) {
 			return nil, fmt.Errorf("parsing user ids: %w", err)
 		}
 
-		out[pid] = make([]int, 0, uIDs.len())
+		out[pid] = make(map[int][]byte, uIDs.len())
 		for _, uid := range uIDs {
-			out[pid] = append(out[pid], int(uid))
+			out[pid][int(uid)] = nil
 		}
 	}
 
