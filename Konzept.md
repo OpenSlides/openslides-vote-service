@@ -1,6 +1,8 @@
 # Neues Konzept
 
-Das neue Konzept speichert die Daten ausschließlich in der Datenbank. Die nötigen Änderungen sind hier:
+Das neue Konzept speichert die Daten ausschließlich in der Datenbank. Die
+nötigen Änderungen sind hier:
+
 https://github.com/OpenSlides/openslides-meta/pull/289
 
 Das neue Konzept basiert auf einer Dreiteilung.
@@ -13,32 +15,40 @@ ohne das Datenbankschema anpassen zu müssen. Zum Beispiel single transferable
 vote. Für jeden Type kann es eine beliebige config geben, es werden eine
 bestimmte vote-Objekte erwartet und es entsteht daraus ein bestimmtes result.
 
+Das result ist ein redundanten Feld, welches sich aus der Liste der votes
+errechnen lässt.
+
 
 ## Zusammenspiel mit Backend und anderen Services
 
-Der Vote service übernimmt die "Actions" poll_start und poll_stop. Außerdem
-werden weiterhin die votes der Clients angenommen.
+Der vote-service übernimmt alle Actions des Backends, welche mit der
+poll-collection arbeiten.
 
-Die Aufgabe des Backends ist es, ein valides poll-objekt zu erstellen. Nur der
-Vote-Service das das Feld `poll/state` auf `started` setzen. Solange das Feld
-auf `started` gesetzt ist, ist der Vote-Service verantwortlich und das Backend
-darf das Objekt nicht anfassen. Das Backend sollte daher bei allen schreibenden
-Operationen kontrollieren, dass der state nicht `started` ist. Zum Beispiel mit
-`[...] WHERE state != "started"`.
+Die vom vote-serive übernommenen Actions sind daher:
+* poll.create
+* poll.update
+* poll.delete
+* poll.start
+* poll.stop
+* poll.publish
+* poll.anonymize
+* poll.reset
 
-Für die `poll.reset` action bedeutet das, dass eine laufende Poll nicht resettet
-werden kann. Es spricht jedoch nichts dagegen, dass der Client über einen button
-erst poll-stop beim vote-service ausführt und anschließend poll.reset beim
-backend. Sollte es zur Fehlerbehebung erforderlich sein, könnte beim
-vote-service ein `poll/cancel` handler eingeführt werden, oder die Bedingung,
-dass das Backend keine poll mit `state = "started"` bearbeiten darf, gilt für
-`poll.reset` nicht.
+Außerdem werden weiterhin die Votes der Clients angenommen.
 
-Nachdem der vote-service den `poll/state` auf `finished` gesetzt hat, geht die
-Verantwortung zurück an das Backend. Ab diesem Moment ist das Feld `poll/result`
-gesetzt (durch den vote-service) und kann durch das Backend oder andere Services
-ausgewertet werden. Ziel ist, dass zur Auswertung einer poll nur das Feld
-`poll/result` gelesen werden muss (in abhängigkeit von `poll/method`).
+Beim Backend verbleiben die Actions, welche die Collections betreffen, über die
+Abgestimmt werden soll. Daher Motion und Assignment. Hierzu gehört auch die
+Auswahl der Assignment-Candidaten, die im Anschluss an die poll und damit an den
+vote-service übergeben werden sollen.
+
+Die bearbeitung des Meetings bleibt ebenfalls beim Backend. Daher auch die
+Config der Polls, wie Beispielsweise die aktivierung oder deaktivierung von
+Features oder das Setzen von Default-Werten.
+
+Die Steuerung des Projektors sollte weiterhin beim Backend bleiben. Aktuell gibt
+es `meeting/poll_couple_countdown`, wodruch countdowns neu gestartet werden.
+Hier müssen wir überlegen ob es in Zukunft vom vote-service kommen soll, oder ob
+der Client das nicht automatisiert beim backend aufrufen könnte.
 
 
 ## Handler
@@ -47,14 +57,70 @@ Alle Handler sind abhängig von einer Poll-ID. Diese wird als http-argument
 `poll_id=XX` übergeben.
 
 
+### /vote/create
+
+Vergleichbar zur aktuellen backend action:
+
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.create.md
+
+Erzeugt ein neues poll-objekt.
+
+Frage: Die aktuelle Backend-Aktions kann für analoge polls die Ergebnisse
+eintragen. Ist das tatsächlich erforderlich? Oder passiert das praktisch immer
+erst bei edit?
+
+
+### /vote/update
+
+Vergleichbar zum aktuellen backend:
+
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.update.md
+
+
+### /vote/delete
+
+Vergleichbar zum aktuellen backend:
+
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.delete.md
+
+
 ### /vote/start
 
-Validiert das Poll Objekt, vor allem poll/config, und setzt das Feld `poll/state` auf `started`
+Validiert das Poll Objekt, vor allem poll/config, und setzt das Feld `poll/state` auf `started`.
+
+See also:
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.start.md
 
 
 ### /vote/stop
 
 Erstellt `poll/result` und setzt `poll/state` auf `finished`.
+
+Siehe auch:
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.stop.md
+
+### /vote/publish
+
+Setzt den `poll/state` auf `published`.
+
+Siehe auch:
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.publish.md
+
+
+### /vote/anonymize
+
+Entfernt von allen votes die user-ids.
+
+Siehe auch:
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.anonymize.md
+
+
+### /vote/reset
+
+Setzt den state auf `created` zurück und löscht alle votes und das ergebnis.
+
+Siehe auch:
+https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.reset.md
 
 
 ### /vote
@@ -68,8 +134,8 @@ andere Stimme gibt.
 
 ### Andere bisherige Handler
 
-Bisher gab es folgende weiteren Handler, die jedoch nicht ins neue Konzept
-übernommen werden:
+Bisher gab es im alten vote-service folgende weiteren Handler, die jedoch nicht
+ins neue Konzept übernommen werden:
 
 - clear und clear_all: Da der Vote-Service keinen internen state mehr hat, muss
 nichts gelöscht werden. Das Löschen eines Poll-Objekts läuft über das backend.
@@ -88,11 +154,13 @@ autoupdate-service.
 
 ### Analoge Abstimmungen
 
-Der Vote-Service ist nur für elektronische Abstimmungen verantwortlich. Analoge
-Abstimmungen werden vom Backend bearbeitet. Die Daten müssen jedoch entsprechend
-dem neuen Konzept gespeichert werden, daher als ein json-blob in `poll/result`.
-Über `poll/config` kann dem Client mitgeteilt werden, welche Felder es gibt, die
-manuell ausgefüllt werden können.
+Die Hauptaufgabe des vote-service liegt in den elektronischen Abstimmungen.
+Darauf liegt auch der Hauptzweck des Konzept. Analoge Abstimmungen passen jedoch
+auch in das Konzept. Hier wird direkt `poll/result` geschrieben. Es gibt keine
+`vote` objekte.
+
+Das Format der analogen Wahl, insbesondere welche Felder es gibt, wird wie bei
+elektronischen Abstimmungen über `poll/config` gesteuert.
 
 Ob eine Abstimmung analog ist, wird über das Feld `poll/method` geregelt. Dies
 entspricht der Regelung, dass `poll/config` und `poll/result` abhängig von
@@ -131,7 +199,7 @@ primär im Bulletin Board gespeichert, zusätzlich jedoch auch in der hier
 beschriebenen Datenstruktur, damit die anderen Services in ihren normalen
 Abläufen darauf zugreifen können.
 
-Bis crypto-vote implementiert ist, wird bei `secret` die Stimme und die User-ID
+Bevor crypto-vote implementiert ist, wird bei `secret` die Stimme und die User-ID
 mit einer Zuordnung gespeichert. Über den restricter muss sichergestellt werden,
 dass die Information nicht nach außen dringt. Solange openslides ordnungsgemäßg
 betrieben wird, kann abgesehen vom server-admin niemand herausfinden, wer wie
@@ -213,6 +281,12 @@ Eine Migration der Daten vom alten in das neue System ist möglich. Aus den
 bisherigen `option` und `vote` Objekten kann das Feld `poll/result` erstellt
 werden.
 
+Die Migration sollte für die Einheitlichkeit durch das Backend durchgeführt
+werden. Der der Code zum Erstellen von `poll/result` im vote-service
+implementiert ist, müssen wir uns überlegen, ob der vote-serivce möglicherweise
+eine Hilfsfunktion anbietet, die vom backend aufgerufen werden kann.
+
+
 ## Poll Mehod
 
 Das Feld `poll/method` definiert, wie die Felder `poll/config`, `vote/value` und
@@ -225,8 +299,8 @@ genannten Methoden im laufe der Implementierung angepasst.
 
 ### analog
 
-Es gibt keine vote objekte. Wie `poll/config` und `poll/result` aussehen sollen,
-kann zwischen Client und Backend ausgehandelt werden.
+Es gibt keine vote objekte. `poll/result` wird direkt geschrieben.
+
 
 ### motion
 
@@ -236,6 +310,7 @@ und `abstain` haben. Über `poll/config` kann letzters verboten werden.
 `poll/result` sieht dann wie folgt aus:
 
 `{"yes": 32, "no": 20, "abstain": 10, "base": 70}`
+
 
 ### selection
 
