@@ -45,7 +45,7 @@ jobs:
         run: VOTE_SYSTEM_TEST=1 go test -timeout 60s ./system_test/
 
   docker:
-    name: Docker Build Test
+    name: Docker
     runs-on: ubuntu-latest
 
     services:
