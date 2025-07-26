@@ -53,8 +53,9 @@ der Client das nicht automatisiert beim backend aufrufen könnte.
 
 ## Handler
 
-Alle Handler sind abhängig von einer Poll-ID. Diese wird als http-argument
-`poll_id=XX` übergeben.
+Fast alle Handler sind abhängig von einer Poll-ID. Diese wird als http-argument
+`poll_id=XX` übergeben. Die Außnahme ist der create handler, der die poll-id
+erstellt und zurückgibt.
 
 
 ### /vote/create
