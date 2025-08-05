@@ -1,7 +1,8 @@
-name: Test
+name: CI - Build and Test Service
+
 on: [pull_request]
 jobs:
-  test:
+  continuous-tests:
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -42,3 +43,31 @@ jobs:
 
       - name: run test
         run: VOTE_SYSTEM_TEST=1 go test -timeout 60s ./system_test/
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+        - 6379:6379
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: create secrets
+      run: |
+        mkdir secrets
+        printf "password" > secrets/postgres_password
+        printf "my_token_key" > secrets/auth_token_key
+        printf "my_cookie_key" > secrets/auth_cookie_key
+
+    - name: Start With Docker
+      run: |
+        docker build . --tag openslides-vote
+        timeout --preserve-status --signal=SIGINT 5s docker run --network host -v $PWD/secrets:/run/secrets openslides-vote
+      env:
+        DOCKER_BUILDKIT: 1
