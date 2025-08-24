@@ -18,7 +18,6 @@ import (
 
 type DBQuerier interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
-	Rollback(ctx context.Context)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

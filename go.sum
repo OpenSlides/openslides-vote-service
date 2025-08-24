@@ -14,6 +14,8 @@ github.com/OpenSlides/openslides-go v0.0.0-20250720124635-01d7565c1157 h1:88GTyX
 github.com/OpenSlides/openslides-go v0.0.0-20250720124635-01d7565c1157/go.mod h1:CN6WcgMy3EV8M7hVXLlGY49xDAK7h8e8dDLWVBnjGy8=
 github.com/OpenSlides/openslides-go v0.0.0-20250726060450-80d24d9d3bfb h1:0/tMWtkKhWNJbLtNj9rrMnY9kchIA8UJbHQCohyee44=
 github.com/OpenSlides/openslides-go v0.0.0-20250726060450-80d24d9d3bfb/go.mod h1:CN6WcgMy3EV8M7hVXLlGY49xDAK7h8e8dDLWVBnjGy8=
+github.com/OpenSlides/openslides-go v0.0.0-20250726074043-25ad7eaeb3e6 h1:nANfkONSuwXc18W7b6R/nOlw6quqVF5qW5qHHXCkPEw=
+github.com/OpenSlides/openslides-go v0.0.0-20250726074043-25ad7eaeb3e6/go.mod h1:3PwDsioS/yoAL46GeTPuVVqe0Y8lPlDxjXO4XKTAZDc=
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
 github.com/alecthomas/assert/v2 v2.11.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
 github.com/alecthomas/kong v1.11.0 h1:y++1gI7jf8O7G7l4LZo5ASFhrhJvzc+WgF/arranEmM=
