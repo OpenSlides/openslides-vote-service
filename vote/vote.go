@@ -365,6 +365,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("loading poll %d: %w", pollID, err)
 	}
 
+	_ = poll
+
 	// TODO: Validate, dass represented User can vote, that the requestUser can
 	// vote for him and that the vote is valid.
 	// - Check that request user is present
@@ -436,7 +438,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	case "POLL_NOT_FOUND":
 		return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
 	case "POLL_NOT_STARTED":
-		return MessageErrorf(ErrNotStarted, "Poll %d is not started", poll)
+		return MessageErrorf(ErrNotStarted, "Poll %d is not started", pollID)
 	case "USER_HAS_VOTED_BEFORE":
 		return MessageErrorf(ErrDoubleVote, "You can not vote again on poll %d", pollID)
 	default:

@@ -1,46 +1,72 @@
-FROM golang:1.24.4-alpine as base
-WORKDIR /root/openslides-vote-service
+ARG CONTEXT=prod
 
-RUN apk add git
+FROM golang:1.25.0-alpine AS base
+
+## Setup
+ARG CONTEXT
+WORKDIR /app/openslides-vote-service
+ENV APP_CONTEXT=${CONTEXT}
+
+## Install
+RUN apk add --no-cache git
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-# Build service in seperate stage.
-FROM base as builder
-RUN go build
+## External Information
+EXPOSE 9013
 
+## Command
+HEALTHCHECK CMD ["/app/openslides-vote-service/openslides-vote-service", "health"]
 
-# Test build.
-FROM base as testing
+# Development Image
 
-RUN apk add build-base
-
-CMD go vet ./... && go test ./...
-
-
-# Development build.
-FROM base as development
+FROM base AS dev
 
 RUN ["go", "install", "github.com/githubnemo/CompileDaemon@latest"]
-EXPOSE 9012
 
-WORKDIR /root
-CMD CompileDaemon -log-prefix=false -build="go build -o vote-service ./openslides-vote-service" -command="./vote-service"
+CMD CompileDaemon -log-prefix=false -build="go build" -command="./openslides-vote-service"
 
+# Testing Image
 
-# Productive build
-FROM scratch
+FROM base AS tests
 
+# Install Dockertest & Docker
+RUN apk add --no-cache \
+    build-base \
+    docker && \
+    go get -u github.com/ory/dockertest/v3 && \
+    go install golang.org/x/lint/golint@latest && \
+    chmod +x dev/container-tests.sh
+
+## Command
+STOPSIGNAL SIGKILL
+CMD ["sleep", "inf"]
+
+# Production Image
+
+FROM base AS builder
+RUN go build
+
+FROM scratch AS prod
+
+## Setup
+ARG CONTEXT
+ENV APP_CONTEXT=prod
+
+COPY --from=builder /app/openslides-vote-service/openslides-vote-service /
+
+## External Information
 LABEL org.opencontainers.image.title="OpenSlides Vote Service"
 LABEL org.opencontainers.image.description="The OpenSlides Vote Service handles the votes for electronic polls."
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/OpenSlides/openslides-vote-service"
 
-COPY --from=builder /root/openslides-vote-service/openslides-vote-service .
 EXPOSE 9013
 
+## Command
 ENTRYPOINT ["/openslides-vote-service"]
+
 HEALTHCHECK CMD ["/openslides-vote-service", "health"]
