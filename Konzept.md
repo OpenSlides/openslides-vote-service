@@ -66,9 +66,13 @@ https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.cre
 
 Erzeugt ein neues poll-objekt.
 
-Frage: Die aktuelle Backend-Aktions kann für analoge polls die Ergebnisse
-eintragen. Ist das tatsächlich erforderlich? Oder passiert das praktisch immer
-erst bei edit?
+Im Client wird beim klicken auf "Neue Abstimmung" noch kein Request gesandt,
+sondern zunächst ein Overlay zum erstellen der Poll angezeigt. In diesem werden
+alle Einstellungen zur Poll vorgenommen und anschließend auf "Speichern"
+geklickt. In dem Moment wird dann create request abgesandt.
+
+Bei analogen Polls bedeutet das, dass bereits an dieser Stelle das Ergebnis
+übertragen werden kann.
 
 
 ### /vote/update
@@ -76,6 +80,11 @@ erst bei edit?
 Vergleichbar zum aktuellen backend:
 
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.update.md
+
+Ist ähnlich zur create-view. Manche Felder könnnen jedoch nicht mehr bearbeitet
+werden. Bisher war es "Art der Stimmabgabe". Dies entspricht dem alten
+`poll/type` (analog, named, pseudoanonymous, crypto). Dies entspricht dem neuen
+`poll/visibility`.
 
 
 ### /vote/delete
@@ -87,7 +96,8 @@ https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.del
 
 ### /vote/start
 
-Validiert das Poll Objekt, vor allem poll/config, und setzt das Feld `poll/state` auf `started`.
+Validiert das Poll Objekt, vor allem poll/config, und setzt das Feld
+`poll/state` auf `started`.
 
 See also:
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.start.md
@@ -160,18 +170,22 @@ Darauf liegt auch der Hauptzweck des Konzept. Analoge Abstimmungen passen jedoch
 auch in das Konzept. Hier wird direkt `poll/result` geschrieben. Es gibt keine
 `vote` objekte.
 
-Das Format der analogen Wahl, insbesondere welche Felder es gibt, wird wie bei
-elektronischen Abstimmungen über `poll/config` gesteuert.
+Ob eine Abstimmung analog ist, wird über das Feld `poll/visibility` geregelt.
+Dieses muss auf "manually" gesetzt sein.
 
-Ob eine Abstimmung analog ist, wird über das Feld `poll/method` geregelt. Dies
-entspricht der Regelung, dass `poll/config` und `poll/result` abhängig von
-diesem Feld ausgewertet werden müssen.
+Das Format der analogen Wahl, insbesondere welche Felder es gibt, wird wird über
+den Eintrag in `poll/method` und `poll/config` geschrieben werden.
 
 
 ### poll/visibility
 
 Das Feld `poll/visibility` entspricht dem alten Feld `poll/type`. Es
 entscheidet, ob die Abstimmung namentlich, geheim oder offen ist.
+
+Der Wert `manually` bedeutet, dass die Werte manuell ermittelt und eingetragen
+werden. Dies entspricht der analogen Abstimmung, passt vom Wording jedoch auch
+auf andere Fälle, bzw. wenn ein anderes Tool für eine elektronische Abstimmung
+verwendet wurde.
 
 Der Wert `named` bedeutet, dass die Zuordnung von den votes zu den Nutzern am
 Ende nicht gelöscht werden. Im politischen Kontext bedeutet namentliche
