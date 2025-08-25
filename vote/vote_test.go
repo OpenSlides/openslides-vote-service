@@ -1,17 +1,74 @@
 package vote_test
 
-// import (
-// 	"context"
-// 	"encoding/json"
-// 	"errors"
-// 	"reflect"
-// 	"strings"
-// 	"testing"
+import (
+	"strings"
+	"testing"
 
-// 	"github.com/OpenSlides/openslides-go/datastore/cache"
-// 	"github.com/OpenSlides/openslides-go/datastore/dsmock"
-// 	"github.com/OpenSlides/openslides-vote-service/vote"
-// )
+	"github.com/OpenSlides/openslides-go/datastore/pgtest"
+	"github.com/OpenSlides/openslides-vote-service/vote"
+)
+
+func withData(t *testing.T, data string, fn func(service *vote.Vote)) {
+	t.Helper()
+
+	ctx := t.Context()
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	if err := pg.AddData(ctx, data); err != nil {
+		t.Fatalf("Error: inserting data: %v", err)
+	}
+
+	flow, err := pg.Flow()
+	if err != nil {
+		t.Fatalf("Error getting flow: %v", err)
+	}
+	defer flow.Close()
+
+	conn, err := pg.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Error getting connection: %v", err)
+	}
+
+	service, _, err := vote.New(ctx, flow, conn)
+	if err != nil {
+		t.Fatalf("Error creating vote: %v", err)
+	}
+
+	fn(service)
+}
+
+func TestCreate(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	withData(
+		t,
+		`---
+		motion/1:
+			meeting_id: 1
+			sequential_number: 1
+			title: my motion
+			state_id: 1
+		`, func(service *vote.Vote) {
+			id, err := service.Create(t.Context(), 1, strings.NewReader(`{"title": "my poll", "content_object_id": "motion/1", "method": "motion", "visibility": "open", "meeting_id": 1}`))
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
+
+			if id != 1 {
+				t.Errorf("Expected id 1, got %d", id)
+			}
+
+			// TODO: Check the poll in the flow
+		})
+
+}
 
 // func TestVoteStart(t *testing.T) {
 // 	ctx := context.Background()

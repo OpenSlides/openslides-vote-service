@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
+	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
-	"github.com/OpenSlides/openslides-go/datastore/dskey"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/jackc/pgx/v5"
@@ -50,7 +49,7 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int, error) {
 	// TODO: Check permissions for requestUser
 
-	ci, err := parseCreateInput(ctx, v.flow, r)
+	ci, err := parseCreateInput(r)
 	if err != nil {
 		return 0, fmt.Errorf("parsing input: %w", err)
 	}
@@ -65,20 +64,24 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 
 	var sequentialNumber int
 	err = tx.QueryRow(ctx, `
-		SELECT COALESCE(MAX(sequential_number), 0)
+		SELECT sequential_number
 		FROM poll
 		WHERE meeting_id = $1
+		ORDER BY sequential_number DESC
+		LIMIT 1
 		FOR UPDATE`, ci.MeetingID).Scan(&sequentialNumber)
 
 	if err != nil {
-		return 0, fmt.Errorf("get max sequential number: %w", err)
+		if err != pgx.ErrNoRows {
+			return 0, fmt.Errorf("get max sequential number: %w", err)
+		}
 	}
 
 	sequentialNumber += 1
 
 	sql := `INSERT INTO poll
-		(title, desciption, method, config, visibility, state, sequential_number, content_object_id, entitled_group_ids, meeting_id)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)
+		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id)
+		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)
 		RETURNING id;`
 
 	var newID int
@@ -92,12 +95,31 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.Visibility,
 		sequentialNumber,
 		ci.ContentObjectID,
-		ci.EntitledGroupIDs,
 		ci.MeetingID).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
 
-	// 4. Transaktion committen
+	if len(ci.EntitledGroupIDs) > 0 {
+		// Dynamisches SQL für alle IDs auf einmal
+		placeholders := make([]string, len(ci.EntitledGroupIDs))
+		args := make([]any, len(ci.EntitledGroupIDs)*2)
+
+		for i, groupID := range ci.EntitledGroupIDs {
+			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+			args[i*2] = groupID
+			args[i*2+1] = newID
+		}
+
+		groupSQL := fmt.Sprintf(
+			"INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id) VALUES %s",
+			strings.Join(placeholders, ", "),
+		)
+
+		if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+			return 0, fmt.Errorf("insert group-poll relations: %w", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit transaction: %w", err)
 	}
@@ -116,51 +138,20 @@ type CreateInput struct {
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 }
 
-func parseCreateInput(ctx context.Context, ds flow.Getter, r io.Reader) (CreateInput, error) {
+func parseCreateInput(r io.Reader) (CreateInput, error) {
 	var ci CreateInput
 	if err := json.NewDecoder(r).Decode(&ci); err != nil {
 		return CreateInput{}, fmt.Errorf("reading json: %w", err)
 	}
 
-	// TODO: Is everything else realy necessary, or can I trust postgres?
-
 	if ci.Title == "" {
 		return CreateInput{}, MessageError(ErrInvalid, "Title can not be empty")
-	}
-
-	if err := validateContentObjectID(ctx, ci.ContentObjectID, ds); err != nil {
-		return CreateInput{}, fmt.Errorf("validate content_object_id: %w", err)
-	}
-
-	if ci.MeetingID == 0 {
-		// TODO: Should I check, that the meeing exists and that content_object_id is in it?
-		return CreateInput{}, MessageError(ErrInvalid, "Meeting ID is required")
-	}
-
-	// TODO: Is it possible to auto generate this without inporting meta here?
-	methodValues := []string{"analog", "motion", "selection", "rating", "single_transferable_vote"}
-	if !slices.Contains(methodValues, ci.Method) {
-		return CreateInput{}, MessageErrorf(ErrInternal, "Method has to be one of %v, not %s", methodValues, ci.Method)
 	}
 
 	// TODO: check config and visiblity
 
 	return ci, nil
 
-}
-
-func validateContentObjectID(ctx context.Context, contentObjectID string, ds flow.Getter) error {
-	key, err := dskey.FromStringf("%s/id", context.Canceled)
-	if err != nil {
-		return MessageError(ErrInvalid, "Invalid content_object_id")
-	}
-
-	if _, err := ds.Get(ctx, key); err != nil {
-		// TODO: Check for does not exist error and return MessageError
-		return fmt.Errorf("checking content object: %w", err)
-	}
-
-	return nil
 }
 
 func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int) error {
