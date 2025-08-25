@@ -4,12 +4,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OpenSlides/openslides-go/datastore/dskey"
+	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/datastore/pgtest"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-func withData(t *testing.T, data string, fn func(service *vote.Vote)) {
+func TestCreate(t *testing.T) {
+	ctx := t.Context()
+
+	withData(
+		t,
+		`---
+		motion/1:
+			meeting_id: 1
+			sequential_number: 1
+			title: my motion
+			state_id: 1
+		`, func(service *vote.Vote, flow flow.Flow) {
+			body := `{"title": "my poll", "content_object_id": "motion/1", "method": "motion", "visibility": "open", "meeting_id": 1}`
+			id, err := service.Create(ctx, 1, strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
+
+			if id != 1 {
+				t.Errorf("Expected id 1, got %d", id)
+			}
+
+			key := dskey.MustKey("poll/1/title")
+			result, err := flow.Get(ctx, key)
+			if err != nil {
+				t.Fatalf("Error getting title from created poll: %v", err)
+			}
+
+			if string(result[key]) != `"my poll"` {
+				t.Errorf("Expected title 'my poll', got %s", result[key])
+			}
+		},
+	)
+}
+
+func withData(t *testing.T, data string, fn func(service *vote.Vote, flow flow.Flow)) {
 	t.Helper()
+
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
 
 	ctx := t.Context()
 	pg, err := pgtest.NewPostgresTest(ctx)
@@ -38,36 +80,7 @@ func withData(t *testing.T, data string, fn func(service *vote.Vote)) {
 		t.Fatalf("Error creating vote: %v", err)
 	}
 
-	fn(service)
-}
-
-func TestCreate(t *testing.T) {
-	t.Parallel()
-	if testing.Short() {
-		t.Skip("Postgres Test")
-	}
-
-	withData(
-		t,
-		`---
-		motion/1:
-			meeting_id: 1
-			sequential_number: 1
-			title: my motion
-			state_id: 1
-		`, func(service *vote.Vote) {
-			id, err := service.Create(t.Context(), 1, strings.NewReader(`{"title": "my poll", "content_object_id": "motion/1", "method": "motion", "visibility": "open", "meeting_id": 1}`))
-			if err != nil {
-				t.Fatalf("Error creating poll: %v", err)
-			}
-
-			if id != 1 {
-				t.Errorf("Expected id 1, got %d", id)
-			}
-
-			// TODO: Check the poll in the flow
-		})
-
+	fn(service, flow)
 }
 
 // func TestVoteStart(t *testing.T) {
