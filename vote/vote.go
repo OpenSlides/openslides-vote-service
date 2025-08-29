@@ -160,7 +160,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int) error 
 
 func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error {
 	// TODO: Check permissions
-	sql := `DELETE FROM poll WHERE poll_id = $1;`
+	sql := `DELETE FROM poll WHERE id = $1;`
 	if _, err := v.querier.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("sending sql query: %w", err)
 	}
@@ -173,7 +173,6 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 
 	// TODO: Check permissions for requestUser
 
-	// TODO: If only poll.method is needed, don't load the full poll.
 	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
@@ -183,8 +182,8 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("loading poll %d: %w", pollID, err)
 	}
 
-	if poll.Method == "analog" {
-		return MessageError(ErrInvalid, "Analog poll can not be started")
+	if poll.Visibility == "manually" {
+		return MessageError(ErrInvalid, "Manually poll can not be started")
 	}
 
 	if poll.State != "created" {
@@ -210,7 +209,6 @@ func (v *Vote) Stop(ctx context.Context, pollID int, requestUserID int) error {
 
 	// TODO: Check permissions for requestUser
 
-	// TODO: Maybe only some fields of the poll are required.
 	poll, err := ds.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
@@ -244,11 +242,11 @@ func (v *Vote) Publish(ctx context.Context, pollID int, requestUserID int) error
 
 	sql := `UPDATE poll
 			SET state = 'published'
-			WHERE id = $1 AND state = 'finished'`
+			WHERE id = $1 AND state = 'finished';`
 
 	result, err := v.querier.Exec(ctx, sql, pollID)
 	if err != nil {
-		return fmt.Errorf("update poll state: %w", err)
+		return fmt.Errorf("update poll/%d/state: %w", pollID, err)
 	}
 
 	rowsAffected := result.RowsAffected()
@@ -356,8 +354,6 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("loading poll %d: %w", pollID, err)
 	}
 
-	_ = poll
-
 	// TODO: Validate, dass represented User can vote, that the requestUser can
 	// vote for him and that the vote is valid.
 	// - Check that request user is present
@@ -367,8 +363,11 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	// - Set vote weight
 	//
 
-	meetingID := 404
-	voteValue := "TODO"
+	meetingID := poll.MeetingID
+	voteValue, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("reading body: %w", err)
+	}
 	weight := "1.000000"
 	actingUserID := requestUserID
 	representedUserID := actingUserID

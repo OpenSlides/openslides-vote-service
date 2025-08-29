@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/OpenSlides/openslides-go/datastore/dskey"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/datastore/pgtest"
 	"github.com/OpenSlides/openslides-vote-service/vote"
@@ -12,6 +13,10 @@ import (
 
 func TestCreate(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
 
 	ctx := t.Context()
 
@@ -76,12 +81,341 @@ func TestCreate(t *testing.T) {
 	}
 }
 
-func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
-	t.Helper()
+func TestDelete(t *testing.T) {
+	t.Parallel()
 
 	if testing.Short() {
 		t.Skip("Postgres Test")
 	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	for _, tt := range []struct {
+		name string
+		data string
+	}{
+		{
+			name: "normal",
+			data: `---
+			motion/1:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			poll/1:
+				title: my poll
+				method: motion
+				sequential_number: 1
+				content_object_id: motion/1
+				meeting_id: 1
+			`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer pg.Cleanup(t)
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					if err := service.Delete(ctx, 1, 1); err != nil {
+						t.Fatalf("Error deleting poll: %v", err)
+					}
+
+					key := dskey.MustKey("poll/1/title")
+					_, err := flow.Get(ctx, key)
+					if err != nil {
+						t.Fatalf("Error getting title from created poll: %v", err)
+					}
+
+				},
+			)
+		})
+	}
+}
+
+func TestStart(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	for _, tt := range []struct {
+		name string
+		data string
+	}{
+		{
+			name: "normal",
+			data: `---
+			motion/1:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			poll/1:
+				title: my poll
+				method: motion
+				sequential_number: 1
+				content_object_id: motion/1
+				meeting_id: 1
+				state: created
+			`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer pg.Cleanup(t)
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					if err := service.Start(ctx, 1, 1); err != nil {
+						t.Fatalf("Error starting poll: %v", err)
+					}
+
+					key := dskey.MustKey("poll/1/state")
+					values, err := flow.Get(ctx, key)
+					if err != nil {
+						t.Fatalf("Error getting state from poll: %v", err)
+					}
+
+					if string(values[key]) != `"started"` {
+						t.Errorf("Expected state to be started, got %s", values[key])
+					}
+				},
+			)
+		})
+	}
+}
+
+func TestStop(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	for _, tt := range []struct {
+		name string
+		data string
+	}{
+		{
+			name: "normal",
+			data: `---
+			motion/1:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			poll/1:
+				title: my poll
+				method: motion
+				sequential_number: 1
+				content_object_id: motion/1
+				meeting_id: 1
+				state: started
+			`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer pg.Cleanup(t)
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					if err := service.Stop(ctx, 1, 1); err != nil {
+						t.Fatalf("Error stopping poll: %v", err)
+					}
+
+					key := dskey.MustKey("poll/1/state")
+					values, err := flow.Get(ctx, key)
+					if err != nil {
+						t.Fatalf("Error getting state from poll: %v", err)
+					}
+
+					if string(values[key]) != `"finished"` {
+						t.Errorf("Expected state to be finished, got %s", values[key])
+					}
+
+					// TODO: Check result
+				},
+			)
+		})
+	}
+}
+
+func TestPublish(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	for _, tt := range []struct {
+		name string
+		data string
+	}{
+		{
+			name: "normal",
+			data: `---
+			motion/1:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			poll/1:
+				title: my poll
+				method: motion
+				sequential_number: 1
+				content_object_id: motion/1
+				meeting_id: 1
+				state: finished
+			`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer pg.Cleanup(t)
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					if err := service.Publish(ctx, 1, 1); err != nil {
+						t.Fatalf("Error publishing poll: %v", err)
+					}
+
+					key := dskey.MustKey("poll/1/state")
+					values, err := flow.Get(ctx, key)
+					if err != nil {
+						t.Fatalf("Error getting state from poll: %v", err)
+					}
+
+					if string(values[key]) != `"published"` {
+						t.Errorf("Expected state to be published, got %s", values[key])
+					}
+				},
+			)
+		})
+	}
+}
+
+func TestVote(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	for _, tt := range []struct {
+		name string
+		data string
+		body string
+	}{
+		{
+			name: "normal",
+			data: `---
+			motion/1:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			poll/1:
+				title: my poll
+				method: motion
+				sequential_number: 1
+				content_object_id: motion/1
+				meeting_id: 1
+				state: started
+
+			user/30:
+				username: tom
+			`,
+			body: `Yes`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer pg.Cleanup(t)
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					if err := service.Vote(ctx, 1, 30, strings.NewReader(tt.body)); err != nil {
+						t.Fatalf("Error voting poll: %v", err)
+					}
+
+					ds := dsmodels.New(flow)
+					vote, err := ds.Vote(1).First(t.Context())
+					if err != nil {
+						t.Fatalf("Error: Getting vote: %v", err)
+					}
+
+					if id, _ := vote.ActingUserID.Value(); id != 30 {
+						t.Errorf("Expected acting user ID to be 1, got %d", id)
+					}
+
+					if vote.Value != tt.body {
+						t.Errorf("Expected vote value to be 'Yes', got '%s'", vote.Value)
+					}
+
+				},
+			)
+		})
+	}
+}
+
+func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
+	t.Helper()
 
 	ctx := t.Context()
 

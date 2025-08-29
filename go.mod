@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.25.0
 
 require (
-	github.com/OpenSlides/openslides-go v0.0.0-20250726074043-25ad7eaeb3e6
+	github.com/OpenSlides/openslides-go v0.0.0-20250829151310-952686ce78b1
 	github.com/alecthomas/kong v1.12.1
 	github.com/jackc/pgx/v5 v5.7.5
 )
@@ -20,6 +20,7 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/gomodule/redigo v1.9.2 // indirect
