@@ -3,11 +3,9 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.25.0
 
 require (
-	github.com/OpenSlides/openslides-go v0.0.0-20250824142938-77dee4b0c105
+	github.com/OpenSlides/openslides-go v0.0.0-20250829151310-952686ce78b1
 	github.com/alecthomas/kong v1.12.1
-	github.com/gomodule/redigo v1.9.2
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/ory/dockertest/v3 v3.12.0
 )
 
 require (
@@ -25,6 +23,7 @@ require (
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/gomodule/redigo v1.9.2 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -35,6 +34,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runc v1.2.6 // indirect
+	github.com/ory/dockertest/v3 v3.12.0 // indirect
 	github.com/ostcar/topic v0.4.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
