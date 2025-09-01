@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dskey"
+	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/datastore/pgtest"
@@ -27,14 +29,25 @@ func TestAll(t *testing.T) {
 	defer pg.Close()
 
 	data := `---
-	motion/1:
+	motion/5:
 		meeting_id: 1
 		sequential_number: 1
 		title: my motion
 		state_id: 1
 
+	meeting/1:
+		present_user_ids: [30]
+
 	user/30:
 		username: tom
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
 	`
 
 	withData(
@@ -45,10 +58,11 @@ func TestAll(t *testing.T) {
 			t.Run("Create", func(t *testing.T) {
 				body := `{
 					"title": "my poll",
-					"content_object_id": "motion/1",
+					"content_object_id": "motion/5",
 					"method": "motion",
 					"visibility": "open",
-					"meeting_id": 1
+					"meeting_id": 1,
+					"entitled_group_ids": [40]
 				}`
 
 				id, err := service.Create(ctx, 1, strings.NewReader(body))
@@ -88,7 +102,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Vote", func(t *testing.T) {
-				body := "Yes"
+				body := `{"value":"Yes"}`
 				if err := service.Vote(ctx, 1, 30, strings.NewReader(body)); err != nil {
 					t.Fatalf("Error voting poll: %v", err)
 				}
@@ -103,8 +117,8 @@ func TestAll(t *testing.T) {
 					t.Errorf("Expected acting user ID to be 1, got %d", id)
 				}
 
-				if vote.Value != body {
-					t.Errorf("Expected vote value to be 'Yes', got '%s'", vote.Value)
+				if vote.Value != `"Yes"` {
+					t.Errorf("Expected vote value to be '\"Yes\"', got '%s'", vote.Value)
 				}
 			})
 
@@ -196,22 +210,34 @@ func TestVote(t *testing.T) {
 	defer pg.Close()
 
 	data := `---
-	motion/1:
+	motion/5:
 		meeting_id: 1
 		sequential_number: 1
 		title: my motion
 		state_id: 1
 
-	poll/1:
-		title: my poll
-		method: motion
-		sequential_number: 1
-		content_object_id: motion/1
-		meeting_id: 1
-		state: started
+	meeting/1:
+		present_user_ids: [30]
 
 	user/30:
 		username: tom
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: my poll
+		method: motion
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
 	`
 
 	withData(
@@ -222,9 +248,9 @@ func TestVote(t *testing.T) {
 			t.Run("Simple Vote", func(t *testing.T) {
 				defer pg.Cleanup(t)
 
-				body := "Yes"
-				if err := service.Vote(ctx, 1, 30, strings.NewReader(body)); err != nil {
-					t.Fatalf("Error voting poll: %v", err)
+				body := `{"value":"Yes"}`
+				if err := service.Vote(ctx, 5, 30, strings.NewReader(body)); err != nil {
+					t.Fatalf("Error processing poll: %v", err)
 				}
 
 				ds := dsmodels.New(flow)
@@ -237,12 +263,157 @@ func TestVote(t *testing.T) {
 					t.Errorf("Expected acting user ID to be 1, got %d", id)
 				}
 
-				if vote.Value != body {
+				if vote.Value != `"Yes"` {
 					t.Errorf("Expected vote value to be 'Yes', got '%s'", vote.Value)
 				}
 			})
 		},
 	)
+}
+
+func TestVoteWeight(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data string
+
+		expectWeight string
+	}{
+		{
+			"No weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				method: motion
+				visibility: open
+				content_object_id: some_field/1
+				sequential_number: 1
+				title: myPoll
+
+			meeting/1/id: 1
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				meeting_user_ids: [10]
+			meeting_user/10:
+				group_ids: [1]
+				meeting_id: 1
+			`,
+			"1.000000",
+		},
+		{
+			"Weight enabled, user has no weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				method: motion
+				visibility: open
+				content_object_id: some_field/1
+				sequential_number: 1
+				title: myPoll
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				meeting_user_ids: [10]
+			meeting_user/10:
+				group_ids: [1]
+				meeting_id: 1
+			`,
+			"1.000000",
+		},
+		{
+			"Weight enabled, user has default weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				method: motion
+				visibility: open
+				content_object_id: some_field/1
+				sequential_number: 1
+				title: myPoll
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				meeting_user_ids: [10]
+				default_vote_weight: "2.000000"
+			meeting_user/10:
+				group_ids: [1]
+				meeting_id: 1
+			`,
+			"2.000000",
+		},
+		{
+			"Weight enabled, user has default weight and meeting weight",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				method: motion
+				visibility: open
+				content_object_id: some_field/1
+				sequential_number: 1
+				title: myPoll
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				meeting_user_ids: [10]
+				default_vote_weight: "2.000000"
+			meeting_user/10:
+				group_ids: [1]
+				meeting_id: 1
+				vote_weight: "3.000000"
+			`,
+			"3.000000",
+		},
+		{
+			"Weight enabled, user has default weight and meeting weight in other meeting",
+			`
+			poll/1:
+				meeting_id: 1
+				entitled_group_ids: [1]
+				method: motion
+				visibility: open
+				content_object_id: some_field/1
+				sequential_number: 1
+				title: myPoll
+
+			meeting/1/users_enable_vote_weight: true
+
+			user/1:
+				is_present_in_meeting_ids: [1]
+				meeting_user_ids: [10,11]
+				default_vote_weight: "2.000000"
+			meeting_user/10:
+				group_ids: [1]
+				meeting_id: 1
+			meeting_user/11:
+				group_ids: [1]
+				meeting_id: 2
+				vote_weight: "3.000000"
+			`,
+			"2.000000",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := dsfetch.New(dsmock.Stub(dsmock.YAMLData(tt.data)))
+			weight, err := vote.CalcVoteWeight(t.Context(), ds, 1, 1)
+			if err != nil {
+				t.Fatalf("CalcVote: %v", err)
+			}
+
+			if weight != tt.expectWeight {
+				t.Errorf("got weight %q, expected %q", weight, tt.expectWeight)
+			}
+		})
+	}
 }
 
 func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
@@ -1470,186 +1641,6 @@ func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(servic
 
 // 			if !errors.Is(err, vote.ErrNotAllowed) {
 // 				t.Fatalf("Expected NotAllowedError, got: %v", err)
-// 			}
-// 		})
-// 	}
-// }
-
-// func TestVoteWeight(t *testing.T) {
-// 	for _, tt := range []struct {
-// 		name string
-// 		data string
-
-// 		expectWeight string
-// 	}{
-// 		{
-// 			"No weight",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/id: 1
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			"1.000000",
-// 		},
-// 		{
-// 			"Weight enabled, user has no weight",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_weight: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			"1.000000",
-// 		},
-// 		{
-// 			"Weight enabled, user has default weight",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_weight: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-// 				default_vote_weight: "2.000000"
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			"2.000000",
-// 		},
-// 		{
-// 			"Weight enabled, user has default weight and meeting weight",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_weight: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-// 				default_vote_weight: "2.000000"
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 				vote_weight: "3.000000"
-// 			`,
-// 			"3.000000",
-// 		},
-// 		{
-// 			"Weight enabled, user has default weight and meeting weight in other meeting",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_weight: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10,11]
-// 				default_vote_weight: "2.000000"
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			meeting_user/11:
-// 				group_ids: [1]
-// 				meeting_id: 2
-// 				vote_weight: "3.000000"
-// 			`,
-// 			"2.000000",
-// 		},
-// 	} {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			ctx := context.Background()
-// 			backend := memory.New()
-// 			ds := &StubGetter{data: dsmock.YAMLData(tt.data)}
-// 			v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 			if err := backend.Start(ctx, 1); err != nil {
-// 				t.Fatalf("bakckend.Start: %v", err)
-// 			}
-
-// 			if err := v.Vote(ctx, 1, 1, strings.NewReader(`{"value":"Y"}`)); err != nil {
-// 				t.Fatalf("vote returned unexpected error: %v", err)
-// 			}
-
-// 			data, _, _ := backend.Stop(ctx, 1)
-
-// 			if len(data) != 1 {
-// 				t.Fatalf("got %d vote objects, expected one", len(data))
-// 			}
-
-// 			var decoded struct {
-// 				Weight string `json:"weight"`
-// 			}
-// 			if err := json.Unmarshal(data[0], &decoded); err != nil {
-// 				t.Fatalf("decoding voteobject returned unexpected error: %v", err)
-// 			}
-
-// 			if decoded.Weight != tt.expectWeight {
-// 				t.Errorf("got weight %q, expected %q", decoded.Weight, tt.expectWeight)
 // 			}
 // 		})
 // 	}

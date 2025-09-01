@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
@@ -343,9 +344,14 @@ type VoteResult struct {
 
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader) error {
-	ds := dsmodels.New(v.flow)
+	fetch := dsfetch.New(v.flow)
+	dsmodel := dsmodels.New(v.flow)
 
-	poll, err := ds.Poll(pollID).First(ctx)
+	if requestUserID == 0 {
+		return MessageErrorf(ErrInvalid, "Anonymous can not vote")
+	}
+
+	poll, err := dsmodel.Poll(pollID).First(ctx)
 	if err != nil {
 		var doesNotExist dsfetch.DoesNotExistError
 		if errors.As(err, &doesNotExist) {
@@ -354,23 +360,35 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("loading poll %d: %w", pollID, err)
 	}
 
-	// TODO: Validate, dass represented User can vote, that the requestUser can
-	// vote for him and that the vote is valid.
-	// - Check that request user is present
-	// - Read representedUser from body or use request user ID
-	// - check, that non of them is anonymous and are part of the meeting.
-	// - Validate the vote.value
-	// - Set vote weight
-	//
-
-	meetingID := poll.MeetingID
-	voteValue, err := io.ReadAll(r)
-	if err != nil {
-		return fmt.Errorf("reading body: %w", err)
+	var body struct {
+		UserID int             `json:"user_id"`
+		Value  json.RawMessage `json:"value"`
 	}
-	weight := "1.000000"
+
+	if err := json.NewDecoder(r).Decode(&body); err != nil {
+		return fmt.Errorf("decoding body: %w", err)
+	}
+
 	actingUserID := requestUserID
 	representedUserID := actingUserID
+	if body.UserID != 0 {
+		representedUserID = body.UserID
+	}
+
+	if err := allowedToVote(ctx, fetch, poll, actingUserID, representedUserID, poll.MeetingID); err != nil {
+		return fmt.Errorf("allowedToVote: %w", err)
+	}
+
+	// TODO:
+	// - Validate the vote.value
+	// - Set vote weight
+
+	meetingID := poll.MeetingID
+	voteValue := string(body.Value)
+	weight, err := CalcVoteWeight(ctx, fetch, meetingID, representedUserID)
+	if err != nil {
+		return fmt.Errorf("calc vote weight: %w", err)
+	}
 
 	// TODO: Maybe make this a function in the schema.
 	sql := `WITH
@@ -434,4 +452,159 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	default:
 		return fmt.Errorf("unknown vote sql status %s", status)
 	}
+}
+
+// allowedToVote checks, that the represented user can vote and the acting user
+// can vote for him.
+func allowedToVote(
+	ctx context.Context,
+	ds *dsfetch.Fetch,
+	poll dsmodels.Poll,
+	representedUserID int,
+	actingUserID int,
+	meetingID int,
+) error {
+	if err := ensurePresent(ctx, ds, meetingID, actingUserID); err != nil {
+		return fmt.Errorf("ensure acting user is present: %w", err)
+	}
+
+	representedMeetingUserID, found, err := getMeetingUser(ctx, ds, representedUserID, meetingID)
+	if err != nil {
+		return fmt.Errorf("getting meeting user for represented user: %w", err)
+	}
+	if !found {
+		return fmt.Errorf("represented user does not have a meeting user, althought he is present")
+	}
+
+	groupIDs, err := ds.MeetingUser_GroupIDs(representedMeetingUserID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching groups of user %d in meeting %d: %w", representedUserID, poll.MeetingID, err)
+	}
+
+	if !hasCommon(groupIDs, poll.EntitledGroupIDs) {
+		return MessageErrorf(ErrNotAllowed, "User %d is not allowed to vote. He is not in an entitled group", representedUserID)
+	}
+
+	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching meeting/user_enable_vote_delegations: %w", err)
+	}
+
+	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching meeting/users_forbid_delegator_to_vote: %w", err)
+	}
+
+	delegation, err := ds.MeetingUser_VoteDelegatedToID(representedMeetingUserID).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching meeting_user/vote_delegated_to_id: %w", err)
+	}
+
+	if delegationActivated && forbitDelegateToVote && !delegation.Null() && representedUserID == actingUserID {
+		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
+	}
+
+	if representedUserID == actingUserID {
+		return nil
+	}
+
+	if !delegationActivated {
+		return MessageErrorf(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
+	}
+
+	actingMeetingUserID, found, err := getMeetingUser(ctx, ds, actingUserID, poll.MeetingID)
+	if err != nil {
+		return fmt.Errorf("getting meeting_user for acting user: %w", err)
+	}
+	if !found {
+		return MessageError(ErrNotAllowed, "You are not in the right meeting")
+	}
+
+	if id, ok := delegation.Value(); !ok || id != actingMeetingUserID {
+		return MessageErrorf(ErrNotAllowed, "You can not vote for user %d", representedUserID)
+	}
+
+	return nil
+}
+
+// CalcVoteWeight calculates the vote weight for a user in a meeting.
+//
+// voteweight is a DecimalField with 6 zeros.
+func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, userID int) (string, error) {
+	const defaultVoteWeight = "1.000000"
+
+	meetingUserID, found, err := getMeetingUser(ctx, fetch, userID, meetingID)
+	if err != nil {
+		return "", fmt.Errorf("getting meeting user: %w", err)
+	}
+	if !found {
+		return "", fmt.Errorf("user %d has no meeting_user in meeting %d", userID, meetingID)
+	}
+
+	var voteWeightEnabled bool
+	var meetingUserVoteWeight string
+	var userDefaultVoteWeight string
+	fetch.Meeting_UsersEnableVoteWeight(meetingID).Lazy(&voteWeightEnabled)
+	fetch.MeetingUser_VoteWeight(meetingUserID).Lazy(&meetingUserVoteWeight)
+	fetch.User_DefaultVoteWeight(userID).Lazy(&userDefaultVoteWeight)
+
+	if err := fetch.Execute(ctx); err != nil {
+		return "", fmt.Errorf("getting vote weight values from db: %w", err)
+	}
+
+	if !voteWeightEnabled {
+		return defaultVoteWeight, nil
+	}
+
+	if meetingUserVoteWeight != "" {
+		return meetingUserVoteWeight, nil
+	}
+
+	if userDefaultVoteWeight != "" {
+		return userDefaultVoteWeight, nil
+	}
+
+	return defaultVoteWeight, nil
+}
+
+func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID int) (int, bool, error) {
+	meetingUserIDs, err := fetch.User_MeetingUserIDs(userID).Value(ctx)
+	if err != nil {
+		return 0, false, fmt.Errorf("getting all meeting_user ids: %w", err)
+	}
+
+	meetingIDs := make([]int, len(meetingUserIDs))
+	for i := range meetingUserIDs {
+		fetch.MeetingUser_MeetingID(meetingUserIDs[i]).Lazy(&meetingIDs[i])
+	}
+
+	if err := fetch.Execute(ctx); err != nil {
+		return 0, false, fmt.Errorf("get all meeting IDs: %w", err)
+	}
+
+	idx := slices.Index(meetingIDs, meetingID)
+	if idx == -1 {
+		return 0, false, nil
+	}
+
+	return meetingUserIDs[idx], true, nil
+}
+
+func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) error {
+	presentMeetings, err := ds.User_IsPresentInMeetingIDs(user).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching is present in meetings: %w", err)
+	}
+
+	if !slices.Contains(presentMeetings, meetingID) {
+		return MessageErrorf(ErrNotAllowed, "You have to be present in meeting %d", meetingID)
+	}
+
+	return nil
+}
+
+func hasCommon(list1, list2 []int) bool {
+	return slices.ContainsFunc(list1, func(a int) bool {
+		return slices.Contains(list2, a)
+	})
 }

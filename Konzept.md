@@ -142,6 +142,34 @@ von `poll/method` und `poll/config`. Anschließend wird dieses in die
 dass die Abstimmung im state `started` ist und es zu der Poll vom user keine
 andere Stimme gibt.
 
+Der Body eines Vote-Requests sieht wie folgt aus:
+
+```json
+{
+  "user_id": 42,
+  "value": "yes"
+}
+```
+
+Der Wert "user_id" ist optional. Wenn nicht gesetzt, wird die request_user_id
+verwendet. Es ist der User, für den abgestimmt werden soll (represented_user_id).
+
+"value" ist der eigentliche Stimmzettel, der später eins zu eins in `vote/value`
+gespeichert wird.
+
+Damit ein Nutzer abstimmen darf, muss der represented_user stimmberechtigt sein,
+der acting_user (request_user) muss für ihn abstimmen dürfen.
+
+#### Stimmberechtigt
+
+#### Erlaubte Delegation
+
+* Delegation muss aktiviert sein: meeting/users_enable_vote_delegation
+* Der represented_user muss die Stimme an den acting_user übertragen haben: meeting_user/vote_delegated_to_id
+* Im strict mode (meeting/users_forbid_delegator_to_vote): respreseted_user != acting_user (wenn delegiert)
+
+? Muss der acting_user im meeting sein?
+? Muss der acting_user anwesend sein?
 
 ### Andere bisherige Handler
 
@@ -267,6 +295,24 @@ umbenannt. Bisher war `vote/user_id` unklar, ob es die User-ID des Nutzers ist,
 der auf "Abstimmen" geklickt hat oder der Nutzer, für den die Stimme gelten
 soll. Die neuen Feldnamen `vote/acting_user_id` und `vote/represented_user_id`
 sind eindeutig.
+
+Frage: Sollte die Delegation auf Basis von user oder meeting_user laufen?
+
+Die es muss an einigen Stellen eine user- bzw. meeting_user_id angegeben werden:
+* vote-request
+* in der Datenbank in der vote-collection: vote/represented_user_id
+* in der
+
+
+### poll/voted_ids
+
+Alle user_ids, die abgestimmt haben. Ist nur wichtig, wenn die vote anonymisiert
+wurde. Bei crypto-votes und nicht anonymisierten votes findet man die Info
+leicht über poll/votes heraus.
+
+Brauchen wir das feature überhaupt?
+Sollte das Feld immer geschrieben werden, oder nur, wenn anonymize ausgeführt wird?
+Sollte es bereits während der Abstimmung geschrieben werden oder erst bei Stop?
 
 
 ### Vote Weight
