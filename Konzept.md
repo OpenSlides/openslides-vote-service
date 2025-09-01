@@ -358,11 +358,6 @@ neue Methoden hinzuzufüren. Möglicherweise werden die hier beispielsweise
 genannten Methoden im laufe der Implementierung angepasst.
 
 
-### analog
-
-Es gibt keine vote objekte. `poll/result` wird direkt geschrieben.
-
-
 ### motion
 
 Die vom vom user gesendeten Werte in `vote/value` können die Werte `yes`, `no`

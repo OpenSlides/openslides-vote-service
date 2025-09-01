@@ -379,9 +379,9 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("allowedToVote: %w", err)
 	}
 
-	// TODO:
-	// - Validate the vote.value
-	// - Set vote weight
+	if err := ValidateVote(poll.Method, poll.Config, body.Value); err != nil {
+		return fmt.Errorf("validate vote: %w", err)
+	}
 
 	meetingID := poll.MeetingID
 	voteValue := string(body.Value)
