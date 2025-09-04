@@ -1,7 +1,17 @@
 # OpenSlides Vote Service
 
 The Vote Service is part of the OpenSlides environments. It handles the votes
-for an electonic poll.
+for motions and elections.
+
+Its expects an existing and valid poll in the database. The service provides
+handlers to start, stop and reset the poll and to receive the votes from the
+users.
+
+The service has no internal state but uses the normal postgres database to save
+the polls.
+
+
+!!!!! TODO from here
 
 
 ## Install and Start
@@ -12,7 +22,7 @@ Make sure the service inside the docker container can connect to this services.
 
 ```
 docker build . --tag openslides-vote
-printf "my_token_key" > auth_token_key 
+printf "my_token_key" > auth_token_key
 printf "my_cookie_key" > auth_cookie_key
 docker run --network host -v $PWD/auth_token_key:/run/secrets/auth_token_key -v $PWD/auth_cookie_key:/run/secrets/auth_cookie_key openslides-vote
 ```
@@ -29,7 +39,7 @@ To start a poll a POST request has to be send to the start-url.
 To send the same request twice is ok.
 
 ```
-curl -X POST localhost:9013/internal/vote/start?id=1 
+curl -X POST localhost:9013/internal/vote/start?id=1
 ```
 
 
@@ -67,7 +77,7 @@ especially important on fast votes to remove the mapping between the user id and
 the vote. The clear requet is idempotent.
 
 ```
-curl -X POST localhost:9013/internal/vote/clear?id=1 
+curl -X POST localhost:9013/internal/vote/clear?id=1
 ```
 
 
