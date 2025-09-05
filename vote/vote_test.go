@@ -123,7 +123,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Stop", func(t *testing.T) {
-				if err := service.Stop(ctx, 1, 1); err != nil {
+				if err := service.Finalize(ctx, 1, 1, false, false); err != nil {
 					t.Fatalf("Error stopping poll: %v", err)
 				}
 
@@ -141,7 +141,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Publish", func(t *testing.T) {
-				if err := service.Publish(ctx, 1, 1); err != nil {
+				if err := service.Finalize(ctx, 1, 1, true, false); err != nil {
 					t.Fatalf("Error publishing poll: %v", err)
 				}
 
@@ -157,8 +157,18 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Anonymize", func(t *testing.T) {
-				if err := service.Anonymize(ctx, 1, 1); err != nil {
+				if err := service.Finalize(ctx, 1, 1, true, true); err != nil {
 					t.Fatalf("Error anonymizing poll: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				vote, err := ds.Vote(1).First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting vote: %v", err)
+				}
+
+				if id, set := vote.ActingUserID.Value(); set {
+					t.Errorf("Expected acting user ID not to be set, but is is %d", id)
 				}
 			})
 

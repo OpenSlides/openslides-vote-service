@@ -103,26 +103,30 @@ See also:
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.start.md
 
 
-### /vote/stop
+### /vote/finalize
 
-Erstellt `poll/result` und setzt `poll/state` auf `finished`.
+Entspricht der früheren stop action, kann aber auch publish und anonymize
+aufrufen.
+
+Optional wird "publish" und "anonymize" übergeben.
+
+Ist die poll im state `started`, dann wird sie gestoppt. Hierfür wird der Wert
+in `poll/result` geschrieben und der State auf `finshed` gesetzt.
+
+Wurde das Flag `publish` übergeben, wird der state stattdessen auf `published`
+gesetzt.
+
+Wurde der Flag `anonymize` übergeben, dann werden alle user-ids aus den
+zugehörigen vote-objekten gelöscht.
+
+Der handler kann mehrfach aufgerufen werden. Zum Beispiel zuerst ohne flags,
+wodurch die poll gestoppt wird. Dann ein weiters mal mit dem flag `publish`,
+wodruch `poll/result` nicht mehr angefasst wird, aber der state gesetzt wird und
+anschließend ein drittes mal mit dem flag `anonymize`.
 
 Siehe auch:
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.stop.md
-
-### /vote/publish
-
-Setzt den `poll/state` auf `published`.
-
-Siehe auch:
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.publish.md
-
-
-### /vote/anonymize
-
-Entfernt von allen votes die user-ids.
-
-Siehe auch:
 https://github.com/OpenSlides/openslides-backend/blob/main/docs/actions/poll.anonymize.md
 
 

@@ -204,8 +204,12 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 	return nil
 }
 
-// Stop ends a poll. Creates poll/result
-func (v *Vote) Stop(ctx context.Context, pollID int, requestUserID int) error {
+// Finalize ends a poll.
+//
+// - If in the started state, it creates poll/result.
+// - With the flag `publish`, sets the state to `publish`, in other case to `stopped`
+// - With the flag `anonymize`, clears all user_ids from the coresponding votes.
+func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
 	ds := dsmodels.New(v.flow)
 
 	// TODO: Check permissions for requestUser
@@ -219,47 +223,9 @@ func (v *Vote) Stop(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("loading poll %d: %w", pollID, err)
 	}
 
-	if poll.State != "started" {
-		return MessageErrorf(ErrInvalid, "Poll %d is not in the started state", pollID)
+	if poll.State == "created" {
+		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
-
-	// TODO: Create "poll/result
-
-	sql := `UPDATE poll SET state = 'finished' WHERE id = $1 AND state = 'started';`
-	commandTag, err := v.querier.Exec(ctx, sql, pollID)
-	if err != nil {
-		return fmt.Errorf("set poll %d to finished: %w", pollID, err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		return fmt.Errorf("poll %d not found or not in 'finished' state", pollID)
-	}
-
-	return nil
-}
-
-func (v *Vote) Publish(ctx context.Context, pollID int, requestUserID int) error {
-	// TODO: Check permissions
-
-	sql := `UPDATE poll
-			SET state = 'published'
-			WHERE id = $1 AND state = 'finished';`
-
-	result, err := v.querier.Exec(ctx, sql, pollID)
-	if err != nil {
-		return fmt.Errorf("update poll/%d/state: %w", pollID, err)
-	}
-
-	rowsAffected := result.RowsAffected()
-	if rowsAffected == 0 {
-		return MessageErrorf(ErrInvalid, "Poll with id %d not found or not in 'finished' state", pollID)
-	}
-
-	return nil
-}
-
-func (v *Vote) Anonymize(ctx context.Context, pollID int, requestUserID int) error {
-	// TODO: Check permissions
 
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
@@ -267,28 +233,30 @@ func (v *Vote) Anonymize(ctx context.Context, pollID int, requestUserID int) err
 	}
 	defer tx.Rollback(ctx)
 
-	var pollState string
-	err = tx.QueryRow(ctx, `SELECT state FROM poll WHERE id = $1`, pollID).Scan(&pollState)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
+	if poll.State == `started` {
+		// TODO: Create "poll/result
+	}
+
+	newState := "finished"
+	if publish {
+		newState = "published"
+	}
+
+	sql := `UPDATE poll SET state = $1 WHERE id = $2;`
+	if _, err := tx.Exec(ctx, sql, newState, pollID); err != nil {
+		return fmt.Errorf("set poll %d to %s: %w", pollID, newState, err)
+	}
+
+	if anonymize {
+		sql := `UPDATE vote
+				SET acting_user_id = NULL, represented_user_id = NULL
+				WHERE poll_id = $1`
+
+		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+			return fmt.Errorf("anonymize votes: %w", err)
 		}
-		return fmt.Errorf("check poll state: %w", err)
 	}
 
-	if pollState != "finished" && pollState != "published" {
-		return MessageErrorf(ErrInvalid, "Poll with id %d is not in 'finished' or 'published' state (current: %s)", pollID, pollState)
-	}
-
-	sql := `UPDATE vote
-			SET acting_user_id = NULL, represented_user_id = NULL
-			WHERE poll_id = $1`
-
-	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-		return fmt.Errorf("anonymize votes: %w", err)
-	}
-
-	// Transaktion committen
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}

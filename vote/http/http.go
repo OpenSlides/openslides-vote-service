@@ -79,7 +79,7 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 
 type voteService interface {
 	starter
-	stopper
+	finalizer
 	voter
 }
 
@@ -95,7 +95,7 @@ func registerHandlers(service voteService, auth authenticater) *http.ServeMux {
 
 	mux.Handle(base, resolveError(handleVote(service, auth)))
 	mux.Handle(base+"/start", resolveError(handleStart(service, auth)))
-	mux.Handle(base+"/stop", resolveError(handleStop(service, auth)))
+	mux.Handle(base+"/finalize", resolveError(handleFinalize(service, auth)))
 	mux.Handle(base+"/health", resolveError(handleHealth()))
 
 	return mux
@@ -132,11 +132,11 @@ func handleStart(start starter, auth authenticater) HandlerFunc {
 	}
 }
 
-type stopper interface {
-	Stop(ctx context.Context, pollID int, requestUserID int) error
+type finalizer interface {
+	Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error
 }
 
-func handleStop(stop stopper, auth authenticater) HandlerFunc {
+func handleFinalize(finalize finalizer, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -159,7 +159,10 @@ func handleStop(stop stopper, auth authenticater) HandlerFunc {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		return stop.Stop(r.Context(), id, uid)
+		publish := r.URL.Query().Has("publish")
+		anonymize := r.URL.Query().Has("anonymize")
+
+		return finalize.Finalize(r.Context(), id, uid, publish, anonymize)
 	}
 }
 
