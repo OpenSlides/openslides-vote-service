@@ -300,13 +300,6 @@ der auf "Abstimmen" geklickt hat oder der Nutzer, für den die Stimme gelten
 soll. Die neuen Feldnamen `vote/acting_user_id` und `vote/represented_user_id`
 sind eindeutig.
 
-Frage: Sollte die Delegation auf Basis von user oder meeting_user laufen?
-
-Die es muss an einigen Stellen eine user- bzw. meeting_user_id angegeben werden:
-* vote-request
-* in der Datenbank in der vote-collection: vote/represented_user_id
-* in der
-
 
 ### poll/voted_ids
 

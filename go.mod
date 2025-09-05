@@ -6,6 +6,7 @@ require (
 	github.com/OpenSlides/openslides-go v0.0.0-20250904063625-670a1ef724b7
 	github.com/alecthomas/kong v1.12.1
 	github.com/jackc/pgx/v5 v5.7.5
+	github.com/shopspring/decimal v1.4.0
 )
 
 require (

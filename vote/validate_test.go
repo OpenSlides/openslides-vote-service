@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/flow"
-	"github.com/OpenSlides/openslides-go/datastore/pgtest"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
@@ -226,33 +224,4 @@ func TestValidateVote(t *testing.T) {
 			}
 		})
 	}
-}
-
-func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
-	t.Helper()
-
-	ctx := t.Context()
-
-	if err := pg.AddData(ctx, data); err != nil {
-		t.Fatalf("Error: inserting data: %v", err)
-	}
-
-	flow, err := pg.Flow()
-	if err != nil {
-		t.Fatalf("Error getting flow: %v", err)
-	}
-	defer flow.Close()
-
-	conn, err := pg.Conn(ctx)
-	if err != nil {
-		t.Fatalf("Error getting connection: %v", err)
-	}
-	defer conn.Close(ctx)
-
-	service, _, err := vote.New(ctx, flow, conn)
-	if err != nil {
-		t.Fatalf("Error creating vote: %v", err)
-	}
-
-	fn(service, flow)
 }

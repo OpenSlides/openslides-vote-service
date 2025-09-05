@@ -234,7 +234,16 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	defer tx.Rollback(ctx)
 
 	if poll.State == `started` {
-		// TODO: Create "poll/result
+		votes := poll.VoteList
+		result, err := CreateResult(poll.Method, poll.Config, votes)
+		if err != nil {
+			return fmt.Errorf("create poll result: %w", err)
+		}
+
+		sql := `UPDATE poll SET result = $1 WHERE id = $2;`
+		if _, err := tx.Exec(ctx, sql, result, pollID); err != nil {
+			return fmt.Errorf("set result of poll %d: %w", pollID, err)
+		}
 	}
 
 	newState := "finished"
@@ -533,6 +542,32 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	}
 
 	return defaultVoteWeight, nil
+}
+
+func ValidateVote(method string, config json.RawMessage, vote json.RawMessage) error {
+	switch method {
+	case methodMotion{}.Name():
+		return methodMotion{}.Validate(config, vote)
+	case methodSelection{}.Name():
+		return methodSelection{}.Validate(config, vote)
+	case methodRating{}.Name():
+		return methodRating{}.Validate(config, vote)
+	default:
+		return fmt.Errorf("unknown poll method: %s", method)
+	}
+}
+
+func CreateResult(method string, config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+	switch method {
+	case methodMotion{}.Name():
+		return methodMotion{}.Result(config, votes)
+	case methodSelection{}.Name():
+		return methodSelection{}.Result(config, votes)
+	case methodRating{}.Name():
+		return methodRating{}.Result(config, votes)
+	default:
+		return nil, fmt.Errorf("unknown poll method: %s", method)
+	}
 }
 
 func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID int) (int, bool, error) {

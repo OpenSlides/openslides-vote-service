@@ -127,17 +127,20 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error stopping poll: %v", err)
 				}
 
-				key := dskey.MustKey("poll/1/state")
-				values, err := flow.Get(ctx, key)
+				keyState := dskey.MustKey("poll/1/state")
+				keyResult := dskey.MustKey("poll/1/result")
+				values, err := flow.Get(ctx, keyState, keyResult)
 				if err != nil {
 					t.Fatalf("Error getting state from poll: %v", err)
 				}
 
-				if string(values[key]) != `"finished"` {
-					t.Errorf("Expected state to be finished, got %s", values[key])
+				if string(values[keyState]) != `"finished"` {
+					t.Errorf("Expected state to be finished, got %s", values[keyState])
 				}
 
-				// TODO: Check result
+				if string(values[keyResult]) == `` {
+					t.Errorf("Expected result to be set")
+				}
 			})
 
 			t.Run("Publish", func(t *testing.T) {
@@ -424,6 +427,35 @@ func TestVoteWeight(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
+	t.Helper()
+
+	ctx := t.Context()
+
+	if err := pg.AddData(ctx, data); err != nil {
+		t.Fatalf("Error: inserting data: %v", err)
+	}
+
+	flow, err := pg.Flow()
+	if err != nil {
+		t.Fatalf("Error getting flow: %v", err)
+	}
+	defer flow.Close()
+
+	conn, err := pg.Conn(ctx)
+	if err != nil {
+		t.Fatalf("Error getting connection: %v", err)
+	}
+	defer conn.Close(ctx)
+
+	service, _, err := vote.New(ctx, flow, conn)
+	if err != nil {
+		t.Fatalf("Error creating vote: %v", err)
+	}
+
+	fn(service, flow)
 }
 
 // func TestVoteStart(t *testing.T) {

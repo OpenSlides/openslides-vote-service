@@ -6,23 +6,24 @@ import (
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/fastjson"
+	"github.com/shopspring/decimal"
 )
 
-func ValidateVote(method string, config json.RawMessage, vote json.RawMessage) error {
-	switch method {
-	case "motion":
-		return validateMotion(config, vote)
-	case "selection":
-		return validateSelection(config, vote)
-	case "rating":
-		return validateRating(config, vote)
-	default:
-		return fmt.Errorf("unknown poll method: %s", method)
-	}
+type method interface {
+	Name() string
+	Validate(config json.RawMessage, vote json.RawMessage) error
+	Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error)
 }
 
-func validateMotion(config json.RawMessage, vote json.RawMessage) error {
+type methodMotion struct{}
+
+func (m methodMotion) Name() string {
+	return "motion"
+}
+
+func (m methodMotion) Validate(config json.RawMessage, vote json.RawMessage) error {
 	var cfg struct {
 		Abstain dsfetch.Maybe[bool] `json:"abstain"`
 	}
@@ -46,7 +47,58 @@ func validateMotion(config json.RawMessage, vote json.RawMessage) error {
 	}
 }
 
-func validateSelection(config json.RawMessage, vote json.RawMessage) error {
+func (m methodMotion) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+	var result struct {
+		Yes     decimal.Decimal `json:"yes"`
+		No      decimal.Decimal `json:"no"`
+		Abstain decimal.Decimal `json:"abstain,omitzero"`
+		Invalid decimal.Decimal `json:"invalid,omitzero"`
+		Base    int             `json:"base"`
+	}
+
+	for _, vote := range votes {
+		if err := m.Validate(config, json.RawMessage(vote.Value)); err != nil {
+			result.Invalid = result.Invalid.Add(decimal.NewFromInt(1))
+			continue
+		}
+
+		weight := vote.Weight
+		if weight == "" {
+			weight = "1"
+		}
+		factor, err := decimal.NewFromString(weight)
+		if err != nil {
+			return nil, fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
+		}
+
+		switch strings.ToLower(string(vote.Value)) {
+		case `"yes"`:
+			result.Yes = result.Yes.Add(factor)
+		case `"no"`:
+			result.No = result.No.Add(factor)
+		case `"abstain"`:
+			result.Abstain = result.Abstain.Add(factor)
+		}
+
+	}
+	// TODO: Calc base
+	result.Base = len(votes) - int(result.Invalid.IntPart())
+
+	encodedResult, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode result: %w", err)
+	}
+
+	return encodedResult, nil
+}
+
+type methodSelection struct{}
+
+func (m methodSelection) Name() string {
+	return "selection"
+}
+
+func (m methodSelection) Validate(config json.RawMessage, vote json.RawMessage) error {
 	var cfg struct {
 		Options          []string           `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
@@ -78,7 +130,17 @@ func validateSelection(config json.RawMessage, vote json.RawMessage) error {
 	return nil
 }
 
-func validateRating(config json.RawMessage, vote json.RawMessage) error {
+func (m methodSelection) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+	return nil, nil
+}
+
+type methodRating struct{}
+
+func (m methodRating) Name() string {
+	return "rating"
+}
+
+func (m methodRating) Validate(config json.RawMessage, vote json.RawMessage) error {
 	var cfg struct {
 		Options           []string           `json:"options"`
 		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
@@ -132,4 +194,8 @@ func validateRating(config json.RawMessage, vote json.RawMessage) error {
 	}
 
 	return nil
+}
+
+func (m methodRating) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+	return nil, nil
 }
