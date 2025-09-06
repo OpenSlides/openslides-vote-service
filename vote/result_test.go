@@ -25,7 +25,7 @@ func TestCreateResult(t *testing.T) {
 				{Value: `"Yes"`},
 				{Value: `"No"`},
 			},
-			expectResult: `{"yes":"2","no":"1","base":3}`,
+			expectResult: `{"yes":"2","no":"1"}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

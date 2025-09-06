@@ -53,7 +53,6 @@ func (m methodMotion) Result(config json.RawMessage, votes []dsmodels.Vote) ([]b
 		No      decimal.Decimal `json:"no"`
 		Abstain decimal.Decimal `json:"abstain,omitzero"`
 		Invalid decimal.Decimal `json:"invalid,omitzero"`
-		Base    int             `json:"base"`
 	}
 
 	for _, vote := range votes {
@@ -81,8 +80,6 @@ func (m methodMotion) Result(config json.RawMessage, votes []dsmodels.Vote) ([]b
 		}
 
 	}
-	// TODO: Calc base
-	result.Base = len(votes) - int(result.Invalid.IntPart())
 
 	encodedResult, err := json.Marshal(result)
 	if err != nil {
