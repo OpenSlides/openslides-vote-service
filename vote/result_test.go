@@ -25,7 +25,19 @@ func TestCreateResult(t *testing.T) {
 				{Value: `"Yes"`},
 				{Value: `"No"`},
 			},
-			expectResult: `{"yes":"2","no":"1"}`,
+			expectResult: `{"no":"1","yes":"2"}`,
+		},
+		{
+			name:   "Motion with invalid",
+			method: "motion",
+			config: "",
+			votes: []dsmodels.Vote{
+				{Value: `"Yes"`},
+				{Value: `"Yes"`},
+				{Value: `"No"`},
+				{Value: `"ABC"`},
+			},
+			expectResult: `{"invalid":1,"no":"1","yes":"2"}`,
 		},
 		{
 			name:   "Selection",
@@ -37,6 +49,28 @@ func TestCreateResult(t *testing.T) {
 				{Value: `[2]`, Weight: "5"},
 			},
 			expectResult: `{"0":"1","1":"2","2":"6"}`,
+		},
+		{
+			name:   "Rating",
+			method: "rating",
+			config: `{"options":["tom","gregor","hans"]}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"0":3,"1":3}`},
+				{Value: `{"1":2,"2":3}`},
+				{Value: `{"2":5}`, Weight: "5"},
+			},
+			expectResult: `{"0":"3","1":"5","2":"28"}`,
+		},
+		{
+			name:   "Rating-Motion",
+			method: "rating-motion",
+			config: `{"options":["tom","gregor","hans"]}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"0":"yes","1":"no"}`},
+				{Value: `{"1":"yes","2":"no"}`},
+				{Value: `{"2":"yes"}`, Weight: "5"},
+			},
+			expectResult: `{"0":{"yes":"1"},"1":{"no":"1","yes":"1"},"2":{"no":"1","yes":"5"}}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

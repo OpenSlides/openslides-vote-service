@@ -415,38 +415,59 @@ option-ids sind.
 
 ### rating
 
-Bei Rating kann pro Option ein Wert abgegeben werden. Das kann - je nach
-`poll/config` - eine Zahl oder ein Wert wie `yes`, `no`, `abstain` sein.
+Rating ist eine Abstimmung, bei denen verschiedene Optionen mit einer Zahl
+bewertet werden.
+
+Die Optionen sind:
+	- options: Wie bei selection eine Reihne von Optionen mit beliebigen Value
+	- max_options_amount: Die maximale Anahl von Optionen pro Vote
+	- min_options_amount: Die minimale Anzahl von Optionen pro Vote
+	- max_votes_per_option: Der maximale Wert pro Option
+	- max_vote_sum: Der maximale Wert aller Optionen aufsummiert
+	- min_vote_sum: Der minimale Wert aller Optionen aufsummiert
+
 
 `poll/result` kann dann wie folgt aussehen:
 
-`{"23": 30, "42": 50, "72": 1, "404": 30, "base": 70}`
+`{"23": "30", "42": "50", "72": "1", "404": "30"}`
 
-oder
+
+### rating-motion
+
+Ratin-motion ist wie rating, doch jede Option wird sie mit `yes`, `no` oder
+`abstain` bewertet.
+
+Die Optionen sind:
+	- options: Wie bei selection eine Reihne von Optionen mit beliebigen Value
+	- max_options_amount: Die maximale Anahl von Optionen pro Vote
+	- min_options_amount: Die minimale Anzahl von Optionen pro Vote
+	- abstain: Wenn true, dürfen enthaltungen gesendet werden.
+
+
+`poll/result` kann dann wie folgt aussehen:
 
 ```json
 {
   "23": {
-    "yes": 30,
-    "no": 20,
-    "abstain": 10
+    "yes": "30",
+    "no": "20",
+    "abstain": "10"
   },
   "42": {
-    "yes": 50,
-    "no": 10,
-    "abstain": 0
+    "yes": "50",
+    "no": "10",
+    "abstain": "0"
   },
   "72": {
-    "yes": 1,
-    "no": 0,
-    "abstain": 0
+    "yes": "1",
+    "no": "0",
+    "abstain": "0"
   },
   "404": {
-    "yes": 30,
-    "no": 20,
-    "abstain": 10
-  },
-  "base": 70
+    "yes": "30",
+    "no": "20",
+    "abstain": "10"
+  }
 }
 ```
 

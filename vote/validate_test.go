@@ -205,6 +205,13 @@ func TestValidateVote(t *testing.T) {
 			vote:        `{"1":5, "0":5}`,
 			expectValid: true,
 		},
+		{
+			name:        "Rating-Motion",
+			method:      "rating-motion",
+			config:      `{"options":["Max","Hubert"]}`,
+			vote:        `{"0":"Yes", "1":"No"}`,
+			expectValid: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := json.RawMessage(tt.config)

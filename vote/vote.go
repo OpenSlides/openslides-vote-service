@@ -552,6 +552,8 @@ func ValidateVote(method string, config json.RawMessage, vote json.RawMessage) e
 		return methodSelection{}.Validate(config, vote)
 	case methodRating{}.Name():
 		return methodRating{}.Validate(config, vote)
+	case methodRatingMotion{}.Name():
+		return methodRatingMotion{}.Validate(config, vote)
 	default:
 		return fmt.Errorf("unknown poll method: %s", method)
 	}
@@ -565,6 +567,8 @@ func CreateResult(method string, config json.RawMessage, votes []dsmodels.Vote) 
 		return methodSelection{}.Result(config, votes)
 	case methodRating{}.Name():
 		return methodRating{}.Result(config, votes)
+	case methodRatingMotion{}.Name():
+		return methodRatingMotion{}.Result(config, votes)
 	default:
 		return nil, fmt.Errorf("unknown poll method: %s", method)
 	}
