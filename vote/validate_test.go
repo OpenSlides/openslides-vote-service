@@ -2,6 +2,7 @@ package vote_test
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/OpenSlides/openslides-vote-service/vote"
@@ -15,13 +16,6 @@ func TestValidateVote(t *testing.T) {
 		vote        string
 		expectValid bool
 	}{
-		{
-			name:        "Unknown Method",
-			method:      "unknown",
-			config:      "",
-			vote:        "",
-			expectValid: false,
-		},
 		{
 			name:        "Motion: Vote Yes",
 			method:      "motion",
@@ -48,6 +42,13 @@ func TestValidateVote(t *testing.T) {
 			method:      "motion",
 			config:      `{"abstain": false}`,
 			vote:        `"Abstain"`,
+			expectValid: false,
+		},
+		{
+			name:        "Selection invalid json",
+			method:      "selection",
+			config:      `{"options":["Max","Hubert"]}`,
+			vote:        `[0`,
 			expectValid: false,
 		},
 		{
@@ -211,6 +212,12 @@ func TestValidateVote(t *testing.T) {
 				cfg = nil
 			}
 			err := vote.ValidateVote(tt.method, cfg, json.RawMessage(tt.vote))
+
+			if err != nil {
+				if !errors.Is(err, vote.ErrInvalid) {
+					t.Errorf("Got unexpected error: %v", err)
+				}
+			}
 
 			if tt.expectValid {
 				if err != nil {

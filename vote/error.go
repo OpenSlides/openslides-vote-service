@@ -77,6 +77,10 @@ func (err TypeError) Error() string {
 	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, err.Type(), msg)
 }
 
+func invalidVote(msg string, a ...any) error {
+	return MessageErrorf(ErrInvalid, msg, a...)
+}
+
 type messageError struct {
 	TypeError
 	msg string

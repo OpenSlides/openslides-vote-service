@@ -27,6 +27,17 @@ func TestCreateResult(t *testing.T) {
 			},
 			expectResult: `{"yes":"2","no":"1"}`,
 		},
+		{
+			name:   "Selection",
+			method: "selection",
+			config: `{"options":["tom","gregor","hans"]}`,
+			votes: []dsmodels.Vote{
+				{Value: `[0,1]`},
+				{Value: `[1,2]`},
+				{Value: `[2]`, Weight: "5"},
+			},
+			expectResult: `{"0":"1","1":"2","2":"6"}`,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := json.RawMessage(tt.config)

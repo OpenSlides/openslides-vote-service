@@ -270,10 +270,7 @@ aktuellen Felder `poll/min_votes_amount`, `poll/max_votes_amount` oder
 
 ### 100% basis
 
-Auch die Grundlage für die 100% basis wird über `poll/config` geregelt. Der
-absolute Wert der bases (z. B. 400 Nutzer) wird am Ende in `poll/result`
-gespeichert, damit das Ergebnis angezeigt werden kann, ohne auf andere Felder
-zugreifen zu müssen.
+Noch zu klären
 
 
 ### Option
@@ -332,6 +329,10 @@ eine eigene geheime Abstimmung durchgeführt werden und das Ergebnis in einer
 analogen Wahl manuell zusammengefasst werden. In Zukunft könnten wir uns
 überlegen, diesen Weg automatisch als Feature zu implementieren.
 
+Da das Vote-Weight eine Dezimale-Zahl ist, können auch die Werte in den
+Ergebnissen Dezimale Zahlen sein. Aus diesem Grund sind die Ergebnisse im JSON
+keine Zahlen, sondern Strings (nicht 3, sondern "3").
+
 
 ### Migration
 
@@ -357,26 +358,59 @@ genannten Methoden im laufe der Implementierung angepasst.
 
 ### motion
 
+Dies ist die klassische Methode für Motions. Es gibt eine Sache, zu der Ja, Nein
+und Enthaltung gesagt werden kann.
+
+Es gibt nur eine Einstellung "abstain", die entweder True oder False sein kann.
+Der default ist True.
+
 Die vom vom user gesendeten Werte in `vote/value` können die Werte `yes`, `no`
-und `abstain` haben. Über `poll/config` kann letzters verboten werden.
+und `abstain` haben. Letztes kann über die Einstellung verboten sein.
 
 `poll/result` sieht dann wie folgt aus:
 
-`{"yes": 32, "no": 20, "abstain": 10, "base": 70}`
+`{"yes": "32", "no": "20", "abstain": "10"}`
+
+Die Werte sind Strings, da es Dezimal-Werte sein könnten (siehe vote-weight).
 
 
 ### selection
 
-In `poll/config` wird gespeichert, welche Optionen es gibt und jeder Option eine
-eindeutige Nummer zugeordnet. Der Nutzer übersendet eine Liste der option-ids,
-für die er stimmen möchte. Über `poll/config` wird definiert, wie viele Stimmen
-ein Nutzer hat und ob die übersandten ids positiv oder negativ gewertet werden
-sollen (im Bisherignen System `Y` vs. `N`)
+Selektion ist eine Auswahl zwischen mehreren Möglichkeiten. Die Auswahl kann
+entweder positiv (ich wähle folgende Optionen) oder negativ (ich will folgende
+Optionen nicht) sein.
+
+In `poll/config` wird gespeichert, welche Optionen es gibt. Der Nutzer
+übersendet eine Liste der option-indexes, für die er stimmen möchte. Über
+`poll/config` wird definiert, wie viele Stimmen ein Nutzer hat und ob die
+übersandten ids positiv oder negativ gewertet werden sollen (im Bisherignen
+System `Y` vs. `N`).
+
+`poll/config` sieht wie folgt aus:
+
+```json
+{
+  "options": ["Hans", "Gregor", "Tom"],
+  "max_options_amount": 2,
+  "min_options_amount": 1
+}
+```
+
+`options` kann dabei alles sein. Der vote-service muss nur wissen, wie viele es
+sind oder verwendet nur die indexe. Wenn es für assigments verwendet wird, dann
+werden es vermutlich ids von `poll_candidate` objekten sein.
+
+Ein `vote` ist eine Liste von Indexen. Zum Beispiel `[0,1]` für "Hans" und
+"Gregor".
+
+Über die Einstellungen `max_options_amount` und `min_options_amount` kann die
+Anzahl an Optionen bestimmt werden, welche pro Abstimmung abgegeben werden
+können. Der Default ist keine Beschränkung.
 
 `poll/result` kann Beispielsweise wie folgt aussehen, wobei die keys die
 option-ids sind.
 
-`{"23": 30, "42": 50, "72": 1, "404": 30, "abstain": 3, "base": 120}
+`{"0": "30", "1": "50", "2": "1", "abstain": 3}`
 
 
 ### rating
