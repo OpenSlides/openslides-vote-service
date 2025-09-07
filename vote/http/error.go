@@ -10,7 +10,9 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-func getResolveError(logger func(fmt string, a ...any) (int, error)) func(handler Handler) http.HandlerFunc {
+type logger func(fmt string, a ...any) (int, error)
+
+func getResolveError(logger logger) func(handler Handler) http.HandlerFunc {
 	return func(handler Handler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			err := handler.ServeHTTP(w, r)
@@ -41,7 +43,7 @@ func writeStatusCode(w http.ResponseWriter, err error) {
 	w.WriteHeader(statusCode)
 }
 
-func writeFormattedError(w io.Writer, err error, logger func(fmt string, a ...any) (int, error)) {
+func writeFormattedError(w io.Writer, err error, logger logger) {
 	errType := "internal"
 	msg := err.Error()
 	var errTyped interface {

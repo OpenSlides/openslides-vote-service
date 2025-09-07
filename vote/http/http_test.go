@@ -34,7 +34,7 @@ func (c *createrStub) Create(ctx context.Context, requestUserID int, r io.Reader
 
 func TestHandleCreate(t *testing.T) {
 	creater := &createrStub{pollID: 42}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/system/vote/create"
 	mux := testresolveError(handleCreate(creater, auth))
@@ -142,7 +142,7 @@ func (u *updaterStub) Update(ctx context.Context, pollID int, requestUserID int,
 
 func TestHandleUpdate(t *testing.T) {
 	updater := &updaterStub{}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/system/vote/update"
 	mux := testresolveError(handleUpdate(updater, auth))
@@ -252,7 +252,7 @@ func (d *deleterStub) Delete(ctx context.Context, pollID int, requestUserID int)
 
 func TestHandleDelete(t *testing.T) {
 	deleter := &deleterStub{}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/system/vote/delete"
 	mux := testresolveError(handleDelete(deleter, auth))
@@ -356,7 +356,7 @@ func (c *starterStub) Start(ctx context.Context, pollID int, requestUserID int) 
 
 func TestHandleStart(t *testing.T) {
 	starter := &starterStub{}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/vote/start"
 	mux := testresolveError(handleStart(starter, auth))
@@ -465,7 +465,7 @@ func (s *finalizerStub) Finalize(ctx context.Context, pollID int, requestUserID 
 
 func TestHandleFinalize(t *testing.T) {
 	finalizer := &finalizerStub{}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/vote/finalize"
 	mux := testresolveError(handleFinalize(finalizer, auth))
@@ -560,7 +560,7 @@ func (r *reseterStub) Reset(ctx context.Context, pollID int, requestUserID int) 
 
 func TestHandleReset(t *testing.T) {
 	reseter := &reseterStub{}
-	auth := &autherStub{userID: 1}
+	auth := &AutherStub{userID: 1}
 
 	url := "/system/vote/reset"
 	mux := testresolveError(handleReset(reseter, auth))
@@ -673,7 +673,7 @@ func (v *voterStub) Vote(ctx context.Context, pollID, requestUserID int, r io.Re
 
 func TestHandleVote(t *testing.T) {
 	voter := &voterStub{}
-	auther := &autherStub{}
+	auther := &AutherStub{}
 
 	url := "/system/vote"
 	mux := testresolveError(handleVote(voter, auther))
@@ -812,19 +812,20 @@ func (AuthError) Type() string {
 	return "auth"
 }
 
-type autherStub struct {
+// AutherSub fakes auth
+type AutherStub struct {
 	userID  int
 	authErr bool
 }
 
-func (a *autherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+func (a *AutherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
 	if a.authErr {
 		return nil, AuthError{}
 	}
 	return r.Context(), nil
 }
 
-func (a *autherStub) FromContext(context.Context) int {
+func (a *AutherStub) FromContext(context.Context) int {
 	return a.userID
 }
 

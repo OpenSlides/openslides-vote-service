@@ -18,14 +18,16 @@ var envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which th
 
 // Server can start the service on a port.
 type Server struct {
-	Addr string
-	lst  net.Listener
+	Addr   string
+	lst    net.Listener
+	logger logger
 }
 
 // New initializes a new Server.
-func New(lookup environment.Environmenter) Server {
+func New(lookup environment.Environmenter, logger logger) Server {
 	return Server{
-		Addr: ":" + envVotePort.Value(lookup),
+		Addr:   ":" + envVotePort.Value(lookup),
+		logger: logger,
 	}
 }
 
@@ -45,7 +47,7 @@ func (s *Server) StartListener() error {
 
 // Run starts the http service.
 func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote) error {
-	mux := registerHandlers(service, auth)
+	mux := registerHandlers(service, auth, s.logger)
 
 	srv := &http.Server{
 		Handler:     mux,
@@ -69,7 +71,7 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 		}
 	}
 
-	fmt.Printf("Listen on %s\n", s.Addr)
+	s.logger("Listen on %s\n", s.Addr)
 	if err := srv.Serve(s.lst); err != http.ErrServerClosed {
 		return fmt.Errorf("HTTP Server failed: %w", err)
 	}
@@ -92,21 +94,20 @@ type authenticater interface {
 	FromContext(context.Context) int
 }
 
-func registerHandlers(service voteService, auth authenticater) *http.ServeMux {
+func registerHandlers(service voteService, auth authenticater, logger logger) *http.ServeMux {
 	const base = "/system/vote"
 
-	resolveError := getResolveError(fmt.Printf)
+	resolveError := getResolveError(logger)
 
 	mux := http.NewServeMux()
 
-	mux.Handle(base, resolveError(handleVote(service, auth)))
 	mux.Handle(base+"/create", resolveError(handleCreate(service, auth)))
 	mux.Handle(base+"/update", resolveError(handleUpdate(service, auth)))
 	mux.Handle(base+"/delete", resolveError(handleDelete(service, auth)))
 	mux.Handle(base+"/start", resolveError(handleStart(service, auth)))
 	mux.Handle(base+"/finalize", resolveError(handleFinalize(service, auth)))
 	mux.Handle(base+"/reset", resolveError(handleReset(service, auth)))
-	mux.Handle(base+"/vote", resolveError(handleVote(service, auth)))
+	mux.Handle(base, resolveError(handleVote(service, auth)))
 	mux.Handle(base+"/health", resolveError(handleHealth()))
 
 	return mux

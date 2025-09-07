@@ -86,7 +86,7 @@ func buildDocu() error {
 func initService(lookup environment.Environmenter) (func(context.Context) error, error) {
 	var backgroundTasks []func(context.Context, func(error))
 
-	httpServer := http.New(lookup)
+	httpServer := http.New(lookup, fmt.Printf)
 
 	// Redis as message bus for datastore and logout events.
 	messageBus := messageBusRedis.New(lookup)
