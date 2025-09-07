@@ -164,7 +164,7 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 
 }
 
-func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int) error {
+func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching poll: %w", err)

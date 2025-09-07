@@ -78,8 +78,12 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 }
 
 type voteService interface {
+	creater
+	updater
+	deleter
 	starter
 	finalizer
+	reseter
 	voter
 }
 
@@ -94,11 +98,92 @@ func registerHandlers(service voteService, auth authenticater) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.Handle(base, resolveError(handleVote(service, auth)))
+	mux.Handle(base+"/create", resolveError(handleCreate(service, auth)))
+	mux.Handle(base+"/update", resolveError(handleUpdate(service, auth)))
+	mux.Handle(base+"/delete", resolveError(handleDelete(service, auth)))
 	mux.Handle(base+"/start", resolveError(handleStart(service, auth)))
 	mux.Handle(base+"/finalize", resolveError(handleFinalize(service, auth)))
+	mux.Handle(base+"/reset", resolveError(handleReset(service, auth)))
+	mux.Handle(base+"/vote", resolveError(handleVote(service, auth)))
 	mux.Handle(base+"/health", resolveError(handleHealth()))
 
 	return mux
+}
+
+type creater interface {
+	Create(ctx context.Context, requestUserID int, r io.Reader) (int, error)
+}
+
+func handleCreate(create creater, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := create.Create(ctx, uid, r.Body)
+		if err != nil {
+			return fmt.Errorf("create: %w", err)
+		}
+
+		result := struct {
+			PollID int `json:"poll_id"`
+		}{pollID}
+
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			return fmt.Errorf("encoding and sending poll id: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type updater interface {
+	Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error
+}
+
+func handleUpdate(update updater, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := update.Update(ctx, pollID, uid, r.Body); err != nil {
+			return fmt.Errorf("update: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type deleter interface {
+	Delete(ctx context.Context, pollID int, requestUserID int) error
+}
+
+func handleDelete(delete deleter, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := delete.Delete(ctx, pollID, uid); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+
+		return nil
+	}
 }
 
 type starter interface {
@@ -107,20 +192,9 @@ type starter interface {
 
 func handleStart(start starter, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		w.Header().Set("Content-Type", "application/json")
-
-		if r.Method != http.MethodPost {
-			return vote.MessageError(vote.ErrInvalid, "Only POST method is allowed")
-		}
-
-		ctx, err := auth.Authenticate(w, r)
+		ctx, uid, err := prepareRequest(w, r, auth)
 		if err != nil {
-			return err
-		}
-
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not start a poll"))
+			return fmt.Errorf("prepare request: %w", err)
 		}
 
 		id, err := pollID(r)
@@ -128,7 +202,7 @@ func handleStart(start starter, auth authenticater) HandlerFunc {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		return start.Start(r.Context(), id, uid)
+		return start.Start(ctx, id, uid)
 	}
 }
 
@@ -138,20 +212,9 @@ type finalizer interface {
 
 func handleFinalize(finalize finalizer, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		w.Header().Set("Content-Type", "application/json")
-
-		if r.Method != http.MethodPost {
-			return vote.MessageError(vote.ErrInvalid, "Only POST method is allowed")
-		}
-
-		ctx, err := auth.Authenticate(w, r)
+		ctx, uid, err := prepareRequest(w, r, auth)
 		if err != nil {
-			return err
-		}
-
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not stop a poll"))
+			return fmt.Errorf("prepare request: %w", err)
 		}
 
 		id, err := pollID(r)
@@ -162,7 +225,31 @@ func handleFinalize(finalize finalizer, auth authenticater) HandlerFunc {
 		publish := r.URL.Query().Has("publish")
 		anonymize := r.URL.Query().Has("anonymize")
 
-		return finalize.Finalize(r.Context(), id, uid, publish, anonymize)
+		return finalize.Finalize(ctx, id, uid, publish, anonymize)
+	}
+}
+
+type reseter interface {
+	Reset(ctx context.Context, pollID int, requestUserID int) error
+}
+
+func handleReset(reset reseter, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := reset.Reset(ctx, pollID, uid); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -172,20 +259,9 @@ type voter interface {
 
 func handleVote(service voter, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		w.Header().Set("Content-Type", "application/json")
-
-		if r.Method != http.MethodPost {
-			return vote.MessageError(vote.ErrInvalid, "Only POST method is allowed")
-		}
-
-		ctx, err := auth.Authenticate(w, r)
+		ctx, uid, err := prepareRequest(w, r, auth)
 		if err != nil {
-			return err
-		}
-
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
+			return fmt.Errorf("prepare request: %w", err)
 		}
 
 		id, err := pollID(r)
@@ -276,4 +352,29 @@ type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
+}
+
+// prepare Requests bundles the functionality needed for all handlers.
+//
+// - sets the header Content-Type to application/json
+// - authenticates the user
+// - returns the authenticated ctx and the request user id
+func prepareRequest(w http.ResponseWriter, r *http.Request, auth authenticater) (context.Context, int, error) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		return nil, 0, vote.MessageError(vote.ErrInvalid, "Only POST method is allowed")
+	}
+
+	ctx, err := auth.Authenticate(w, r)
+	if err != nil {
+		return nil, 0, fmt.Errorf("authenticate request user: %w", err)
+	}
+
+	uid := auth.FromContext(ctx)
+	if uid == 0 {
+		return nil, 0, statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not use the vote service"))
+	}
+
+	return ctx, uid, nil
 }
