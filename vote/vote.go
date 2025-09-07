@@ -58,7 +58,14 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		return 0, fmt.Errorf("check permissions: %w", err)
 	}
 
-	// TODO: Check organization/1/enable_electronic_voting but not for manually polls
+	electronicVotingEnabled, err := dsfetch.New(v.flow).Organization_EnableElectronicVoting(1).Value(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("fetch organization/1/enable_electronic_voting: %w", err)
+	}
+
+	if ci.Visibility != "manually" && !electronicVotingEnabled {
+		return 0, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
+	}
 
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
@@ -84,8 +91,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	sequentialNumber += 1
 
 	sql := `INSERT INTO poll
-		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8)
+		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result)
+		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)
 		RETURNING id;`
 
 	var newID int
@@ -99,7 +106,9 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.Visibility,
 		sequentialNumber,
 		ci.ContentObjectID,
-		ci.MeetingID).Scan(&newID); err != nil {
+		ci.MeetingID,
+		string(ci.Result),
+	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
 
@@ -140,6 +149,7 @@ type CreateInput struct {
 	Config           json.RawMessage `json:"config"`
 	Visibility       string          `json:"visibility"`
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
+	Result           json.RawMessage `json:"result"`
 }
 
 func parseCreateInput(r io.Reader) (CreateInput, error) {
@@ -152,13 +162,31 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 		return CreateInput{}, MessageError(ErrInvalid, "Title can not be empty")
 	}
 
+	if ci.ContentObjectID == "" {
+		return CreateInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
+	}
+
 	if ci.MeetingID == 0 {
 		return CreateInput{}, MessageError(ErrInvalid, "Meeting ID can not be empty")
 	}
 
-	if ci.ContentObjectID == "" {
-		return CreateInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
+	if ci.Method == "" {
+		return CreateInput{}, MessageError(ErrInvalid, "Method can not be empty")
 	}
+
+	if ci.Visibility == "" {
+		return CreateInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
+	}
+
+	if ci.Visibility == "manually" && len(ci.EntitledGroupIDs) > 0 {
+		return CreateInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
+	}
+
+	if ci.Visibility != "manually" && ci.Result != nil {
+		return CreateInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
+	}
+
+	// TODO: Validate config
 
 	return ci, nil
 
@@ -563,7 +591,7 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	return defaultVoteWeight, nil
 }
 
-func ValidateVote(method string, config json.RawMessage, vote json.RawMessage) error {
+func ValidateVote(method string, config string, vote json.RawMessage) error {
 	switch method {
 	case methodMotion{}.Name():
 		return methodMotion{}.Validate(config, vote)
@@ -578,7 +606,7 @@ func ValidateVote(method string, config json.RawMessage, vote json.RawMessage) e
 	}
 }
 
-func CreateResult(method string, config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+func CreateResult(method string, config string, votes []dsmodels.Vote) (string, error) {
 	switch method {
 	case methodMotion{}.Name():
 		return methodMotion{}.Result(config, votes)
@@ -589,7 +617,7 @@ func CreateResult(method string, config json.RawMessage, votes []dsmodels.Vote) 
 	case methodRatingMotion{}.Name():
 		return methodRatingMotion{}.Result(config, votes)
 	default:
-		return nil, fmt.Errorf("unknown poll method: %s", method)
+		return "", fmt.Errorf("unknown poll method: %s", method)
 	}
 }
 

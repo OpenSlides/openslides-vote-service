@@ -1,7 +1,6 @@
 package vote_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
@@ -74,11 +73,8 @@ func TestCreateResult(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := json.RawMessage(tt.config)
-			if tt.config == "" {
-				cfg = nil
-			}
-			result, err := vote.CreateResult(tt.method, cfg, tt.votes)
+
+			result, err := vote.CreateResult(tt.method, tt.config, tt.votes)
 			if err != nil {
 				t.Fatalf("CreateResult: %v", err)
 			}

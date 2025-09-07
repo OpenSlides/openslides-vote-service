@@ -74,6 +74,18 @@ geklickt. In dem Moment wird dann create request abgesandt.
 Bei analogen Polls bedeutet das, dass bereits an dieser Stelle das Ergebnis
 übertragen werden kann.
 
+Im Body müssen die Daten zum anlegen der Poll übergeben werden. Das ist ein json-objekt mit folgenden Feldern:
+
+- title (required)
+- description (optional)
+- content_object_id (required)
+- meeting_id (required)
+- method (required)
+- config (abhängig von method. Kann required oder optional sein)
+- visibility (required)
+- entitled_group_ids (nur wenn visibility != manually)
+- result (nur wenn visibility == manually)
+
 
 ### /vote/update
 

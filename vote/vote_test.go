@@ -29,6 +29,7 @@ func TestAll(t *testing.T) {
 	defer pg.Close()
 
 	data := `---
+	organization/1/enable_electronic_voting: true
 	motion/5:
 		meeting_id: 1
 		sequential_number: 1
@@ -209,6 +210,65 @@ func TestAll(t *testing.T) {
 
 		},
 	)
+}
+
+func TestCreateManually(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	user/5:
+		username: admin
+		organization_management_level: superadmin
+
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	meeting/1/welcome_title: hello world
+	`
+
+	withData(t, pg, data, func(service *vote.Vote, flow flow.Flow) {
+		body := `{
+			"title": "my poll",
+			"content_object_id": "motion/5",
+			"method": "motion",
+			"visibility": "manually",
+			"meeting_id": 1,
+			"result": {"no":"23","yes":"42"}
+		}`
+
+		id, err := service.Create(ctx, 5, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("Error creating poll: %v", err)
+		}
+
+		if id != 1 {
+			t.Errorf("Expected id 1, got %d", id)
+		}
+
+		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+		if err != nil {
+			t.Fatalf("Fetch poll: %v", err)
+		}
+
+		if poll.Result != `{"no":"23","yes":"42"}` {
+			t.Errorf("Result does not match")
+		}
+	})
 }
 
 func TestVote(t *testing.T) {

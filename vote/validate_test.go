@@ -214,11 +214,7 @@ func TestValidateVote(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := json.RawMessage(tt.config)
-			if tt.config == "" {
-				cfg = nil
-			}
-			err := vote.ValidateVote(tt.method, cfg, json.RawMessage(tt.vote))
+			err := vote.ValidateVote(tt.method, tt.config, json.RawMessage(tt.vote))
 
 			if err != nil {
 				if !errors.Is(err, vote.ErrInvalid) {

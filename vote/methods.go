@@ -14,8 +14,8 @@ import (
 
 type method interface {
 	Name() string
-	Validate(config json.RawMessage, vote json.RawMessage) error
-	Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error)
+	Validate(config string, vote json.RawMessage) error
+	Result(config string, votes []dsmodels.Vote) (string, error)
 }
 
 type methodMotion struct{}
@@ -24,13 +24,13 @@ func (m methodMotion) Name() string {
 	return "motion"
 }
 
-func (m methodMotion) Validate(config json.RawMessage, vote json.RawMessage) error {
+func (m methodMotion) Validate(config string, vote json.RawMessage) error {
 	var cfg struct {
 		Abstain dsfetch.Maybe[bool] `json:"abstain"`
 	}
 
-	if config != nil {
-		if err := json.Unmarshal(config, &cfg); err != nil {
+	if config != "" {
+		if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 			return fmt.Errorf("invalid configuration: %w", err)
 		}
 	}
@@ -48,7 +48,7 @@ func (m methodMotion) Validate(config json.RawMessage, vote json.RawMessage) err
 	}
 }
 
-func (m methodMotion) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+func (m methodMotion) Result(config string, votes []dsmodels.Vote) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		switch strings.ToLower(value) {
 		case `"yes"`:
@@ -68,14 +68,14 @@ func (m methodSelection) Name() string {
 	return "selection"
 }
 
-func (m methodSelection) Validate(config json.RawMessage, vote json.RawMessage) error {
+func (m methodSelection) Validate(config string, vote json.RawMessage) error {
 	var cfg struct {
 		Options          []json.RawMessage  `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
 	}
 
-	if err := json.Unmarshal(config, &cfg); err != nil {
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -100,7 +100,7 @@ func (m methodSelection) Validate(config json.RawMessage, vote json.RawMessage) 
 	return nil
 }
 
-func (m methodSelection) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions []int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
@@ -121,7 +121,7 @@ func (m methodRating) Name() string {
 	return "rating"
 }
 
-func (m methodRating) Validate(config json.RawMessage, vote json.RawMessage) error {
+func (m methodRating) Validate(config string, vote json.RawMessage) error {
 	var cfg struct {
 		Options           []json.RawMessage  `json:"options"`
 		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
@@ -131,7 +131,7 @@ func (m methodRating) Validate(config json.RawMessage, vote json.RawMessage) err
 		MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
 	}
 
-	if err := json.Unmarshal(config, &cfg); err != nil {
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -177,7 +177,7 @@ func (m methodRating) Validate(config json.RawMessage, vote json.RawMessage) err
 	return nil
 }
 
-func (m methodRating) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+func (m methodRating) Result(config string, votes []dsmodels.Vote) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions map[int]int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
@@ -199,7 +199,7 @@ func (m methodRatingMotion) Name() string {
 	return "rating-motion"
 }
 
-func (m methodRatingMotion) Validate(config json.RawMessage, vote json.RawMessage) error {
+func (m methodRatingMotion) Validate(config string, vote json.RawMessage) error {
 	var cfg struct {
 		Options          []json.RawMessage   `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
@@ -207,7 +207,7 @@ func (m methodRatingMotion) Validate(config json.RawMessage, vote json.RawMessag
 		Abstain          dsfetch.Maybe[bool] `json:"abstain"`
 	}
 
-	if err := json.Unmarshal(config, &cfg); err != nil {
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -238,7 +238,7 @@ type DecimalOrMap struct {
 	values  map[string]decimal.Decimal
 }
 
-func (m methodRatingMotion) Result(config json.RawMessage, votes []dsmodels.Vote) ([]byte, error) {
+func (m methodRatingMotion) Result(config string, votes []dsmodels.Vote) (string, error) {
 	result := make(map[int]map[string]decimal.Decimal)
 	invalid := 0
 
@@ -248,7 +248,7 @@ func (m methodRatingMotion) Result(config json.RawMessage, votes []dsmodels.Vote
 				invalid += 1
 				continue
 			}
-			return nil, fmt.Errorf("validating vote: %w", err)
+			return "", fmt.Errorf("validating vote: %w", err)
 		}
 
 		weightStr := vote.Weight
@@ -257,12 +257,12 @@ func (m methodRatingMotion) Result(config json.RawMessage, votes []dsmodels.Vote
 		}
 		weight, err := decimal.NewFromString(weightStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
+			return "", fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
 		}
 
 		var votedOptions map[int]json.RawMessage
 		if err := json.Unmarshal([]byte(vote.Value), &votedOptions); err != nil {
-			return nil, fmt.Errorf("invalid options `%s`: %w", vote.Value, err)
+			return "", fmt.Errorf("invalid options `%s`: %w", vote.Value, err)
 		}
 
 		for optionIdx, value := range votedOptions {
@@ -283,13 +283,13 @@ func (m methodRatingMotion) Result(config json.RawMessage, votes []dsmodels.Vote
 
 	encodedResult, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("encode result: %w", err)
+		return "", fmt.Errorf("encode result: %w", err)
 	}
 	withInvalid, err := addInvalid(encodedResult, invalid)
 	if err != nil {
-		return nil, fmt.Errorf("add invalid: %w", err)
+		return "", fmt.Errorf("add invalid: %w", err)
 	}
-	return withInvalid, nil
+	return string(withInvalid), nil
 }
 
 func addInvalid(result []byte, invalid int) ([]byte, error) {
@@ -309,10 +309,10 @@ func addInvalid(result []byte, invalid int) ([]byte, error) {
 
 func iterateValues(
 	m method,
-	config json.RawMessage,
+	config string,
 	votes []dsmodels.Vote,
 	fn func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error,
-) ([]byte, error) {
+) (string, error) {
 	result := make(map[string]decimal.Decimal)
 	invalid := 0
 	for _, vote := range votes {
@@ -321,7 +321,7 @@ func iterateValues(
 				invalid += 1
 				continue
 			}
-			return nil, fmt.Errorf("validating vote: %w", err)
+			return "", fmt.Errorf("validating vote: %w", err)
 		}
 
 		weight := vote.Weight
@@ -330,22 +330,22 @@ func iterateValues(
 		}
 		factor, err := decimal.NewFromString(weight)
 		if err != nil {
-			return nil, fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
+			return "", fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
 		}
 
 		if err := fn(vote.Value, factor, result); err != nil {
-			return nil, fmt.Errorf("prcess: %w", err)
+			return "", fmt.Errorf("prcess: %w", err)
 		}
 	}
 
 	encodedResult, err := json.Marshal(result)
 	if err != nil {
-		return nil, fmt.Errorf("encode result: %w", err)
+		return "", fmt.Errorf("encode result: %w", err)
 	}
 
 	withInvalid, err := addInvalid(encodedResult, invalid)
 	if err != nil {
-		return nil, fmt.Errorf("add invalid: %w", err)
+		return "", fmt.Errorf("add invalid: %w", err)
 	}
-	return withInvalid, nil
+	return string(withInvalid), nil
 }
