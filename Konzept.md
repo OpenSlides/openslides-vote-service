@@ -487,3 +487,11 @@ Die Optionen sind:
 
 Der Wert ist als beispielshafter Platzhalter eingefügt. Single transferable vote
 würde sich im neuen Konzept aber leicht implementieren lassen.
+
+
+# Aktueller Stand / Offene TODOs
+
+- Der Poll-Update handler ist noch nicht impelemntiert
+- Alte Tests durchgehen und entweder aktualisieren oder löschen
+- Preload von Tests on create - auch wenn ein poll von einer anderen Instanz angelegt wird.
+- Ggf. Fehlermeldung an den Client verschönern

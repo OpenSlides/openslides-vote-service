@@ -1,152 +1,137 @@
 # OpenSlides Vote Service
 
-The Vote Service is part of the OpenSlides environments. It handles the votes
-for motions and elections.
-
-Its expects an existing and valid poll in the database. The service provides
-handlers to start, stop and reset the poll and to receive the votes from the
-users.
+The Vote Service is part of the OpenSlides environments. It is responsible for
+the poll and vote collections. It handles the electronic voting.
 
 The service has no internal state but uses the normal postgres database to save
 the polls.
 
 
-!!!!! TODO from here
+## Handlers
+
+All requests to the vote-service have to be POST-requests.
+
+With the exception of the "vote", all requests can only be sent by a manager.
+The permission depends on the field `content_object_id` of the corresponding poll.
+
+- motions: `motion.can_manage`
+- assignments: `assignment.can_manage`
+- topic: `poll.can_manage`
+
+With the exception of the create request, all requests need an http-get-argument
+in the url, to specify the poll-id. For example `/system/vote/update?id=23`
 
 
-## Install and Start
+### Create a poll
 
-The docker build uses the redis messaging service, the auth token and postgres.
-Make sure the service inside the docker container can connect to this services.
- The auth-secrets have to given as a file.
+`/system/vote/create`
 
-```
-docker build . --tag openslides-vote
-printf "my_token_key" > auth_token_key
-printf "my_cookie_key" > auth_cookie_key
-docker run --network host -v $PWD/auth_token_key:/run/secrets/auth_token_key -v $PWD/auth_cookie_key:/run/secrets/auth_cookie_key openslides-vote
-```
+The permissions for the create requests are a bit different, since the poll does
+not exist in the database, when the request is sent. Therefore the permission
+check depends on the field `content_object_id` in the request body.
 
-It uses the host network to connect to redis.
+The request expects a body with the fields to create the poll:
 
-
-## Example Request with CURL
-
-### Start a Poll
-
-To start a poll a POST request has to be send to the start-url.
-
-To send the same request twice is ok.
-
-```
-curl -X POST localhost:9013/internal/vote/start?id=1
-```
+- `title` (required)
+- `description` (optional)
+- `content_object_id` (required)
+- `meeting_id` (required)
+- `method` (required)
+- `config` (depends on the method)
+- `visibility` (required)
+- `entitled_group_ids` (only if visibility != manually)
+- `result` (only if visibility == manually)
 
 
-### Send a Vote
+### Update a poll
+
+`/system/vote/update?id=XX`
+
+TODO
+
+
+### Delete a poll
+
+`/system/vote/delete?id=XX`
+
+The delete request removes the poll and all its votes in any state. Be careful.
+
+
+### Start a poll
+
+`/system/vote/start?id=XX`
+
+To start a poll means that the users can send their votes.
+
+
+### Finalize a poll
+
+`/system/vote/finalize?id=XX`
+
+To finalize a poll means that users can not send their votes anymore. It
+creates a `poll/result` field.
+
+The request has two optional attributes: `publish` and `anonymize`. `publish`
+sets the field `poll/state` to `published`. `anonymize` removes all user ids
+from the corresponding `vote` objects.
+
+The request can be send many times. It only creates the result the first time.
+But `publish` and `anonymize` can be used on a later request.
+
+To stop a poll and publish and anonymize it at the same time, the following request can be used:
+
+`/system/vote/finalize?id=XX&publish&anonymize`
+
+
+### Reset a poll
+
+`/system/vote/reset?id=XX`
+
+Reset sets the state back to `started` and removes all vote objects.
+
+
+### Send a vote
 
 A vote-request is a post request with the ballot as body. Only logged in users
-can vote. The body has to be valid json. For example for the value 'Y' you have
-to send `{"value":"Y"}`.
+can vote. The body has to be valid json.
 
-This handler is not idempotent. If the same user sends the same data twice, it
-is an error.
+The service distinguishes between two users on each vote-request. The acting user
+is the request user, that sends the vote-request. The represented user is the
+user, for whom the vote is sent. Both users can actually be the same user.
 
-```
-curl localhost:9013/system/vote?id=1 -d '{"value":"Y"}'
-```
+The acting user has to be present in the meeting and needs the permission to vote
+for the represented user. The represented user has to be in one of the group of
+the field `poll/entitled_group_ids`.
 
+The request body has to be in the form:
 
-### Stop the Poll
-
-With the stop request a poll is stopped and the vote values are returned. The
-stop request is a POST request without a body.
-
-A stop request can be send many times and will return the same data again.
-
-```
-curl -X POST localhost:9013/internal/vote/stop?id=1
-```
-
-
-### Clear the poll
-
-After a vote was stopped and the data is successfully stored in the datastore, a
-clear request should be used to remove the data from the vote service. This is
-especially important on fast votes to remove the mapping between the user id and
-the vote. The clear requet is idempotent.
-
-```
-curl -X POST localhost:9013/internal/vote/clear?id=1
-```
-
-
-### Clear all polls
-
-Only for development and debugging there is an internal route to clear all polls
-at once. It there are many polls, this url could take a long time fully blocking
-redis. Use this carfully.
-
-```
-curl -X POST localhost:9013/internal/vote/clear_all
-```
-
-
-### Have I Voted
-
-A user can find out if he has voted for a list of polls.
-
-```
-curl localhost:9013/system/vote/voted?ids=1,2,3
-```
-
-The responce is a json-object in the form like this:
-
-```
+```json
 {
-  "1":[42],
-  "2":[42],
-  "3":[42]
+  "user_id": 23,
+  "value": "Yes"
 }
 ```
 
-`42` is the user ID of the user. If a delegated user has also voted, the user id
-of that users will also be in the response.
+In this example, the request user would send the Vote `Yes` for the user with
+the id 23. If the acting user and the represented user are the same, then field
+`user_id` is not needed.
+
+Valid values for the vote depend on the `poll/method`.
 
 
-### Vote Count
+### Read the poll
 
-The vote count handler tells how many users have voted. It is an open connection
-that first returns the data for every poll known by the vote service and then
-sends updates when the data changes.
-
-The vote service knows about all started and stopped votes until they are
-cleared. When a poll get cleared, the hander sends `0` as an update.
-
-The data is streamed in the json-line-format. That means, that every update is
-returned with a newline at the end and does not contain any other newline.
-
-Each line is a map from the poll-id (as string) to the number of votes.
+The service only handles write requests. All Reads have to be done via the
+autoupdate-service.
 
 
-Example:
+## Poll methods
 
-```
-curl localhost:9013/internal/vote/vote_count
-```
+The values of `poll/config`, `poll/result` and valid votes depend of the field `poll/method`.
 
-Response:
-
-```
-{"5": 1004,"7": 203}
-{"5:0}
-{"7":204}
-{"9:"1}
-```
+TODO: Describe the methods.
 
 
 ## Configuration
 
-The service is configurated with environment variables. See [all environment varialbes](environment.md).
-
-If VOTE_SINGLE_INSTANCE it uses the memory to save fast votes. If not, it uses redis.
+The service is configured with environment variables. See [all environment variables](environment.md).
