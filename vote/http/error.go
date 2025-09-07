@@ -43,15 +43,16 @@ func writeStatusCode(w http.ResponseWriter, err error) {
 
 func writeFormattedError(w io.Writer, err error, logger func(fmt string, a ...any) (int, error)) {
 	errType := "internal"
+	msg := err.Error()
 	var errTyped interface {
 		error
 		Type() string
 	}
 	if errors.As(err, &errTyped) {
 		errType = errTyped.Type()
+		msg = errTyped.Error()
 	}
 
-	msg := err.Error()
 	if errType == "internal" {
 		logger("Error: %s\n", msg)
 		msg = vote.ErrInternal.Error()

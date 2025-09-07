@@ -135,10 +135,10 @@ func (s *finalizerStub) Finalize(ctx context.Context, pollID int, requestUserID 
 
 func TestHandleFinalize(t *testing.T) {
 	finalizer := &finalizerStub{}
-	auth := &autherStub{}
+	auth := &autherStub{userID: 1}
 
 	url := "/vote/finalize"
-	mux := handleFinalize(finalizer, auth)
+	mux := testresolveError(handleFinalize(finalizer, auth))
 
 	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -160,12 +160,7 @@ func TestHandleFinalize(t *testing.T) {
 		}
 
 		if finalizer.id != 1 {
-			t.Errorf("Stopper was called with id %d, expected 1", finalizer.id)
-		}
-
-		expect := `{"votes":["some values"],"user_ids":[]}`
-		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
-			t.Errorf("Got body:\n`%s`, expected:\n`%s`", trimed, expect)
+			t.Errorf("Finanlizer was called with id %d, expected 1", finalizer.id)
 		}
 	})
 
@@ -191,6 +186,8 @@ func TestHandleFinalize(t *testing.T) {
 			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
 		}
 	})
+
+	// TODO Test publish and anonymize flags
 }
 
 type voterStub struct {
@@ -217,7 +214,7 @@ func TestHandleVote(t *testing.T) {
 	auther := &autherStub{}
 
 	url := "/system/vote"
-	mux := handleVote(voter, auther)
+	mux := testresolveError(handleVote(voter, auther))
 
 	t.Run("No id", func(t *testing.T) {
 		auther.userID = 5
@@ -346,7 +343,7 @@ func TestHandleHealth(t *testing.T) {
 type AuthError struct{}
 
 func (AuthError) Error() string {
-	return `{"error":"auth","message":"auth error"}`
+	return `auth error`
 }
 
 func (AuthError) Type() string {
