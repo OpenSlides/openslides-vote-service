@@ -186,7 +186,9 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 		return CreateInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
 	}
 
-	// TODO: Validate config
+	if err := ValidateConfig(ci.Method, string(ci.Config)); err != nil {
+		return CreateInput{}, fmt.Errorf("validate config: %w", err)
+	}
 
 	return ci, nil
 
@@ -591,16 +593,31 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	return defaultVoteWeight, nil
 }
 
+func ValidateConfig(method string, config string) error {
+	switch method {
+	case methodMotion{}.Name():
+		return methodMotion{}.ValidateConfig(config)
+	case methodSelection{}.Name():
+		return methodSelection{}.ValidateConfig(config)
+	case methodRating{}.Name():
+		return methodRating{}.ValidateConfig(config)
+	case methodRatingMotion{}.Name():
+		return methodRatingMotion{}.ValidateConfig(config)
+	default:
+		return MessageErrorf(ErrInvalid, "Unknown poll method: %s", method)
+	}
+}
+
 func ValidateVote(method string, config string, vote json.RawMessage) error {
 	switch method {
 	case methodMotion{}.Name():
-		return methodMotion{}.Validate(config, vote)
+		return methodMotion{}.ValidateVote(config, vote)
 	case methodSelection{}.Name():
-		return methodSelection{}.Validate(config, vote)
+		return methodSelection{}.ValidateVote(config, vote)
 	case methodRating{}.Name():
-		return methodRating{}.Validate(config, vote)
+		return methodRating{}.ValidateVote(config, vote)
 	case methodRatingMotion{}.Name():
-		return methodRatingMotion{}.Validate(config, vote)
+		return methodRatingMotion{}.ValidateVote(config, vote)
 	default:
 		return fmt.Errorf("unknown poll method: %s", method)
 	}
