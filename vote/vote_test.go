@@ -38,8 +38,12 @@ func TestAll(t *testing.T) {
 	meeting/1:
 		present_user_ids: [30]
 
-	user/30:
-		username: tom
+	user:
+		5:
+			username: admin
+			organization_management_level: superadmin
+		30:
+			username: tom
 	meeting_user/300:
 		group_ids: [40]
 		user_id: 30
@@ -65,7 +69,7 @@ func TestAll(t *testing.T) {
 					"entitled_group_ids": [40]
 				}`
 
-				id, err := service.Create(ctx, 1, strings.NewReader(body))
+				id, err := service.Create(ctx, 5, strings.NewReader(body))
 				if err != nil {
 					t.Fatalf("Error creating poll: %v", err)
 				}
@@ -86,7 +90,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Start", func(t *testing.T) {
-				if err := service.Start(ctx, 1, 1); err != nil {
+				if err := service.Start(ctx, 1, 5); err != nil {
 					t.Fatalf("Error starting poll: %v", err)
 				}
 
@@ -123,7 +127,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Stop", func(t *testing.T) {
-				if err := service.Finalize(ctx, 1, 1, false, false); err != nil {
+				if err := service.Finalize(ctx, 1, 5, false, false); err != nil {
 					t.Fatalf("Error stopping poll: %v", err)
 				}
 
@@ -144,7 +148,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Publish", func(t *testing.T) {
-				if err := service.Finalize(ctx, 1, 1, true, false); err != nil {
+				if err := service.Finalize(ctx, 1, 5, true, false); err != nil {
 					t.Fatalf("Error publishing poll: %v", err)
 				}
 
@@ -160,7 +164,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Anonymize", func(t *testing.T) {
-				if err := service.Finalize(ctx, 1, 1, true, true); err != nil {
+				if err := service.Finalize(ctx, 1, 5, true, true); err != nil {
 					t.Fatalf("Error anonymizing poll: %v", err)
 				}
 
@@ -176,7 +180,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Reset", func(t *testing.T) {
-				if err := service.Reset(ctx, 1, 1); err != nil {
+				if err := service.Reset(ctx, 1, 5); err != nil {
 					t.Fatalf("Error resetting poll: %v", err)
 				}
 
@@ -192,7 +196,7 @@ func TestAll(t *testing.T) {
 			})
 
 			t.Run("Delete", func(t *testing.T) {
-				if err := service.Delete(ctx, 1, 1); err != nil {
+				if err := service.Delete(ctx, 1, 5); err != nil {
 					t.Fatalf("Error deleting poll: %v", err)
 				}
 

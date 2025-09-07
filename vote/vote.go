@@ -12,6 +12,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
+	"github.com/OpenSlides/openslides-go/perm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -48,14 +49,16 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 
 // Creates a poll, returning the poll id.
 func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int, error) {
-	// TODO: Check permissions for requestUser
-
 	ci, err := parseCreateInput(r)
 	if err != nil {
 		return 0, fmt.Errorf("parsing input: %w", err)
 	}
 
-	// TODO: Check organization/1/enable_electronic_voting
+	if err := canManagePoll(ctx, v.flow, ci.MeetingID, ci.ContentObjectID, requestUserID); err != nil {
+		return 0, fmt.Errorf("check permissions: %w", err)
+	}
+
+	// TODO: Check organization/1/enable_electronic_voting but not for manually polls
 
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
@@ -149,18 +152,41 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 		return CreateInput{}, MessageError(ErrInvalid, "Title can not be empty")
 	}
 
-	// TODO: check config and visiblity
+	if ci.MeetingID == 0 {
+		return CreateInput{}, MessageError(ErrInvalid, "Meeting ID can not be empty")
+	}
+
+	if ci.ContentObjectID == "" {
+		return CreateInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
+	}
 
 	return ci, nil
 
 }
 
 func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int) error {
+	poll, err := fetchPoll(ctx, v.flow, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching poll: %w", err)
+	}
+
+	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
+		return fmt.Errorf("check permissions: %w", err)
+	}
+
 	return errors.New("TODO")
 }
 
 func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error {
-	// TODO: Check permissions
+	poll, err := fetchPoll(ctx, v.flow, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching poll: %w", err)
+	}
+
+	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
+		return fmt.Errorf("check permissions: %w", err)
+	}
+
 	sql := `DELETE FROM poll WHERE id = $1;`
 	if _, err := v.querier.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("sending sql query: %w", err)
@@ -170,17 +196,13 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 
 // Start validates a poll and set its state to started.
 func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
-	ds := dsmodels.New(v.flow)
-
-	// TODO: Check permissions for requestUser
-
-	poll, err := ds.Poll(pollID).First(ctx)
+	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
-		var doesNotExist dsfetch.DoesNotExistError
-		if errors.As(err, &doesNotExist) {
-			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
-		}
-		return fmt.Errorf("loading poll %d: %w", pollID, err)
+		return fmt.Errorf("fetching poll: %w", err)
+	}
+
+	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
+		return fmt.Errorf("check permissions: %w", err)
 	}
 
 	if poll.Visibility == "manually" {
@@ -210,17 +232,13 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 // - With the flag `publish`, sets the state to `publish`, in other case to `stopped`
 // - With the flag `anonymize`, clears all user_ids from the coresponding votes.
 func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
-	ds := dsmodels.New(v.flow)
-
-	// TODO: Check permissions for requestUser
-
-	poll, err := ds.Poll(pollID).First(ctx)
+	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
-		var doesNotExist dsfetch.DoesNotExistError
-		if errors.As(err, &doesNotExist) {
-			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
-		}
-		return fmt.Errorf("loading poll %d: %w", pollID, err)
+		return fmt.Errorf("fetching poll: %w", err)
+	}
+
+	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
+		return fmt.Errorf("check permissions: %w", err)
 	}
 
 	if poll.State == "created" {
@@ -274,7 +292,14 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 }
 
 func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
-	// TODO: Check permissions
+	poll, err := fetchPoll(ctx, v.flow, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching poll: %w", err)
+	}
+
+	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
+		return fmt.Errorf("check permissions: %w", err)
+	}
 
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
@@ -321,20 +346,13 @@ type VoteResult struct {
 
 // Vote validates and saves the vote.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader) error {
-	fetch := dsfetch.New(v.flow)
-	dsmodel := dsmodels.New(v.flow)
-
 	if requestUserID == 0 {
 		return MessageErrorf(ErrInvalid, "Anonymous can not vote")
 	}
 
-	poll, err := dsmodel.Poll(pollID).First(ctx)
+	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
-		var doesNotExist dsfetch.DoesNotExistError
-		if errors.As(err, &doesNotExist) {
-			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
-		}
-		return fmt.Errorf("loading poll %d: %w", pollID, err)
+		return fmt.Errorf("fetching poll: %w", err)
 	}
 
 	var body struct {
@@ -352,6 +370,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		representedUserID = body.UserID
 	}
 
+	fetch := dsfetch.New(v.flow)
 	if err := allowedToVote(ctx, fetch, poll, actingUserID, representedUserID, poll.MeetingID); err != nil {
 		return fmt.Errorf("allowedToVote: %w", err)
 	}
@@ -574,6 +593,20 @@ func CreateResult(method string, config json.RawMessage, votes []dsmodels.Vote) 
 	}
 }
 
+func fetchPoll(ctx context.Context, getter flow.Getter, pollID int) (dsmodels.Poll, error) {
+	ds := dsmodels.New(getter)
+	poll, err := ds.Poll(pollID).First(ctx)
+	if err != nil {
+		var doesNotExist dsfetch.DoesNotExistError
+		if errors.As(err, &doesNotExist) {
+			return dsmodels.Poll{}, MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
+		}
+		return dsmodels.Poll{}, fmt.Errorf("loading poll %d: %w", pollID, err)
+	}
+
+	return poll, nil
+}
+
 func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID int) (int, bool, error) {
 	meetingUserIDs, err := fetch.User_MeetingUserIDs(userID).Value(ctx)
 	if err != nil {
@@ -595,6 +628,39 @@ func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID
 	}
 
 	return meetingUserIDs[idx], true, nil
+}
+
+func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, contentObjectID string, userID int) error {
+	collection, _, found := strings.Cut(contentObjectID, "/")
+	if !found {
+		return fmt.Errorf("invalid content object id: %s", contentObjectID)
+	}
+
+	var requiredPerm perm.TPermission
+	switch collection {
+	case "motion":
+		requiredPerm = perm.MotionCanManage
+	case "assignment":
+		requiredPerm = perm.AssignmentCanManage
+	case "topic":
+		requiredPerm = perm.PollCanManage
+	default:
+		return fmt.Errorf(
+			"invalid content object id %s, only motion, assignment or topic allowed",
+			contentObjectID,
+		)
+	}
+
+	userPerms, err := perm.New(ctx, dsfetch.New(getter), userID, meetingID)
+	if err != nil {
+		return fmt.Errorf("calculate user permissions: %w", err)
+	}
+
+	if !userPerms.Has(requiredPerm) {
+		return MessageError(ErrNotAllowed, "You are not allowed to manage a poll")
+	}
+
+	return nil
 }
 
 func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) error {
