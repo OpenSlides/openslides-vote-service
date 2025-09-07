@@ -95,6 +95,8 @@ type authenticater interface {
 func registerHandlers(service voteService, auth authenticater) *http.ServeMux {
 	const base = "/system/vote"
 
+	resolveError := getResolveError(fmt.Printf)
+
 	mux := http.NewServeMux()
 
 	mux.Handle(base, resolveError(handleVote(service, auth)))

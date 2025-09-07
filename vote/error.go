@@ -74,7 +74,7 @@ func (err TypeError) Error() string {
 		msg = "Ups, something went wrong!"
 
 	}
-	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, err.Type(), msg)
+	return msg
 }
 
 func invalidVote(msg string, a ...any) error {

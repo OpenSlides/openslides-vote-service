@@ -27,10 +27,10 @@ func (c *starterStub) Start(ctx context.Context, pollID int, requestUserID int) 
 
 func TestHandleStart(t *testing.T) {
 	starter := &starterStub{}
-	auth := &autherStub{}
+	auth := &autherStub{userID: 1}
 
 	url := "/vote/start"
-	mux := handleStart(starter, auth)
+	mux := testresolveError(handleStart(starter, auth))
 
 	t.Run("No id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -87,7 +87,7 @@ func TestHandleStart(t *testing.T) {
 	})
 
 	t.Run("Internal error", func(t *testing.T) {
-		starter.expectErr = errors.New("TEST_Error")
+		starter.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
 		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
@@ -109,8 +109,8 @@ func TestHandleStart(t *testing.T) {
 			t.Errorf("Got error `%s`, expected `internal`", body.Error)
 		}
 
-		if body.MSG != "TEST_Error" {
-			t.Errorf("Got error message `%s`, expected `TEST_Error`", body.MSG)
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
 		}
 	})
 }
@@ -368,3 +368,5 @@ func (a *autherStub) Authenticate(w http.ResponseWriter, r *http.Request) (conte
 func (a *autherStub) FromContext(context.Context) int {
 	return a.userID
 }
+
+var testresolveError = getResolveError(func(fmt string, a ...any) (int, error) { return 0, nil })

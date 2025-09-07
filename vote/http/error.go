@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,15 +10,17 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-func resolveError(handler Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := handler.ServeHTTP(w, r)
-		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return
-		}
+func getResolveError(logger func(fmt string, a ...any) (int, error)) func(handler Handler) http.HandlerFunc {
+	return func(handler Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			err := handler.ServeHTTP(w, r)
+			if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
 
-		writeStatusCode(w, err)
-		writeFormattedError(w, err)
+			writeStatusCode(w, err)
+			writeFormattedError(w, err, logger)
+		}
 	}
 }
 
@@ -40,7 +41,7 @@ func writeStatusCode(w http.ResponseWriter, err error) {
 	w.WriteHeader(statusCode)
 }
 
-func writeFormattedError(w io.Writer, err error) {
+func writeFormattedError(w io.Writer, err error, logger func(fmt string, a ...any) (int, error)) {
 	errType := "internal"
 	var errTyped interface {
 		error
@@ -52,22 +53,15 @@ func writeFormattedError(w io.Writer, err error) {
 
 	msg := err.Error()
 	if errType == "internal" {
-		fmt.Printf("Error: %s\n", msg)
+		logger("Error: %s\n", msg)
 		msg = vote.ErrInternal.Error()
 	}
 
-	out := struct {
-		Error string `json:"error"`
-		MSG   string `json:"message"`
-	}{
-		errType,
-		msg,
-	}
+	w.Write([]byte(errorAsJson(errType, msg)))
+}
 
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		fmt.Printf("Error encoding error message: %v\n", err)
-		fmt.Fprint(w, `{"error":"internal", "message":"Something went wrong encoding the error message"}`)
-	}
+func errorAsJson(errType string, msg string) string {
+	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, errType, msg)
 }
 
 type statusCodeError struct {
