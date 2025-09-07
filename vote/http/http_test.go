@@ -117,6 +117,8 @@ func TestHandleStart(t *testing.T) {
 
 type finalizerStub struct {
 	id        int
+	publish   bool
+	anonymize bool
 	expectErr error
 
 	expectedVotes   [][]byte
@@ -125,6 +127,8 @@ type finalizerStub struct {
 
 func (s *finalizerStub) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
 	s.id = pollID
+	s.publish = publish
+	s.anonymize = anonymize
 
 	if s.expectErr != nil {
 		return s.expectErr
@@ -187,7 +191,35 @@ func TestHandleFinalize(t *testing.T) {
 		}
 	})
 
-	// TODO Test publish and anonymize flags
+	t.Run("Publish", func(t *testing.T) {
+		finalizer.expectedVotes = [][]byte{[]byte(`"some values"`)}
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1&publish", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+
+		if !finalizer.publish {
+			t.Errorf("Finanlizer was not called with publish")
+		}
+	})
+
+	t.Run("Anonymize", func(t *testing.T) {
+		finalizer.expectedVotes = [][]byte{[]byte(`"some values"`)}
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1&anonymize", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+
+		if !finalizer.anonymize {
+			t.Errorf("Finanlizer was not called with anonymize")
+		}
+	})
 }
 
 type voterStub struct {
