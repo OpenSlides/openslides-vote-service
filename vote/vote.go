@@ -49,22 +49,18 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 
 // Creates a poll, returning the poll id.
 func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int, error) {
-	ci, err := parseCreateInput(r)
+	electronicVotingEnabled, err := dsfetch.New(v.flow).Organization_EnableElectronicVoting(1).Value(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("fetch organization/1/enable_electronic_voting: %w", err)
+	}
+
+	ci, err := parseCreateInput(r, electronicVotingEnabled)
 	if err != nil {
 		return 0, fmt.Errorf("parsing input: %w", err)
 	}
 
 	if err := canManagePoll(ctx, v.flow, ci.MeetingID, ci.ContentObjectID, requestUserID); err != nil {
 		return 0, fmt.Errorf("check permissions: %w", err)
-	}
-
-	electronicVotingEnabled, err := dsfetch.New(v.flow).Organization_EnableElectronicVoting(1).Value(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("fetch organization/1/enable_electronic_voting: %w", err)
-	}
-
-	if ci.Visibility != "manually" && !electronicVotingEnabled {
-		return 0, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
 	}
 
 	tx, err := v.querier.Begin(ctx)
@@ -91,8 +87,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	sequentialNumber += 1
 
 	sql := `INSERT INTO poll
-		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9)
+		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, live_voting_enabled)
+		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10)
 		RETURNING id;`
 
 	var newID int
@@ -108,12 +104,12 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.ContentObjectID,
 		ci.MeetingID,
 		string(ci.Result),
+		ci.LiveVotingEnabled,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
 
 	if len(ci.EntitledGroupIDs) > 0 {
-		// Dynamisches SQL für alle IDs auf einmal
 		placeholders := make([]string, len(ci.EntitledGroupIDs))
 		args := make([]any, len(ci.EntitledGroupIDs)*2)
 
@@ -141,18 +137,19 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 }
 
 type CreateInput struct {
-	Title            string          `json:"title"`
-	Description      string          `json:"description"`
-	ContentObjectID  string          `json:"content_object_id"`
-	MeetingID        int             `json:"meeting_id"`
-	Method           string          `json:"method"`
-	Config           json.RawMessage `json:"config"`
-	Visibility       string          `json:"visibility"`
-	EntitledGroupIDs []int           `json:"entitled_group_ids"`
-	Result           json.RawMessage `json:"result"`
+	Title             string          `json:"title"`
+	Description       string          `json:"description"`
+	ContentObjectID   string          `json:"content_object_id"`
+	MeetingID         int             `json:"meeting_id"`
+	Method            string          `json:"method"`
+	Config            json.RawMessage `json:"config"`
+	Visibility        string          `json:"visibility"`
+	EntitledGroupIDs  []int           `json:"entitled_group_ids"`
+	LiveVotingEnabled bool            `json:"live_voting_enabled"`
+	Result            json.RawMessage `json:"result"`
 }
 
-func parseCreateInput(r io.Reader) (CreateInput, error) {
+func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, error) {
 	var ci CreateInput
 	if err := json.NewDecoder(r).Decode(&ci); err != nil {
 		return CreateInput{}, fmt.Errorf("reading json: %w", err)
@@ -178,12 +175,24 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 		return CreateInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
 	}
 
-	if ci.Visibility == "manually" && len(ci.EntitledGroupIDs) > 0 {
-		return CreateInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
-	}
+	switch ci.Visibility {
+	case "manually":
+		if len(ci.EntitledGroupIDs) > 0 {
+			return CreateInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
+		}
 
-	if ci.Visibility != "manually" && ci.Result != nil {
-		return CreateInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
+		if ci.LiveVotingEnabled {
+			return CreateInput{}, MessageError(ErrInvalid, "Live Voting can not be enabled when visibility is set to manually")
+		}
+
+	default:
+		if !electronicVotingEnabled {
+			return CreateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
+		}
+
+		if ci.Result != nil {
+			return CreateInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
+		}
 	}
 
 	if err := ValidateConfig(ci.Method, string(ci.Config)); err != nil {
@@ -191,7 +200,6 @@ func parseCreateInput(r io.Reader) (CreateInput, error) {
 	}
 
 	return ci, nil
-
 }
 
 func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error {
@@ -204,7 +212,193 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
-	return errors.New("TODO")
+	electronicVotingEnabled, err := dsfetch.New(v.flow).Organization_EnableElectronicVoting(1).Value(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch organization/1/enable_electronic_voting: %w", err)
+	}
+
+	ui, err := parseUpdateInput(r, poll, electronicVotingEnabled)
+	if err != nil {
+		return fmt.Errorf("parse update body: %w", err)
+	}
+
+	tx, err := v.querier.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	sql, values := ui.createQuery(pollID)
+	if len(values) > 0 {
+		if _, err := tx.Exec(ctx, sql, values...); err != nil {
+			return fmt.Errorf("update poll: %w", err)
+		}
+	}
+
+	if len(ui.EntitledGroupIDs) > 0 {
+		sql := "DELETE FROM nm_group_poll_ids_poll_t WHERE poll_id = $1"
+		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+			return fmt.Errorf("deleting existing group associations: %w", err)
+		}
+
+		placeholders := make([]string, len(ui.EntitledGroupIDs))
+		args := make([]any, len(ui.EntitledGroupIDs)*2)
+
+		for i, groupID := range ui.EntitledGroupIDs {
+			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+			args[i*2] = groupID
+			args[i*2+1] = poll.ID
+		}
+
+		groupSQL := fmt.Sprintf(
+			"INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id) VALUES %s",
+			strings.Join(placeholders, ", "),
+		)
+
+		if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+			return fmt.Errorf("insert group-poll relations: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+type UpdateInput struct {
+	Title             string              `json:"title"`
+	Description       string              `json:"description"`
+	Method            string              `json:"method"`
+	Config            json.RawMessage     `json:"config"`
+	Visibility        string              `json:"visibility"`
+	EntitledGroupIDs  []int               `json:"entitled_group_ids"`
+	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
+	Result            json.RawMessage     `json:"result"`
+}
+
+func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (UpdateInput, error) {
+	var ui UpdateInput
+	if err := json.NewDecoder(r).Decode(&ui); err != nil {
+		return UpdateInput{}, fmt.Errorf("decoding update input: %w", err)
+	}
+
+	if poll.State != "created" {
+		if ui.Method != "" {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
+		}
+
+		if ui.Config != nil {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
+		}
+
+		if ui.Visibility != "" {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "visibility can only be changed before the poll has started")
+		}
+
+		if ui.EntitledGroupIDs != nil {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "entitled group ids can only be changed before the poll has started")
+		}
+	}
+
+	visibility := poll.Visibility
+	if ui.Visibility != "" {
+		visibility = ui.Visibility
+	}
+
+	switch visibility {
+	case "manually":
+		if len(ui.EntitledGroupIDs) > 0 {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
+		}
+
+		if liveVotingEnabled, _ := ui.LiveVotingEnabled.Value(); liveVotingEnabled {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "Live Voting can not be enabled when visibility is set to manually")
+		}
+
+	default:
+		if !electronicVotingEnabled {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
+		}
+
+		if ui.Result != nil {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
+		}
+	}
+
+	if ui.Config != nil {
+		method := poll.Method
+		if ui.Method != "" {
+			method = ui.Method
+		}
+
+		if err := ValidateConfig(method, string(ui.Config)); err != nil {
+			return UpdateInput{}, fmt.Errorf("validate config: %w", err)
+		}
+	}
+
+	return ui, nil
+}
+
+func (ui UpdateInput) createQuery(pollID int) (string, []any) {
+	var setParts []string
+	var args []any
+	argIndex := 1
+
+	if ui.Title != "" {
+		setParts = append(setParts, fmt.Sprintf("title = $%d", argIndex))
+		args = append(args, ui.Title)
+		argIndex++
+	}
+
+	if ui.Description != "" {
+		setParts = append(setParts, fmt.Sprintf("description = $%d", argIndex))
+		args = append(args, ui.Description)
+		argIndex++
+	}
+
+	if ui.Method != "" {
+		setParts = append(setParts, fmt.Sprintf("method = $%d", argIndex))
+		args = append(args, ui.Method)
+		argIndex++
+	}
+
+	if ui.Config != nil {
+		setParts = append(setParts, fmt.Sprintf("config = $%d", argIndex))
+		args = append(args, string(ui.Config))
+		argIndex++
+	}
+
+	if ui.Visibility != "" {
+		setParts = append(setParts, fmt.Sprintf("visibility = $%d", argIndex))
+		args = append(args, ui.Visibility)
+		argIndex++
+	}
+
+	if liveVotingEnabled, hasValue := ui.LiveVotingEnabled.Value(); hasValue {
+		setParts = append(setParts, fmt.Sprintf("live_voting_enabled = $%d", argIndex))
+		args = append(args, liveVotingEnabled)
+		argIndex++
+	}
+
+	if ui.Result != nil {
+		setParts = append(setParts, fmt.Sprintf("result = $%d", argIndex))
+		args = append(args, string(ui.Result))
+		argIndex++
+	}
+
+	if len(setParts) == 0 {
+		return "", nil
+	}
+
+	query := fmt.Sprintf("UPDATE poll SET %s WHERE id = $%d",
+		strings.Join(setParts, ", "),
+		argIndex)
+
+	args = append(args, pollID)
+
+	return query, args
 }
 
 func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error {

@@ -53,6 +53,10 @@ func TestAll(t *testing.T) {
 	group/40:
 		name: delegate
 		meeting_id: 1
+
+	group/41:
+		name: wrong group
+		meeting_id: 1
 	`
 
 	withData(
@@ -62,12 +66,12 @@ func TestAll(t *testing.T) {
 		func(service *vote.Vote, flow flow.Flow) {
 			t.Run("Create", func(t *testing.T) {
 				body := `{
-					"title": "my poll",
+					"title": "my pol",
 					"content_object_id": "motion/5",
 					"method": "motion",
 					"visibility": "open",
 					"meeting_id": 1,
-					"entitled_group_ids": [40]
+					"entitled_group_ids": [41]
 				}`
 
 				id, err := service.Create(ctx, 5, strings.NewReader(body))
@@ -85,8 +89,33 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error getting title from created poll: %v", err)
 				}
 
-				if string(result[key]) != `"my poll"` {
+				if string(result[key]) != `"my pol"` {
 					t.Errorf("Expected title 'my poll', got %s", result[key])
+				}
+			})
+
+			t.Run("Update", func(t *testing.T) {
+				body := `{
+					"title": "my poll",
+					"entitled_group_ids": [40]
+				}`
+
+				err := service.Update(ctx, 1, 5, strings.NewReader(body))
+				if err != nil {
+					t.Fatalf("Error creating poll: %v", err)
+				}
+
+				poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+				if err != nil {
+					t.Fatalf("fetch poll: %v", err)
+				}
+
+				if poll.Title != `my poll` {
+					t.Errorf("Expected title 'my poll', got %s", poll.Title)
+				}
+
+				if len(poll.EntitledGroupIDs) != 1 && poll.EntitledGroupIDs[0] != 40 {
+					t.Errorf("Expected entitled_group_ids [40], got %v", poll.EntitledGroupIDs)
 				}
 			})
 

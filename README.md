@@ -40,6 +40,7 @@ The request expects a body with the fields to create the poll:
 - `config` (depends on the method)
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
+- `live_voting_enabled` (only if visibility != manually)
 - `result` (only if visibility == manually)
 
 
@@ -47,7 +48,12 @@ The request expects a body with the fields to create the poll:
 
 `/system/vote/update?id=XX`
 
-TODO
+The fields `content_object_id` and `meetin_id` can not be changed. You have to
+create a new poll to "update" them.
+
+The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
+changed, before the poll has started. You can reset a poll to change this
+values.
 
 
 ### Delete a poll

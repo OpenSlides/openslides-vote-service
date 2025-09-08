@@ -74,18 +74,6 @@ geklickt. In dem Moment wird dann create request abgesandt.
 Bei analogen Polls bedeutet das, dass bereits an dieser Stelle das Ergebnis
 übertragen werden kann.
 
-Im Body müssen die Daten zum anlegen der Poll übergeben werden. Das ist ein json-objekt mit folgenden Feldern:
-
-- title (required)
-- description (optional)
-- content_object_id (required)
-- meeting_id (required)
-- method (required)
-- config (abhängig von method. Kann required oder optional sein)
-- visibility (required)
-- entitled_group_ids (nur wenn visibility != manually)
-- result (nur wenn visibility == manually)
-
 
 ### /vote/update
 
@@ -491,7 +479,31 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 # Aktueller Stand / Offene TODOs
 
-- Der Poll-Update handler ist noch nicht impelemntiert
 - Alte Tests durchgehen und entweder aktualisieren oder löschen
 - Preload von Tests on create - auch wenn ein poll von einer anderen Instanz angelegt wird.
 - Ggf. Fehlermeldung an den Client verschönern
+- 100% Basis
+- Finalize manually polls
+
+
+# Fragen
+
+- Wird das Feld poll/voted_ids wirklich noch gebraucht? Wenn ich es richtig
+  verstehe, sind das alle user-ids, die abgestimmt haben. Bei secret polls
+  werden sie in zukunft nicht gebraucht, da die user-ids in den vote-objecten
+  mit den verschlüsselten Stimmen bleiben. Der einzige Sinn ist bei
+  anonymisierten polls. Wird es dafür wirklich gebraucht? Sollte das Feld immer
+  gesetzt werden, oder nur beim anonymisieren?
+
+- Braucht es das Feld `is_pseudoanonymized` noch? Ich meine, dass das Feld
+  redundant ist, da man leicht sehen kann, ob die votes noch user_ids haben.
+  Wenn `poll/voted_ids` nur beim anonymisiern gesetzt wird, dann kann man es
+  auch so sehen. Jedenfalls würde ich es in `is_anonymized` umbenennen, da so
+  auch die Aktion heißt.
+
+- Sollte das result-Feld bei manually-polls validiert werden? Was ist, wenn die
+  method verändert wird?
+
+- Muss es möglich sein bei einem Update das Description Feld zu leeren? Sollte
+  der Client eher immer alle Werte übertragen, oder die Werte, die sich ändern?
+  Zum Beispiel titel?
