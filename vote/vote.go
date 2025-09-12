@@ -69,6 +69,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
+	// TODO: Can be removed afer https://github.com/OpenSlides/openslides-meta/issues/219 is fixed.
 	var sequentialNumber int
 	err = tx.QueryRow(ctx, `
 		SELECT sequential_number
@@ -878,9 +879,9 @@ func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, conte
 	var requiredPerm perm.TPermission
 	switch collection {
 	case "motion":
-		requiredPerm = perm.MotionCanManage
+		requiredPerm = perm.MotionCanManagePolls
 	case "assignment":
-		requiredPerm = perm.AssignmentCanManage
+		requiredPerm = perm.AssignmentCanManagePolls
 	case "topic":
 		requiredPerm = perm.PollCanManage
 	default:
