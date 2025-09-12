@@ -45,6 +45,13 @@ func TestValidateVote(t *testing.T) {
 			expectValid: false,
 		},
 		{
+			name:        "Motion: Allow invalid",
+			method:      "motion",
+			config:      `{"invalid": true}`,
+			vote:        `[[INVALID}}}`,
+			expectValid: true,
+		},
+		{
 			name:        "Selection invalid json",
 			method:      "selection",
 			config:      `{"options":["Max","Hubert"]}`,
