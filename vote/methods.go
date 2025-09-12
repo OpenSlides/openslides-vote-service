@@ -134,6 +134,10 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
 
+	if hasDuplicates(choice) {
+		return invalidVote("douplicate entries in vote")
+	}
+
 	if value, set := cfg.MaxOptionsAmount.Value(); set && len(choice) > value {
 		return invalidVote("too many options")
 	}
@@ -469,4 +473,15 @@ func iterateValues(
 		return "", fmt.Errorf("add invalid: %w", err)
 	}
 	return string(withInvalid), nil
+}
+
+func hasDuplicates[T comparable](slice []T) bool {
+	seen := make(map[T]struct{}, len(slice))
+	for _, v := range slice {
+		if _, ok := seen[v]; ok {
+			return true
+		}
+		seen[v] = struct{}{}
+	}
+	return false
 }

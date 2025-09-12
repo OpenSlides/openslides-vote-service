@@ -66,6 +66,13 @@ func TestValidateVote(t *testing.T) {
 			expectValid: true,
 		},
 		{
+			name:        "Selection same value multiple times",
+			method:      "selection",
+			config:      `{"options":["Max","Hubert"]}`,
+			vote:        `[0,0]`,
+			expectValid: false,
+		},
+		{
 			name:        "Selection no low",
 			method:      "selection",
 			config:      `{"options":["Max","Hubert"]}`,
