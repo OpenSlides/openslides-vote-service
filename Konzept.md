@@ -503,3 +503,6 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 - Sollte das result-Feld bei manually-polls validiert werden? Was ist, wenn die
   method verändert wird?
+
+- Bei motion-rating: Muss man für jede Option eine stimme abgeben? Ist abstain
+  der default? Was wenn abstain deaktiviert ist?

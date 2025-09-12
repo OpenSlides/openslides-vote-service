@@ -50,6 +50,17 @@ func TestCreateResult(t *testing.T) {
 			expectResult: `{"0":"1","1":"2","2":"6"}`,
 		},
 		{
+			name:   "Selection abstain",
+			method: "selection",
+			config: `{"options":["tom","gregor","hans"]}`,
+			votes: []dsmodels.Vote{
+				{Value: `[0,1]`},
+				{Value: `[]`},
+				{Value: `[]`, Weight: "5"},
+			},
+			expectResult: `{"0":"1","1":"1","abstain":"6"}`,
+		},
+		{
 			name:   "Rating",
 			method: "rating",
 			config: `{"options":["tom","gregor","hans"]}`,
@@ -59,6 +70,17 @@ func TestCreateResult(t *testing.T) {
 				{Value: `{"2":5}`, Weight: "5"},
 			},
 			expectResult: `{"0":"3","1":"5","2":"28"}`,
+		},
+		{
+			name:   "Rating Abstain",
+			method: "rating",
+			config: `{"options":["tom","gregor","hans"]}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"0":3,"1":3}`},
+				{Value: `{}`},
+				{Value: `{}`, Weight: "5"},
+			},
+			expectResult: `{"0":"3","1":"3","abstain":"6"}`,
 		},
 		{
 			name:   "Rating-Motion",

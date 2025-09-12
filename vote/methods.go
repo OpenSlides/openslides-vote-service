@@ -144,6 +144,10 @@ func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, e
 			result[strconv.Itoa(votedOption)] = result[strconv.Itoa(votedOption)].Add(weight)
 		}
 
+		if len(votedOptions) == 0 {
+			result["abstain"] = result["abstain"].Add(weight)
+		}
+
 		return nil
 	})
 }
@@ -241,6 +245,10 @@ func (m methodRating) Result(config string, votes []dsmodels.Vote) (string, erro
 		for votedOption, value := range votedOptions {
 			voteWithFactor := weight.Mul(decimal.NewFromInt(int64(value)))
 			result[strconv.Itoa(votedOption)] = result[strconv.Itoa(votedOption)].Add(voteWithFactor)
+		}
+
+		if len(votedOptions) == 0 {
+			result["abstain"] = result["abstain"].Add(weight)
 		}
 
 		return nil
