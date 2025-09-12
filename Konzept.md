@@ -392,13 +392,17 @@ System `Y` vs. `N`).
 {
   "options": ["Hans", "Gregor", "Tom"],
   "max_options_amount": 2,
-  "min_options_amount": 1
+  "min_options_amount": 1,
+  "allow_nota": true
 }
 ```
 
 `options` kann dabei alles sein. Der vote-service muss nur wissen, wie viele es
 sind oder verwendet nur die indexe. Wenn es für assigments verwendet wird, dann
 werden es vermutlich ids von `poll_candidate` objekten sein.
+
+`allow_nota` ermöglicht die Wahl mit dem String "nota" was separat gezählt wird:
+https://en.wikipedia.org/wiki/None_of_the_above
 
 Ein `vote` ist eine Liste von Indexen. Zum Beispiel `[0,1]` für "Hans" und
 "Gregor".

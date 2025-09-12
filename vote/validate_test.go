@@ -40,14 +40,14 @@ func TestValidateVote(t *testing.T) {
 		{
 			name:        "Motion: Abstain deactivated",
 			method:      "motion",
-			config:      `{"abstain": false}`,
+			config:      `{"allow_abstain": false}`,
 			vote:        `"Abstain"`,
 			expectValid: false,
 		},
 		{
 			name:        "Motion: Allow invalid",
 			method:      "motion",
-			config:      `{"invalid": true}`,
+			config:      `{"allow_invalid": true}`,
 			vote:        `[[INVALID}}}`,
 			expectValid: true,
 		},
@@ -113,6 +113,13 @@ func TestValidateVote(t *testing.T) {
 			config:      `{"options":["Max","Hubert"],"min_options_amount":2}`,
 			vote:        `[0]`,
 			expectValid: false,
+		},
+		{
+			name:        "Selection nota",
+			method:      "selection",
+			config:      `{"options":["Max","Hubert"],"min_options_amount":2,"allow_nota":true}`,
+			vote:        `"nota"`,
+			expectValid: true,
 		},
 		{
 			name:        "Rating",
@@ -218,6 +225,13 @@ func TestValidateVote(t *testing.T) {
 			config:      `{"options":["Max","Hubert"]}`,
 			vote:        `{"0":"Yes", "1":"No"}`,
 			expectValid: true,
+		},
+		{
+			name:        "Rating-Motion disallow abstain",
+			method:      "rating-motion",
+			config:      `{"options":["Max","Hubert"],"allow_abstain":false}`,
+			vote:        `{"0":"Yes", "1":"Abstain"}`,
+			expectValid: false,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

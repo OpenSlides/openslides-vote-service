@@ -27,8 +27,8 @@ func (m methodMotion) Name() string {
 
 func (m methodMotion) ValidateConfig(config string) error {
 	var cfg struct {
-		Abstain dsfetch.Maybe[bool] `json:"abstain"`
-		Invalid bool                `json:"invalid"`
+		AllowInvalid bool                `json:"allow_invalid"`
+		AllowAbstain dsfetch.Maybe[bool] `json:"allow_abstain"`
 	}
 
 	if config != "" {
@@ -42,8 +42,8 @@ func (m methodMotion) ValidateConfig(config string) error {
 
 func (m methodMotion) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Abstain dsfetch.Maybe[bool] `json:"abstain"`
-		Invalid bool                `json:"invalid"`
+		AllowInvalid bool                `json:"allow_invalid"`
+		AllowAbstain dsfetch.Maybe[bool] `json:"allow_abstain"`
 	}
 
 	if config != "" {
@@ -52,7 +52,7 @@ func (m methodMotion) ValidateVote(config string, vote json.RawMessage) error {
 		}
 	}
 
-	if cfg.Invalid {
+	if cfg.AllowInvalid {
 		return nil
 	}
 
@@ -60,7 +60,7 @@ func (m methodMotion) ValidateVote(config string, vote json.RawMessage) error {
 	case `"yes"`, `"no"`:
 		return nil
 	case `"abstain"`:
-		if abstain, set := cfg.Abstain.Value(); !abstain && set {
+		if abstain, set := cfg.AllowAbstain.Value(); !abstain && set {
 			return invalidVote("abstain disabled")
 		}
 		return nil
@@ -91,10 +91,11 @@ func (m methodSelection) Name() string {
 
 func (m methodSelection) ValidateConfig(config string) error {
 	var cfg struct {
-		Invalid          bool               `json:"invalid"`
+		AllowInvalid     bool               `json:"allow_invalid"`
 		Options          []json.RawMessage  `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
+		AllowNota        bool               `json:"allow_nota"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
@@ -110,22 +111,26 @@ func (m methodSelection) ValidateConfig(config string) error {
 
 func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Invalid          bool               `json:"invalid"`
+		AllowInvalid     bool               `json:"allow_invalid"`
 		Options          []json.RawMessage  `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
+		AllowNota        bool               `json:"allow_nota"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	if cfg.Invalid {
+	if cfg.AllowInvalid {
 		return nil
 	}
 
 	var choice []int
 	if err := json.Unmarshal(vote, &choice); err != nil {
+		if cfg.AllowNota && strings.ToLower(string(vote)) == `"nota"` {
+			return nil
+		}
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
 
@@ -146,9 +151,20 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 }
 
 func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, error) {
+	var cfg struct {
+		AllowNota bool `json:"allow_nota"`
+	}
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+		return "", fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions []int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
+			if cfg.AllowNota && strings.ToLower(value) == `"nota"` {
+				result["nota"] = result["nota"].Add(weight)
+				return nil
+			}
 			return fmt.Errorf("invalid options `%s`: %w", value, err)
 		}
 
@@ -172,7 +188,7 @@ func (m methodRating) Name() string {
 
 func (m methodRating) ValidateConfig(config string) error {
 	var cfg struct {
-		Invalid           bool               `json:"invalid"`
+		AllowInvalid      bool               `json:"allow_invalid"`
 		Options           []json.RawMessage  `json:"options"`
 		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
@@ -194,7 +210,7 @@ func (m methodRating) ValidateConfig(config string) error {
 
 func (m methodRating) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Invalid           bool               `json:"invalid"`
+		AllowInvalid      bool               `json:"allow_invalid"`
 		Options           []json.RawMessage  `json:"options"`
 		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
@@ -207,7 +223,7 @@ func (m methodRating) ValidateVote(config string, vote json.RawMessage) error {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	if cfg.Invalid {
+	if cfg.AllowInvalid {
 		return nil
 	}
 
@@ -281,7 +297,7 @@ func (m methodRatingMotion) Name() string {
 
 func (m methodRatingMotion) ValidateConfig(config string) error {
 	var cfg struct {
-		Invalid          bool                `json:"invalid"`
+		AllowInvalid     bool                `json:"allow_invalid"`
 		Options          []json.RawMessage   `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
@@ -301,18 +317,18 @@ func (m methodRatingMotion) ValidateConfig(config string) error {
 
 func (m methodRatingMotion) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Invalid          bool                `json:"invalid"`
+		AllowInvalid     bool                `json:"allow_invalid"`
 		Options          []json.RawMessage   `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
-		Abstain          dsfetch.Maybe[bool] `json:"abstain"`
+		AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	if cfg.Invalid {
+	if cfg.AllowInvalid {
 		return nil
 	}
 

@@ -61,6 +61,17 @@ func TestCreateResult(t *testing.T) {
 			expectResult: `{"0":"1","1":"1","abstain":"6"}`,
 		},
 		{
+			name:   "Selection nota",
+			method: "selection",
+			config: `{"options":["tom","gregor","hans"],"allow_nota":true}`,
+			votes: []dsmodels.Vote{
+				{Value: `[0,1]`},
+				{Value: `"nota"`},
+				{Value: `"nota"`, Weight: "5"},
+			},
+			expectResult: `{"0":"1","1":"1","nota":"6"}`,
+		},
+		{
 			name:   "Rating",
 			method: "rating",
 			config: `{"options":["tom","gregor","hans"]}`,
