@@ -503,7 +503,3 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 - Sollte das result-Feld bei manually-polls validiert werden? Was ist, wenn die
   method verändert wird?
-
-- Muss es möglich sein bei einem Update das Description Feld zu leeren? Sollte
-  der Client eher immer alle Werte übertragen, oder die Werte, die sich ändern?
-  Zum Beispiel titel?

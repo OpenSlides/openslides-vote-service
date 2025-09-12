@@ -339,6 +339,7 @@ func TestVote(t *testing.T) {
 	poll/5:
 		title: my poll
 		method: motion
+		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
 		meeting_id: 1

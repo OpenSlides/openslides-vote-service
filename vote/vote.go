@@ -88,8 +88,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	sequentialNumber += 1
 
 	sql := `INSERT INTO poll
-		(title, description, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, live_voting_enabled)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10)
+		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, live_voting_enabled)
+		VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9)
 		RETURNING id;`
 
 	var newID int
@@ -97,7 +97,6 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ctx,
 		sql,
 		ci.Title,
-		ci.Description,
 		ci.Method,
 		ci.Config,
 		ci.Visibility,
@@ -139,7 +138,6 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 
 type CreateInput struct {
 	Title             string          `json:"title"`
-	Description       string          `json:"description"`
 	ContentObjectID   string          `json:"content_object_id"`
 	MeetingID         int             `json:"meeting_id"`
 	Method            string          `json:"method"`
@@ -270,7 +268,6 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 
 type UpdateInput struct {
 	Title             string              `json:"title"`
-	Description       string              `json:"description"`
 	Method            string              `json:"method"`
 	Config            json.RawMessage     `json:"config"`
 	Visibility        string              `json:"visibility"`
@@ -350,12 +347,6 @@ func (ui UpdateInput) createQuery(pollID int) (string, []any) {
 	if ui.Title != "" {
 		setParts = append(setParts, fmt.Sprintf("title = $%d", argIndex))
 		args = append(args, ui.Title)
-		argIndex++
-	}
-
-	if ui.Description != "" {
-		setParts = append(setParts, fmt.Sprintf("description = $%d", argIndex))
-		args = append(args, ui.Description)
 		argIndex++
 	}
 
