@@ -164,7 +164,6 @@ gespeichert wird.
 Damit ein Nutzer abstimmen darf, muss der represented_user stimmberechtigt sein,
 der acting_user (request_user) muss für ihn abstimmen dürfen.
 
-#### Stimmberechtigt
 
 #### Erlaubte Delegation
 
@@ -172,8 +171,6 @@ der acting_user (request_user) muss für ihn abstimmen dürfen.
 * Der represented_user muss die Stimme an den acting_user übertragen haben: meeting_user/vote_delegated_to_id
 * Im strict mode (meeting/users_forbid_delegator_to_vote): respreseted_user != acting_user (wenn delegiert)
 
-? Muss der acting_user im meeting sein?
-? Muss der acting_user anwesend sein?
 
 ### Andere bisherige Handler
 
