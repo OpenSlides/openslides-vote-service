@@ -578,8 +578,10 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("allowedToVote: %w", err)
 	}
 
-	if err := ValidateVote(poll.Method, poll.Config, body.Value); err != nil {
-		return fmt.Errorf("validate vote: %w", err)
+	if !poll.AllowInvalid {
+		if err := ValidateVote(poll.Method, poll.Config, body.Value); err != nil {
+			return fmt.Errorf("validate vote: %w", err)
+		}
 	}
 
 	meetingID := poll.MeetingID
