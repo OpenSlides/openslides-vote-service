@@ -88,7 +88,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	sequentialNumber += 1
 
 	sql := `INSERT INTO poll
-		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, live_voting_enabled)
+		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, published)
 		VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9)
 		RETURNING id;`
 
@@ -104,7 +104,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.ContentObjectID,
 		ci.MeetingID,
 		string(ci.Result),
-		ci.LiveVotingEnabled,
+		ci.Published,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
@@ -137,15 +137,15 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 }
 
 type CreateInput struct {
-	Title             string          `json:"title"`
-	ContentObjectID   string          `json:"content_object_id"`
-	MeetingID         int             `json:"meeting_id"`
-	Method            string          `json:"method"`
-	Config            json.RawMessage `json:"config"`
-	Visibility        string          `json:"visibility"`
-	EntitledGroupIDs  []int           `json:"entitled_group_ids"`
-	LiveVotingEnabled bool            `json:"live_voting_enabled"`
-	Result            json.RawMessage `json:"result"`
+	Title            string          `json:"title"`
+	ContentObjectID  string          `json:"content_object_id"`
+	MeetingID        int             `json:"meeting_id"`
+	Method           string          `json:"method"`
+	Config           json.RawMessage `json:"config"`
+	Visibility       string          `json:"visibility"`
+	EntitledGroupIDs []int           `json:"entitled_group_ids"`
+	Published        bool            `json:"published"`
+	Result           json.RawMessage `json:"result"`
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, error) {
@@ -178,10 +178,6 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, e
 	case "manually":
 		if len(ci.EntitledGroupIDs) > 0 {
 			return CreateInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
-		}
-
-		if ci.LiveVotingEnabled {
-			return CreateInput{}, MessageError(ErrInvalid, "Live Voting can not be enabled when visibility is set to manually")
 		}
 
 	default:
@@ -267,13 +263,13 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 }
 
 type UpdateInput struct {
-	Title             string              `json:"title"`
-	Method            string              `json:"method"`
-	Config            json.RawMessage     `json:"config"`
-	Visibility        string              `json:"visibility"`
-	EntitledGroupIDs  []int               `json:"entitled_group_ids"`
-	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
-	Result            json.RawMessage     `json:"result"`
+	Title            string              `json:"title"`
+	Method           string              `json:"method"`
+	Config           json.RawMessage     `json:"config"`
+	Visibility       string              `json:"visibility"`
+	EntitledGroupIDs []int               `json:"entitled_group_ids"`
+	Published        dsfetch.Maybe[bool] `json:"published"`
+	Result           json.RawMessage     `json:"result"`
 }
 
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (UpdateInput, error) {
@@ -309,10 +305,6 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 	case "manually":
 		if len(ui.EntitledGroupIDs) > 0 {
 			return UpdateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
-		}
-
-		if liveVotingEnabled, _ := ui.LiveVotingEnabled.Value(); liveVotingEnabled {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "Live Voting can not be enabled when visibility is set to manually")
 		}
 
 	default:
@@ -368,9 +360,9 @@ func (ui UpdateInput) createQuery(pollID int) (string, []any) {
 		argIndex++
 	}
 
-	if liveVotingEnabled, hasValue := ui.LiveVotingEnabled.Value(); hasValue {
-		setParts = append(setParts, fmt.Sprintf("live_voting_enabled = $%d", argIndex))
-		args = append(args, liveVotingEnabled)
+	if published, hasValue := ui.Published.Value(); hasValue {
+		setParts = append(setParts, fmt.Sprintf("published = $%d", argIndex))
+		args = append(args, published)
 		argIndex++
 	}
 
@@ -445,7 +437,8 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 // Finalize ends a poll.
 //
 // - If in the started state, it creates poll/result.
-// - With the flag `publish`, sets the state to `publish`, in other case to `stopped`
+// - Sets the state to `finished`.
+// - Sets the `published` flag.
 // - With the flag `anonymize`, clears all user_ids from the coresponding votes.
 func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
@@ -458,6 +451,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if poll.State == "created" {
+		// TODO: What abount anually polls an publish flag?
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
 
@@ -480,14 +474,9 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		}
 	}
 
-	newState := "finished"
-	if publish {
-		newState = "published"
-	}
-
-	sql := `UPDATE poll SET state = $1 WHERE id = $2;`
-	if _, err := tx.Exec(ctx, sql, newState, pollID); err != nil {
-		return fmt.Errorf("set poll %d to %s: %w", pollID, newState, err)
+	sql := `UPDATE poll SET state = 'finished', published = $1 WHERE id = $2;`
+	if _, err := tx.Exec(ctx, sql, publish, pollID); err != nil {
+		return fmt.Errorf("set poll %d to finished and publish to %v: %w", pollID, publish, err)
 	}
 
 	if anonymize {
@@ -538,13 +527,12 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("delete votes: %w", err)
 	}
 
-	updateSQL := `UPDATE poll SET state = 'created' WHERE id = $1`
+	updateSQL := `UPDATE poll SET state = 'created', published = false WHERE id = $1`
 
 	if _, err := tx.Exec(ctx, updateSQL, pollID); err != nil {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
 
-	// Transaktion committen
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
@@ -552,7 +540,6 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	return nil
 }
 
-// VoteResult enthält das Ergebnis der Vote-Operation
 type VoteResult struct {
 	Success bool   `json:"success"`
 	Status  string `json:"status"`

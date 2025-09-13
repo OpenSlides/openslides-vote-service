@@ -195,6 +195,21 @@ autoupdate-service.
 
 ## Weitere Features
 
+### Publish
+
+Bisher hatte eine Poll vier verschiedene Stats durchlaufen. `created` ->
+`started` -> `finished` -> `published`.
+
+Im neuen Konzept sind es nur noch drei States. `Published` ist kein state mehr,
+sondern ein unabhängiges Attribute jeder poll. Das bedeutet, dass eine Poll in
+jedem State published sein kann. Für den `started` state macht dies entweder
+keinen Sinn, vielleicht bei manuellen Abstimmungen. Aber wenn `started` und
+`published` gleichzeitig gesetzt sind, dann ist es paktisch eine
+live-abstimmung. Dafür braucht es daher kein eigenes Flag mehr. Dies macht die
+Rechte einfacher. Wenn publish gesetzt ist, dürfen die Nutzer das Ergenis sehen.
+Wenn nicht, dann dürfen es nur die Manager sehen.
+
+
 ### Analoge Abstimmungen
 
 Die Hauptaufgabe des vote-service liegt in den elektronischen Abstimmungen.
@@ -257,6 +272,9 @@ abgestimmt hat.
 
 Da jede Vote mit der User-ID in der Collection gespeichert wird, kann das
 Live-Voting über den autoupdate-restricter implementiret wierden.
+
+Live Voting is aktiviert, wenn eine poll auf publish gestellt wird, während sie
+läuft.
 
 
 ### Verschiedene Einstellungen
@@ -492,12 +510,13 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 # Fragen
 
-- Wird das Feld poll/voted_ids wirklich noch gebraucht? Wenn ich es richtig
+- Wird das Feld `poll/voted_ids` wirklich noch gebraucht? Wenn ich es richtig
   verstehe, sind das alle user-ids, die abgestimmt haben. Bei secret polls
   werden sie in zukunft nicht gebraucht, da die user-ids in den vote-objecten
   mit den verschlüsselten Stimmen bleiben. Der einzige Sinn ist bei
   anonymisierten polls. Wird es dafür wirklich gebraucht? Sollte das Feld immer
-  gesetzt werden, oder nur beim anonymisieren?
+  gesetzt werden, oder nur beim anonymisieren? In welchem restriction mode
+  sollte es sein? Aktuell ist es A, was man in jedem state sehen kann.
 
 - Braucht es das Feld `is_pseudoanonymized` noch? Ich meine, dass das Feld
   redundant ist, da man leicht sehen kann, ob die votes noch user_ids haben.
@@ -510,3 +529,7 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 - Bei motion-rating: Muss man für jede Option eine stimme abgeben? Ist abstain
   der default? Was wenn abstain deaktiviert ist?
+
+- Was genau ist die poll_candidate_list und poll_candidate? Vorher war
+  poll_candidate_list mit option verlinkt, kann sie jetzt mit assignment
+  verlinkt werden?

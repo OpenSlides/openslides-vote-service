@@ -182,14 +182,14 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error publishing poll: %v", err)
 				}
 
-				key := dskey.MustKey("poll/1/state")
+				key := dskey.MustKey("poll/1/published")
 				values, err := flow.Get(ctx, key)
 				if err != nil {
 					t.Fatalf("Error getting state from poll: %v", err)
 				}
 
-				if string(values[key]) != `"published"` {
-					t.Errorf("Expected state to be published, got %s", values[key])
+				if string(values[key]) != `true` {
+					t.Errorf("Expected published to be true, got %s", values[key])
 				}
 			})
 
