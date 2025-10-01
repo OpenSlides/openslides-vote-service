@@ -4,21 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	golog "log"
 	"os"
-	"strconv"
 
 	"github.com/OpenSlides/openslides-go/auth"
 	"github.com/OpenSlides/openslides-go/environment"
 	messageBusRedis "github.com/OpenSlides/openslides-go/redis"
-	"github.com/OpenSlides/openslides-vote-service/backend"
-	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 	"github.com/OpenSlides/openslides-vote-service/vote/http"
 	"github.com/alecthomas/kong"
 )
-
-var envDebugLog = environment.NewVariable("VOTE_DEBUG_LOG", "false", "Show debug log.")
 
 //go:generate  sh -c "go run main.go build-doc > environment.md"
 
@@ -36,7 +30,6 @@ var cli struct {
 func main() {
 	ctx, cancel := environment.InterruptContext()
 	defer cancel()
-	log.SetInfoLogger(golog.Default())
 
 	kongCTX := kong.Parse(&cli, kong.UsageOnError())
 	switch kongCTX.Command() {
@@ -63,13 +56,9 @@ func main() {
 func run(ctx context.Context) error {
 	lookup := new(environment.ForProduction)
 
-	if debug, _ := strconv.ParseBool(envDebugLog.Value(lookup)); debug {
-		log.SetDebugLogger(golog.Default())
-	}
-
 	service, err := initService(lookup)
 	if err != nil {
-		return fmt.Errorf("init services: %w", err)
+		return fmt.Errorf("init service: %w", err)
 	}
 
 	return service(ctx)
@@ -97,13 +86,13 @@ func buildDocu() error {
 func initService(lookup environment.Environmenter) (func(context.Context) error, error) {
 	var backgroundTasks []func(context.Context, func(error))
 
-	httpServer := http.New(lookup)
+	httpServer := http.New(lookup, fmt.Printf)
 
 	// Redis as message bus for datastore and logout events.
 	messageBus := messageBusRedis.New(lookup)
 
 	// Datastore Service.
-	database, err := vote.Flow(lookup, messageBus)
+	database, dbPool, err := vote.Flow(lookup)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
@@ -115,23 +104,8 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	}
 	backgroundTasks = append(backgroundTasks, authBackground)
 
-	fastBackendStarter, longBackendStarter, singleInstance, err := backend.Build(lookup)
-	if err != nil {
-		return nil, fmt.Errorf("init vote backend: %w", err)
-	}
-
 	service := func(ctx context.Context) error {
-		fastBackend, err := fastBackendStarter(ctx)
-		if err != nil {
-			return fmt.Errorf("start fast backend: %w", err)
-		}
-
-		longBackend, err := longBackendStarter(ctx)
-		if err != nil {
-			return fmt.Errorf("start long backend: %w", err)
-		}
-
-		voteService, voteBackground, err := vote.New(ctx, fastBackend, longBackend, database, singleInstance)
+		voteService, voteBackground, err := vote.New(ctx, database, dbPool)
 		if err != nil {
 			return fmt.Errorf("starting service: %w", err)
 		}
@@ -163,5 +137,5 @@ func handleError(err error) {
 		return
 	}
 
-	log.Info("Error: %v", err)
+	fmt.Printf("Error: %v\n", err)
 }

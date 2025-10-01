@@ -8,14 +8,10 @@ const (
 	// ErrInternal should not happen.
 	ErrInternal TypeError = iota
 
-	// ErrExists happens, when start is called with an poll ID that already
-	// exists.
-	ErrExists
-
 	// ErrNotExists happens when an operation is performed on an unknown poll.
 	ErrNotExists
 
-	// ErrInvalid happens, when the vote data is invalid.
+	// ErrInvalid happens, when the poll or vote data is invalid.
 	ErrInvalid
 
 	// ErrDoubleVote happens on a vote request, when the user tries to vote for a
@@ -26,8 +22,8 @@ const (
 	// anonymous or is not allowed to vote.
 	ErrNotAllowed
 
-	// ErrStopped happens when a user tries to vote on a stopped poll.
-	ErrStopped
+	// ErrNotStarted happens when a user tries to vote on a stopped poll.
+	ErrNotStarted
 )
 
 // TypeError is an error that can happend in this API.
@@ -36,9 +32,6 @@ type TypeError int
 // Type returns a name for the error.
 func (err TypeError) Type() string {
 	switch err {
-	case ErrExists:
-		return "exist"
-
 	case ErrNotExists:
 		return "not-exist"
 
@@ -51,8 +44,8 @@ func (err TypeError) Type() string {
 	case ErrNotAllowed:
 		return "not-allowed"
 
-	case ErrStopped:
-		return "stopped"
+	case ErrNotStarted:
+		return "not-started"
 
 	default:
 		return "internal"
@@ -62,9 +55,6 @@ func (err TypeError) Type() string {
 func (err TypeError) Error() string {
 	var msg string
 	switch err {
-	case ErrExists:
-		msg = "Poll does already exist with differet config"
-
 	case ErrNotExists:
 		msg = "Poll does not exist"
 
@@ -74,7 +64,7 @@ func (err TypeError) Error() string {
 	case ErrDoubleVote:
 		msg = "Not the first vote"
 
-	case ErrStopped:
+	case ErrNotStarted:
 		msg = "The vote is not open for votes"
 
 	case ErrNotAllowed:
@@ -84,7 +74,11 @@ func (err TypeError) Error() string {
 		msg = "Ups, something went wrong!"
 
 	}
-	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, err.Type(), msg)
+	return msg
+}
+
+func invalidVote(msg string, a ...any) error {
+	return MessageErrorf(ErrInvalid, msg, a...)
 }
 
 type messageError struct {
