@@ -36,6 +36,11 @@ func TestAll(t *testing.T) {
 		title: my motion
 		state_id: 1
 
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
 	meeting/1:
 		present_user_ids: [30]
 
@@ -267,6 +272,11 @@ func TestCreateManually(t *testing.T) {
 		title: my motion
 		state_id: 1
 
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
 	meeting/1/welcome_title: hello world
 	`
 
@@ -321,6 +331,11 @@ func TestVote(t *testing.T) {
 		sequential_number: 1
 		title: my motion
 		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
 
 	meeting/1:
 		present_user_ids: [30]
