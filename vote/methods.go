@@ -4,13 +4,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"slices"
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/shopspring/decimal"
 )
+
+const (
+	keyAbstain = "abstain"
+	keyNota    = "nota"
+)
+
+var reservedOptionNames = []string{keyAbstain, keyNota}
 
 type method interface {
 	Name() string
@@ -85,10 +92,10 @@ func (m methodSelection) Name() string {
 
 func (m methodSelection) ValidateConfig(config string) error {
 	var cfg struct {
-		Options          []json.RawMessage  `json:"options"`
-		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
-		AllowNota        bool               `json:"allow_nota"`
+		Options          map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
+		AllowNota        bool                       `json:"allow_nota"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
@@ -99,22 +106,28 @@ func (m methodSelection) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method selection needs at least one option")
 	}
 
+	for key := range cfg.Options {
+		if slices.Contains(reservedOptionNames, key) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+		}
+	}
+
 	return nil
 }
 
 func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Options          []json.RawMessage  `json:"options"`
-		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
-		AllowNota        bool               `json:"allow_nota"`
+		Options          map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
+		AllowNota        bool                       `json:"allow_nota"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice []int
+	var choice []string
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		if cfg.AllowNota && strings.ToLower(string(vote)) == `"nota"` {
 			return nil
@@ -134,8 +147,8 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 		return invalidVote("too few options")
 	}
 	for _, option := range choice {
-		if option < 0 || option >= len(cfg.Options) {
-			return invalidVote("invalid option %d", option)
+		if _, ok := cfg.Options[option]; !ok {
+			return invalidVote("unknown option %s", option)
 		}
 	}
 
@@ -151,21 +164,21 @@ func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, e
 	}
 
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
-		var votedOptions []int
+		var votedOptions []string
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
 			if cfg.AllowNota && strings.ToLower(value) == `"nota"` {
-				result["nota"] = result["nota"].Add(weight)
+				result[keyNota] = result[keyNota].Add(weight)
 				return nil
 			}
 			return fmt.Errorf("invalid options `%s`: %w", value, err)
 		}
 
 		for _, votedOption := range votedOptions {
-			result[strconv.Itoa(votedOption)] = result[strconv.Itoa(votedOption)].Add(weight)
+			result[votedOption] = result[votedOption].Add(weight)
 		}
 
 		if len(votedOptions) == 0 {
-			result["abstain"] = result["abstain"].Add(weight)
+			result[keyAbstain] = result[keyAbstain].Add(weight)
 		}
 
 		return nil
@@ -180,12 +193,12 @@ func (m methodRating) Name() string {
 
 func (m methodRating) ValidateConfig(config string) error {
 	var cfg struct {
-		Options           []json.RawMessage  `json:"options"`
-		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
-		MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
-		MaxVotesPerOption dsfetch.Maybe[int] `json:"max_votes_per_option"`
-		MaxVoteSum        dsfetch.Maybe[int] `json:"max_vote_sum"`
-		MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
+		Options           map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount  dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount  dsfetch.Maybe[int]         `json:"min_options_amount"`
+		MaxVotesPerOption dsfetch.Maybe[int]         `json:"max_votes_per_option"`
+		MaxVoteSum        dsfetch.Maybe[int]         `json:"max_vote_sum"`
+		MinVoteSum        dsfetch.Maybe[int]         `json:"min_vote_sum"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
@@ -196,24 +209,30 @@ func (m methodRating) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method rating needs at least one option")
 	}
 
+	for key := range cfg.Options {
+		if slices.Contains(reservedOptionNames, key) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+		}
+	}
+
 	return nil
 }
 
 func (m methodRating) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Options           []json.RawMessage  `json:"options"`
-		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
-		MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
-		MaxVotesPerOption dsfetch.Maybe[int] `json:"max_votes_per_option"`
-		MaxVoteSum        dsfetch.Maybe[int] `json:"max_vote_sum"`
-		MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
+		Options           map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount  dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount  dsfetch.Maybe[int]         `json:"min_options_amount"`
+		MaxVotesPerOption dsfetch.Maybe[int]         `json:"max_votes_per_option"`
+		MaxVoteSum        dsfetch.Maybe[int]         `json:"max_vote_sum"`
+		MinVoteSum        dsfetch.Maybe[int]         `json:"min_vote_sum"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice map[int]int
+	var choice map[string]int
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
@@ -228,8 +247,8 @@ func (m methodRating) ValidateVote(config string, vote json.RawMessage) error {
 
 	var sum int
 	for option, choice := range choice {
-		if option < 0 || option >= len(cfg.Options) {
-			return invalidVote("invalid option %d", option)
+		if _, ok := cfg.Options[option]; !ok {
+			return invalidVote("unknown option %s", option)
 		}
 
 		if choice < 0 {
@@ -257,18 +276,18 @@ func (m methodRating) ValidateVote(config string, vote json.RawMessage) error {
 
 func (m methodRating) Result(config string, votes []dsmodels.Vote) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
-		var votedOptions map[int]int
+		var votedOptions map[string]int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
 			return fmt.Errorf("invalid options `%s`: %w", value, err)
 		}
 
 		for votedOption, value := range votedOptions {
 			voteWithFactor := weight.Mul(decimal.NewFromInt(int64(value)))
-			result[strconv.Itoa(votedOption)] = result[strconv.Itoa(votedOption)].Add(voteWithFactor)
+			result[votedOption] = result[votedOption].Add(voteWithFactor)
 		}
 
 		if len(votedOptions) == 0 {
-			result["abstain"] = result["abstain"].Add(weight)
+			result[keyAbstain] = result[keyAbstain].Add(weight)
 		}
 
 		return nil
@@ -283,10 +302,10 @@ func (m methodRatingMotion) Name() string {
 
 func (m methodRatingMotion) ValidateConfig(config string) error {
 	var cfg struct {
-		Options          []json.RawMessage   `json:"options"`
-		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
-		Abstain          dsfetch.Maybe[bool] `json:"abstain"`
+		Options          map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
+		Abstain          dsfetch.Maybe[bool]        `json:"abstain"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
@@ -297,22 +316,28 @@ func (m methodRatingMotion) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method rating-motion needs at least one option")
 	}
 
+	for key := range cfg.Options {
+		if slices.Contains(reservedOptionNames, key) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+		}
+	}
+
 	return nil
 }
 
 func (m methodRatingMotion) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg struct {
-		Options          []json.RawMessage   `json:"options"`
-		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
-		AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
+		Options          map[string]json.RawMessage `json:"options"`
+		MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
+		MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
+		AllowAbstain     dsfetch.Maybe[bool]        `json:"allow_abstain"`
 	}
 
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice map[int]json.RawMessage
+	var choice map[string]json.RawMessage
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
@@ -326,8 +351,12 @@ func (m methodRatingMotion) ValidateVote(config string, vote json.RawMessage) er
 	}
 
 	for option, choice := range choice {
+		if _, ok := cfg.Options[option]; !ok {
+			return invalidVote("unknown option %s", option)
+		}
+
 		if err := (methodMotion{}).ValidateVote(config, choice); err != nil {
-			return fmt.Errorf("validating option %d: %w", option, err)
+			return fmt.Errorf("validating option %s: %w", option, err)
 		}
 	}
 
@@ -340,7 +369,7 @@ type DecimalOrMap struct {
 }
 
 func (m methodRatingMotion) Result(config string, votes []dsmodels.Vote) (string, error) {
-	result := make(map[int]map[string]decimal.Decimal)
+	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0
 
 	for _, vote := range votes {
@@ -361,23 +390,23 @@ func (m methodRatingMotion) Result(config string, votes []dsmodels.Vote) (string
 			return "", fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
 		}
 
-		var votedOptions map[int]json.RawMessage
+		var votedOptions map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(vote.Value), &votedOptions); err != nil {
 			return "", fmt.Errorf("invalid options `%s`: %w", vote.Value, err)
 		}
 
-		for optionIdx, value := range votedOptions {
-			if _, ok := result[optionIdx]; !ok {
-				result[optionIdx] = make(map[string]decimal.Decimal)
+		for option, value := range votedOptions {
+			if _, ok := result[option]; !ok {
+				result[option] = make(map[string]decimal.Decimal)
 			}
 
 			switch strings.ToLower(string(value)) {
 			case `"yes"`:
-				result[optionIdx]["yes"] = result[optionIdx]["yes"].Add(weight)
+				result[option]["yes"] = result[option]["yes"].Add(weight)
 			case `"no"`:
-				result[optionIdx]["no"] = result[optionIdx]["no"].Add(weight)
+				result[option]["no"] = result[option]["no"].Add(weight)
 			case `"abstain"`:
-				result[optionIdx]["abstain"] = result[optionIdx]["abstain"].Add(weight)
+				result[option]["abstain"] = result[option]["abstain"].Add(weight)
 			}
 		}
 	}
