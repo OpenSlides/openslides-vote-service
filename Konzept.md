@@ -501,32 +501,12 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 - Alte Tests durchgehen und entweder aktualisieren oder löschen
 - Preload von Tests on create - auch wenn ein poll von einer anderen Instanz angelegt wird.
 - Ggf. Fehlermeldung an den Client verschönern
-- 100% Basis
 - Finalize manually polls
+- Write poll/voted_ids when poll gets stopped
+- Methods in README dokumentieren
 
 
 # Fragen
 
-- Wird das Feld `poll/voted_ids` wirklich noch gebraucht? Wenn ich es richtig
-  verstehe, sind das alle user-ids, die abgestimmt haben. Bei secret polls
-  werden sie in zukunft nicht gebraucht, da die user-ids in den vote-objecten
-  mit den verschlüsselten Stimmen bleiben. Der einzige Sinn ist bei
-  anonymisierten polls. Wird es dafür wirklich gebraucht? Sollte das Feld immer
-  gesetzt werden, oder nur beim anonymisieren? In welchem restriction mode
-  sollte es sein? Aktuell ist es A, was man in jedem state sehen kann.
-
-- Braucht es das Feld `is_pseudoanonymized` noch? Ich meine, dass das Feld
-  redundant ist, da man leicht sehen kann, ob die votes noch user_ids haben.
-  Wenn `poll/voted_ids` nur beim anonymisiern gesetzt wird, dann kann man es
-  auch so sehen. Jedenfalls würde ich es in `is_anonymized` umbenennen, da so
-  auch die Aktion heißt.
-
-- Sollte das result-Feld bei manually-polls validiert werden? Was ist, wenn die
-  method verändert wird?
-
 - Bei motion-rating: Muss man für jede Option eine stimme abgeben? Ist abstain
   der default? Was wenn abstain deaktiviert ist?
-
-- Was genau ist die poll_candidate_list und poll_candidate? Vorher war
-  poll_candidate_list mit option verlinkt, kann sie jetzt mit assignment
-  verlinkt werden?
