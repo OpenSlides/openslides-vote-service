@@ -15,9 +15,10 @@ import (
 const (
 	keyAbstain = "abstain"
 	keyNota    = "nota"
+	keyInvalid = "invalid"
 )
 
-var reservedOptionNames = []string{keyAbstain, keyNota}
+var reservedOptionNames = []string{keyAbstain, keyNota, keyInvalid}
 
 type method interface {
 	Name() string
@@ -432,7 +433,7 @@ func addInvalid(result []byte, invalid int) ([]byte, error) {
 		return nil, err
 	}
 
-	data["invalid"] = invalid
+	data[keyInvalid] = invalid
 
 	return json.Marshal(data)
 }

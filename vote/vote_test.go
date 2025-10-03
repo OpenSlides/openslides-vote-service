@@ -1,6 +1,8 @@
 package vote_test
 
 import (
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -538,6 +540,688 @@ func TestVoteWeight(t *testing.T) {
 	}
 }
 
+func TestVoteStart(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30]
+
+	user:
+		30:
+			username: tom
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: normal poll
+		method: motion
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: created
+		entitled_group_ids: [40]
+
+	poll/6:
+		title: manually poll
+		method: motion
+		visibility: manually
+		sequential_number: 2
+		content_object_id: motion/5
+		meeting_id: 1
+		state: created
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Unknown poll", func(t *testing.T) {
+				err := service.Start(ctx, 404, 5)
+				if !errors.Is(err, vote.ErrNotExists) {
+					t.Errorf("Start returned unexpected error: %v", err)
+				}
+			})
+
+			t.Run("Not started poll", func(t *testing.T) {
+				counter := flow.(*dsmock.CounterFlow)
+				counter.Reset()
+
+				if err := service.Start(ctx, 5, 5); err != nil {
+					t.Errorf("Start returned unexpected error: %v", err)
+				}
+
+				if c := counter.Count(); c > 3 {
+					t.Errorf("Start used %d requests to the datastore, expected max 3:\n%s", c, counter.PrintRequests())
+				}
+			})
+
+			t.Run("Start poll a second time", func(t *testing.T) {
+				if err := service.Start(ctx, 5, 5); err != nil {
+					t.Errorf("Start returned unexpected error: %v", err)
+				}
+			})
+
+			t.Run("Start a finished poll", func(t *testing.T) {
+				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
+					t.Errorf("Stop poll")
+				}
+
+				err := service.Start(ctx, 5, 5)
+				if !errors.Is(err, vote.ErrInvalid) {
+					t.Errorf("Start returned unexpected error: %v", err)
+				}
+			})
+
+			t.Run("Start an anolog poll", func(t *testing.T) {
+				err := service.Start(ctx, 6, 5)
+				if !errors.Is(err, vote.ErrInvalid) {
+					t.Errorf("Start returned unexpected error: %v", err)
+				}
+			})
+		},
+	)
+}
+
+func TestVoteFinalize(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30]
+
+	user:
+		30:
+			username: tom
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: poll with votes
+		method: motion
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
+
+	vote/1:
+		poll_id: 5
+		value: '"yes"'
+	vote/2:
+		poll_id: 5
+		value: '"no"'
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Unknown poll", func(t *testing.T) {
+				err := service.Finalize(ctx, 404, 5, false, false)
+				if !errors.Is(err, vote.ErrNotExists) {
+					t.Errorf("Stopping an unknown poll has to return an ErrNotExists, got: %v", err)
+				}
+			})
+
+			t.Run("Poll with votes", func(t *testing.T) {
+				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
+					t.Fatalf("Stop returned unexpected error: %v", err)
+				}
+
+				poll, err := dsmodels.New(flow).Poll(5).First(ctx)
+				if err != nil {
+					t.Fatalf("load poll after finalize: %v", err)
+				}
+
+				if poll.Result != `{"no":"1","yes":"1"}` {
+					t.Errorf("Got result %s, expected %s", poll.Result, `{"no":"1","yes":"1"}`)
+				}
+
+				if poll.State != "finished" {
+					t.Errorf("Poll state is %s, expected finished", poll.State)
+				}
+			})
+
+			t.Run("finish poll a second time", func(t *testing.T) {
+				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
+					t.Fatalf("Stop returned unexpected error: %v", err)
+				}
+
+				poll, err := dsmodels.New(flow).Poll(5).First(ctx)
+				if err != nil {
+					t.Fatalf("load poll after finalize: %v", err)
+				}
+
+				if poll.State != "finished" {
+					t.Errorf("Poll state is %s, expected finished", poll.State)
+				}
+			})
+		},
+	)
+}
+
+func TestVoteVote(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30]
+
+	user:
+		30:
+			username: tom
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: poll with votes
+		method: motion
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Poll does not exist in DS", func(t *testing.T) {
+				err := service.Vote(ctx, 404, 1, strings.NewReader(`{"value":"Y"}`))
+				if !errors.Is(err, vote.ErrNotExists) {
+					t.Errorf("Expected ErrNotExists, got: %v", err)
+				}
+			})
+
+			t.Run("Invalid json", func(t *testing.T) {
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`{123`))
+
+				var errTyped vote.TypeError
+				if !errors.As(err, &errTyped) {
+					t.Fatalf("Vote() did not return an TypeError, got: %v", err)
+				}
+
+				if errTyped != vote.ErrInvalid {
+					t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrInvalid.Type())
+				}
+			})
+
+			t.Run("Invalid format", func(t *testing.T) {
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`{}`))
+
+				var errTyped vote.TypeError
+				if !errors.As(err, &errTyped) {
+					t.Fatalf("Vote() did not return an TypeError, got: %v", err)
+				}
+
+				if errTyped != vote.ErrInvalid {
+					t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrInvalid.Type())
+				}
+			})
+
+			t.Run("Valid data", func(t *testing.T) {
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`{"value":"Yes"}`))
+				if err != nil {
+					t.Fatalf("Vote returned unexpected error: %v", err)
+				}
+			})
+
+			t.Run("User has voted", func(t *testing.T) {
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`{"value":"Yes"}`))
+				if err == nil {
+					t.Fatalf("Vote returned no error")
+				}
+
+				var errTyped vote.TypeError
+				if !errors.As(err, &errTyped) {
+					t.Fatalf("Vote() did not return an TypeError, got: %v", err)
+				}
+
+				if errTyped != vote.ErrDoubleVote {
+					t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrDoubleVote.Type())
+				}
+			})
+
+			t.Run("Poll is stopped", func(t *testing.T) {
+				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
+					t.Fatalf("Finalize poll: %v", err)
+				}
+
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`{"value":"Yes"}`))
+				if err == nil {
+					t.Fatalf("Vote returned no error")
+				}
+
+				var errTyped vote.TypeError
+				if !errors.As(err, &errTyped) {
+					t.Fatalf("Vote() did not return an TypeError, got: %v", err)
+				}
+
+				if errTyped != vote.ErrNotStarted {
+					t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrNotStarted.Type())
+				}
+			})
+		},
+	)
+}
+
+func TestVoteDelegationAndGroup(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	baseData := `
+	meeting/1/users_enable_vote_delegations: true
+
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	group/40:
+		name: delegates
+		meeting_id: 1
+
+	user:
+		5:
+			username: admin
+			organization_management_level: superadmin
+		30:
+			username: tom
+
+		40:
+			username: georg
+
+	meeting_user:
+		31:
+			user_id: 30
+			meeting_id: 1
+
+		41:
+			user_id: 40
+			meeting_id: 1
+
+	poll/5:
+		title: normal poll
+		method: motion
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
+
+	`
+
+	for _, tt := range []struct {
+		name string
+		data string
+		vote string
+
+		expectVotedUserID int
+	}{
+		{
+			"Not delegated",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"value":"Yes"}`,
+
+			30,
+		},
+
+		{
+			"Not delegated not present",
+			`
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Not delegated not in group",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+			`,
+			`{"value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for self",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"user_id": 30, "value":"Yes"}`,
+
+			30,
+		},
+
+		{
+			"Vote for self not activated",
+			`
+			meeting/1/users_enable_vote_delegations: false
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"user_id": 30, "value":"Yes"}`,
+
+			30,
+		},
+
+		{
+			"Vote for anonymous",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"user_id": 0, "value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for other without delegation",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+			`,
+			`{"user_id": 40, "value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for other with delegation",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user:
+				41:
+					group_ids: [40]
+					vote_delegated_to_id: 31
+			`,
+			`{"user_id": 40, "value":"Yes"}`,
+
+			40,
+		},
+
+		{
+			"Vote for other with delegation not activated",
+			`
+			meeting/1/users_enable_vote_delegations: false
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user:
+				41:
+					group_ids: [40]
+					vote_delegated_to_id: 31
+			`,
+			`{"user_id": 40, "value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for other with delegation not in group",
+			`
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user:
+				41:
+					vote_delegated_to_id: 31
+			`,
+			`{"user_id": 40, "value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for self when delegation is activated users_forbid_delegator_to_vote==false",
+			`
+			meeting/1/users_forbid_delegator_to_vote: false
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+				vote_delegated_to_id: 41
+			`,
+			`{"user_id": 30, "value":"Yes"}`,
+
+			30,
+		},
+
+		{
+			"Vote for self when delegation is activated users_forbid_delegator_to_vote==true",
+			`
+			meeting/1/users_forbid_delegator_to_vote: true
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+				vote_delegated_to_id: 41
+			`,
+			`{"user_id": 30, "value":"Yes"}`,
+
+			0,
+		},
+
+		{
+			"Vote for self when delegation is deactivated users_forbid_delegator_to_vote==true",
+			`
+			meeting/1:
+				users_forbid_delegator_to_vote: true
+				users_enable_vote_delegations: false
+
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+				vote_delegated_to_id: 41
+			`,
+			`{"user_id": 30, "value":"Yes"}`,
+
+			30,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pg.Cleanup(t)
+
+			if err := pg.AddData(ctx, baseData); err != nil {
+				t.Fatalf("Insert base data: %v", err)
+			}
+
+			withData(
+				t,
+				pg,
+				tt.data,
+				func(service *vote.Vote, flow flow.Flow) {
+					err := service.Vote(ctx, 5, 30, strings.NewReader(tt.vote))
+
+					if tt.expectVotedUserID != 0 {
+						if err != nil {
+							t.Fatalf("Vote returned unexpected error: %v", err)
+						}
+
+						ds := dsmodels.New(flow)
+						q := ds.Poll(5)
+						q = q.Preload(q.VoteList())
+						poll, err := q.First(ctx)
+						if err != nil {
+							t.Fatalf("Error: Getting votes from poll: %v", err)
+						}
+						found := slices.ContainsFunc(poll.VoteList, func(vote dsmodels.Vote) bool {
+							userID, _ := vote.RepresentedUserID.Value()
+							return userID == tt.expectVotedUserID
+						})
+
+						if !found {
+							t.Errorf("user %d has not voted", tt.expectVotedUserID)
+						}
+
+						return
+					}
+
+					if !errors.Is(err, vote.ErrNotAllowed) {
+						t.Fatalf("Expected NotAllowedError, got: %v", err)
+					}
+				},
+			)
+		})
+	}
+}
+
 func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
 	t.Helper()
 
@@ -559,1179 +1243,12 @@ func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(servic
 	}
 	defer conn.Close(ctx)
 
-	service, _, err := vote.New(ctx, flow, conn)
+	counter := dsmock.NewCounterFlow(flow)
+
+	service, _, err := vote.New(ctx, counter, conn)
 	if err != nil {
 		t.Fatalf("Error creating vote: %v", err)
 	}
 
-	fn(service, flow)
+	fn(service, counter)
 }
-
-// func TestVoteStart(t *testing.T) {
-// 	ctx := context.Background()
-
-// 	t.Run("Unknown poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := dsmock.NewFlow(dsmock.YAMLData(""))
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		err := v.Start(ctx, 1)
-// 		if !errors.Is(err, vote.ErrNotExists) {
-// 			t.Errorf("Start returned unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Not started poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := dsmock.NewFlow(
-// 			dsmock.YAMLData(`
-// 			poll:
-// 				1:
-// 					meeting_id: 5
-// 					state: started
-// 					backend: fast
-// 					type: pseudoanonymous
-// 					pollmethod: Y
-// 					content_object_id: some_field/1
-// 					sequential_number: 1
-// 					onehundred_percent_base: base
-// 					title: myPoll
-
-// 			user/1/is_present_in_meeting_ids: [1]
-// 			meeting/5/id: 5
-// 			`),
-// 			dsmock.NewCounter,
-// 		)
-// 		counter := ds.Middlewares()[0].(*dsmock.Counter)
-
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		if err := v.Start(ctx, 1); err != nil {
-// 			t.Errorf("Start returned unexpected error: %v", err)
-// 		}
-
-// 		if c := counter.Count(); c > 2 {
-// 			t.Errorf("Start used %d requests to the datastore, expected max 2: %v", c, counter.Requests())
-// 		}
-
-// 		// After a poll was started, it has to be possible to send votes.
-// 		if err := backend.Vote(ctx, 1, 1, []byte("something")); err != nil {
-// 			t.Errorf("Vote after start retuen and unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Start poll a second time", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: named
-// 				state: started
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		meeting/5/id: 5
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-// 		v.Start(ctx, 1)
-
-// 		if err := v.Start(ctx, 1); err != nil {
-// 			t.Errorf("Start returned unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Start a stopped poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: named
-// 				state: started
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		meeting/5/id: 5
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-// 		v.Start(ctx, 1)
-
-// 		if _, _, err := backend.Stop(ctx, 1); err != nil {
-// 			t.Fatalf("Stop returned unexpected error: %v", err)
-// 		}
-
-// 		if err := v.Start(ctx, 1); err != nil {
-// 			t.Errorf("Start returned unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Start an anolog poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: analog
-// 				state: started
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		err := v.Start(ctx, 1)
-
-// 		if err == nil {
-// 			t.Errorf("Got no error, expected `Some error`")
-// 		}
-// 	})
-
-// 	t.Run("Start an poll in `wrong` state", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: named
-// 				state: created
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		meeting/5/id: 5
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		err := v.Start(ctx, 1)
-// 		if err != nil {
-// 			t.Errorf("Start returned: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Start an finished poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: named
-// 				state: finished
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		err := v.Start(ctx, 1)
-
-// 		if err == nil {
-// 			t.Errorf("Got no error, expected `Some error`")
-// 		}
-// 	})
-
-// 	t.Run("Start an finished poll", func(t *testing.T) {
-// 		backend := memory.New()
-// 		ds := &StubGetter{data: dsmock.YAMLData(`
-// 		poll:
-// 			1:
-// 				meeting_id: 5
-// 				type: named
-// 				state: published
-// 				backend: fast
-// 				pollmethod: Y
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 		user/1/is_present_in_meeting_ids: [1]
-// 		`)}
-// 		v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 		err := v.Start(ctx, 1)
-
-// 		if err == nil {
-// 			t.Errorf("Got no error, expected `Some error`")
-// 		}
-// 	})
-// }
-
-// func TestVoteStop(t *testing.T) {
-// 	ctx := context.Background()
-// 	backend := memory.New()
-
-// 	ds := &StubGetter{data: dsmock.YAMLData(`
-// 	poll:
-// 		1:
-// 			meeting_id: 1
-// 			backend: fast
-// 			type: pseudoanonymous
-// 			pollmethod: Y
-// 			content_object_id: some_field/1
-// 			sequential_number: 1
-// 			onehundred_percent_base: base
-// 			title: myPoll
-// 		2:
-// 			meeting_id: 1
-// 			backend: fast
-// 			type: pseudoanonymous
-// 			pollmethod: Y
-// 			content_object_id: some_field/1
-// 			sequential_number: 1
-// 			onehundred_percent_base: base
-// 			title: myPoll
-// 		3:
-// 			meeting_id: 1
-// 			backend: fast
-// 			type: pseudoanonymous
-// 			pollmethod: Y
-// 			content_object_id: some_field/1
-// 			sequential_number: 1
-// 			onehundred_percent_base: base
-// 			title: myPoll
-// 	`)}
-
-// 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 	t.Run("Unknown poll", func(t *testing.T) {
-// 		_, err := v.Stop(ctx, 404)
-// 		if !errors.Is(err, vote.ErrNotExists) {
-// 			t.Errorf("Start returned unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Unknown poll", func(t *testing.T) {
-// 		_, err := v.Stop(ctx, 1)
-// 		if !errors.Is(err, vote.ErrNotExists) {
-// 			t.Errorf("Stopping an unknown poll has to return an ErrNotExists, got: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Known poll", func(t *testing.T) {
-// 		if err := backend.Start(ctx, 2); err != nil {
-// 			t.Fatalf("Start returned an unexpected error: %v", err)
-// 		}
-
-// 		backend.Vote(ctx, 2, 1, []byte(`"polldata1"`))
-// 		backend.Vote(ctx, 2, 2, []byte(`"polldata2"`))
-
-// 		result, err := v.Stop(ctx, 2)
-// 		if err != nil {
-// 			t.Fatalf("Stop returned unexpected error: %v", err)
-// 		}
-
-// 		expect := [][]byte{[]byte(`"polldata1"`), []byte(`"polldata2"`)}
-// 		if !reflect.DeepEqual(result.Votes, expect) {
-// 			t.Errorf("Got:\n`%s`, expected\n`%s`", result.Votes, expect)
-// 		}
-
-// 		if !reflect.DeepEqual(result.UserIDs, []int{1, 2}) {
-// 			t.Errorf("Got users %s, expected [1 2]", result.Votes)
-// 		}
-
-// 		err = backend.Vote(ctx, 2, 3, []byte(`"polldata3"`))
-// 		var errStopped interface{ Stopped() }
-// 		if !errors.As(err, &errStopped) {
-// 			t.Errorf("Stop did not stop the poll in the backend.")
-// 		}
-// 	})
-
-// 	t.Run("Poll without data", func(t *testing.T) {
-// 		if err := backend.Start(ctx, 3); err != nil {
-// 			t.Fatalf("Start: %v", err)
-// 		}
-
-// 		result, err := v.Stop(ctx, 3)
-// 		if err != nil {
-// 			t.Fatalf("Stop: %v", err)
-// 		}
-
-// 		if len(result.Votes) != 0 {
-// 			t.Errorf("Got votes %v, expected []", result.Votes)
-// 		}
-
-// 		if len(result.UserIDs) != 0 {
-// 			t.Errorf("Got userIDs %v, expected []", result.UserIDs)
-// 		}
-// 	})
-// }
-//
-// func TestVoteVote(t *testing.T) {
-// 	ctx := context.Background()
-// 	backend := memory.New()
-// 	ds := &StubGetter{
-// 		data: dsmock.YAMLData(`
-// 		poll/1:
-// 			meeting_id: 1
-// 			entitled_group_ids: [1]
-// 			pollmethod: Y
-// 			global_yes: true
-// 			backend: fast
-// 			type: pseudoanonymous
-// 			content_object_id: some_field/1
-// 			sequential_number: 1
-// 			onehundred_percent_base: base
-// 			title: myPoll
-
-// 		meeting/1/id: 1
-
-// 		user/1:
-// 			is_present_in_meeting_ids: [1]
-// 			meeting_user_ids: [10]
-
-// 		meeting_user/10:
-// 			user_id: 1
-// 			group_ids: [1]
-// 			meeting_id: 1
-// 		`),
-// 	}
-// 	v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 	t.Run("Poll does not exist in DS", func(t *testing.T) {
-// 		err := v.Vote(ctx, 404, 1, strings.NewReader(`{"value":"Y"}`))
-
-// 		if !errors.Is(err, vote.ErrNotExists) {
-// 			t.Errorf("Expected ErrNotExists, got: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("Unknown poll", func(t *testing.T) {
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{"value":"Y"}`))
-
-// 		if !errors.Is(err, vote.ErrNotExists) {
-// 			t.Errorf("Expected ErrNotExists, got: %v", err)
-// 		}
-// 	})
-
-// 	if err := backend.Start(ctx, 1); err != nil {
-// 		t.Fatalf("Starting poll returned unexpected error: %v", err)
-// 	}
-
-// 	t.Run("Invalid json", func(t *testing.T) {
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{123`))
-
-// 		var errTyped vote.TypeError
-// 		if !errors.As(err, &errTyped) {
-// 			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
-// 		}
-
-// 		if errTyped != vote.ErrInvalid {
-// 			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrInvalid.Type())
-// 		}
-// 	})
-
-// 	t.Run("Invalid format", func(t *testing.T) {
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{}`))
-
-// 		var errTyped vote.TypeError
-// 		if !errors.As(err, &errTyped) {
-// 			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
-// 		}
-
-// 		if errTyped != vote.ErrInvalid {
-// 			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrInvalid.Type())
-// 		}
-// 	})
-
-// 	t.Run("Valid data", func(t *testing.T) {
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{"value":"Y"}`))
-// 		if err != nil {
-// 			t.Fatalf("Vote returned unexpected error: %v", err)
-// 		}
-// 	})
-
-// 	t.Run("User has voted", func(t *testing.T) {
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{"value":"Y"}`))
-// 		if err == nil {
-// 			t.Fatalf("Vote returned no error")
-// 		}
-
-// 		var errTyped vote.TypeError
-// 		if !errors.As(err, &errTyped) {
-// 			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
-// 		}
-
-// 		if errTyped != vote.ErrDoubleVote {
-// 			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrDoubleVote.Type())
-// 		}
-// 	})
-
-// 	t.Run("Poll is stopped", func(t *testing.T) {
-// 		backend.Stop(ctx, 1)
-
-// 		err := v.Vote(ctx, 1, 1, strings.NewReader(`{"value":"Y"}`))
-// 		if err == nil {
-// 			t.Fatalf("Vote returned no error")
-// 		}
-
-// 		var errTyped vote.TypeError
-// 		if !errors.As(err, &errTyped) {
-// 			t.Fatalf("Vote() did not return an TypeError, got: %v", err)
-// 		}
-
-// 		if errTyped != vote.ErrNotStarted {
-// 			t.Errorf("Got error type `%s`, expected `%s`", errTyped.Type(), vote.ErrNotStarted.Type())
-// 		}
-// 	})
-// }
-
-// func TestVoteNoRequests(t *testing.T) {
-// 	// This tests makes sure, that a request to vote does not do any reading
-// 	// from the database. All values have to be in the cache from pollpreload.
-
-// 	for _, tt := range []struct {
-// 		name              string
-// 		data              string
-// 		vote              string
-// 		expectVotedUserID int
-// 	}{
-// 		{
-// 			"normal vote",
-// 			`---
-// 			poll/1:
-// 				meeting_id: 50
-// 				entitled_group_ids: [5]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				state: started
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/50/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [50]
-// 				meeting_user_ids: [10]
-// 			meeting_user/10:
-// 				meeting_id: 50
-// 				group_ids: [5]
-// 				user_id: 1
-
-// 			group/5/meeting_user_ids: [10]
-// 			`,
-// 			`{"value":"Y"}`,
-// 			1,
-// 		},
-// 		{
-// 			"delegation vote",
-// 			`---
-// 			poll/1:
-// 				meeting_id: 50
-// 				entitled_group_ids: [5]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				state: started
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/50/users_enable_vote_delegations: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [50]
-// 					meeting_user_ids: [10]
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					user_id: 1
-// 					vote_delegations_from_ids: [20]
-// 					meeting_id: 50
-// 				20:
-// 					meeting_id: 50
-// 					vote_delegated_to_id: 10
-// 					group_ids: [5]
-// 					user_id: 2
-
-// 			group/5/meeting_user_ids: [20]
-// 			`,
-// 			`{"user_id":2,"value":"Y"}`,
-// 			2,
-// 		},
-// 		{
-// 			"vote weight enabled",
-// 			`---
-// 			poll/1:
-// 				meeting_id: 50
-// 				entitled_group_ids: [5]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				state: started
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/50:
-// 				users_enable_vote_weight: true
-// 				users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [50]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user:
-// 				10:
-// 					group_ids: [5]
-// 					user_id: 1
-// 					meeting_id: 50
-
-// 			group/5/meeting_user_ids: [10]
-// 			`,
-// 			`{"value":"Y"}`,
-// 			1,
-// 		},
-// 		{
-// 			"vote weight enabled and delegated",
-// 			`---
-// 			poll/1:
-// 				meeting_id: 50
-// 				entitled_group_ids: [5]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				state: started
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/50:
-// 				users_enable_vote_weight: true
-// 				users_enable_vote_delegations: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [50]
-// 					meeting_user_ids: [10]
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 50
-// 					user_id: 1
-
-// 				20:
-// 					group_ids: [5]
-// 					meeting_id: 50
-// 					user_id: 2
-// 					vote_delegated_to_id: 10
-
-// 			group/5/meeting_user_ids: [20]
-// 			`,
-// 			`{"user_id":2,"value":"Y"}`,
-// 			2,
-// 		},
-// 	} {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			ctx := context.Background()
-// 			ds := dsmock.NewFlow(
-// 				dsmock.YAMLData(tt.data),
-// 				dsmock.NewCounter,
-// 			)
-// 			counter := ds.Middlewares()[0].(*dsmock.Counter)
-// 			cachedDS := cache.New(ds)
-// 			backend := memory.New()
-// 			v, _, _ := vote.New(ctx, backend, backend, cachedDS, true)
-
-// 			if err := v.Start(ctx, 1); err != nil {
-// 				t.Fatalf("Can not start poll: %v", err)
-// 			}
-
-// 			counter.Reset()
-
-// 			if err := v.Vote(ctx, 1, 1, strings.NewReader(tt.vote)); err != nil {
-// 				t.Errorf("Vote returned unexpected error: %v", err)
-// 			}
-
-// 			if counter.Count() != 0 {
-// 				t.Errorf("Vote send %d requests to the datastore: %v", counter.Count(), counter.Requests())
-// 			}
-
-// 			backend.AssertUserHasVoted(t, 1, tt.expectVotedUserID)
-// 		})
-// 	}
-// }
-
-// func TestVoteDelegationAndGroup(t *testing.T) {
-// 	for _, tt := range []struct {
-// 		name string
-// 		data string
-// 		vote string
-
-// 		expectVotedUserID int
-// 	}{
-// 		{
-// 			"Not delegated",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			`{"value":"Y"}`,
-
-// 			1,
-// 		},
-
-// 		{
-// 			"Not delegated not present",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			`{"value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Not delegated not in group",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: []
-// 				meeting_id: 1
-// 			`,
-// 			`{"value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for self",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			`{"user_id": 1, "value":"Y"}`,
-
-// 			1,
-// 		},
-
-// 		{
-// 			"Vote for self not activated",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: false
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			`{"user_id": 1, "value":"Y"}`,
-
-// 			1,
-// 		},
-
-// 		{
-// 			"Vote for anonymous",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1:
-// 				is_present_in_meeting_ids: [1]
-// 				meeting_user_ids: [10]
-
-// 			meeting_user/10:
-// 				group_ids: [1]
-// 				meeting_id: 1
-// 			`,
-// 			`{"user_id": 0, "value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for other without delegation",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user/1/is_present_in_meeting_ids: [1]
-// 			user/2/meeting_user_ids: [20]
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-// 				20:
-// 					group_ids: [1]
-// 					meeting_id: 1
-// 			`,
-// 			`{"user_id": 2, "value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for other with delegation",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-
-// 				20:
-// 					group_ids: [1]
-// 					meeting_id: 1
-// 					vote_delegated_to_id: 10
-// 			`,
-// 			`{"user_id": 2, "value":"Y"}`,
-
-// 			2,
-// 		},
-
-// 		{
-// 			"Vote for other with delegation not activated",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: false
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-
-// 				20:
-// 					group_ids: [1]
-// 					meeting_id: 1
-// 					vote_delegated_to_id: 10
-// 			`,
-// 			`{"user_id": 2, "value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for other with delegation not in group",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-
-// 				20:
-// 					group_ids: []
-// 					meeting_id: 1
-// 					vote_delegated_to_id: 10
-// 			`,
-// 			`{"user_id": 2, "value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for other with self not in group",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1/users_enable_vote_delegations: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-
-// 				20:
-// 					group_ids: [1]
-// 					meeting_id: 1
-// 					vote_delegated_to_id: 10
-// 			`,
-// 			`{"user_id": 2, "value":"Y"}`,
-
-// 			2,
-// 		},
-
-// 		{
-// 			"Vote for self when delegation is activated users_forbid_delegator_to_vote==false",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1:
-// 				users_enable_vote_delegations: true
-// 				users_forbid_delegator_to_vote: false
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-// 					group_ids: [1]
-// 					vote_delegated_to_id: 20
-
-// 				20:
-// 					meeting_id: 1
-
-// 			`,
-// 			`{"user_id": 1, "value":"Y"}`,
-
-// 			1,
-// 		},
-
-// 		{
-// 			"Vote for self when delegation is activated users_forbid_delegator_to_vote==true",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1:
-// 				users_enable_vote_delegations: true
-// 				users_forbid_delegator_to_vote: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-// 					group_ids: [1]
-// 					vote_delegated_to_id: 20
-
-// 				20:
-// 					meeting_id: 1
-// 			`,
-// 			`{"user_id": 1, "value":"Y"}`,
-
-// 			0,
-// 		},
-
-// 		{
-// 			"Vote for self when delegation is deactivated users_forbid_delegator_to_vote==true",
-// 			`
-// 			poll/1:
-// 				meeting_id: 1
-// 				entitled_group_ids: [1]
-// 				pollmethod: Y
-// 				global_yes: true
-// 				backend: fast
-// 				type: pseudoanonymous
-// 				content_object_id: some_field/1
-// 				sequential_number: 1
-// 				onehundred_percent_base: base
-// 				title: myPoll
-
-// 			meeting/1:
-// 				users_enable_vote_delegations: false
-// 				users_forbid_delegator_to_vote: true
-
-// 			user:
-// 				1:
-// 					is_present_in_meeting_ids: [1]
-// 					meeting_user_ids: [10]
-
-// 				2:
-// 					meeting_user_ids: [20]
-
-// 			meeting_user:
-// 				10:
-// 					meeting_id: 1
-// 					user_id: 1
-// 					group_ids: [1]
-// 					vote_delegated_to_id: 20
-
-// 				20:
-// 					meeting_id: 1
-
-// 			`,
-// 			`{"user_id": 1, "value":"Y"}`,
-
-// 			1,
-// 		},
-// 	} {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			ctx := context.Background()
-// 			backend := memory.New()
-// 			ds := &StubGetter{data: dsmock.YAMLData(tt.data)}
-
-// 			v, _, _ := vote.New(ctx, backend, backend, ds, true)
-
-// 			if err := backend.Start(ctx, 1); err != nil {
-// 				t.Fatalf("backend.Start(): %v", err)
-// 			}
-
-// 			err := v.Vote(ctx, 1, 1, strings.NewReader(tt.vote))
-
-// 			if tt.expectVotedUserID != 0 {
-// 				if err != nil {
-// 					t.Fatalf("Vote returned unexpected error: %v", err)
-// 				}
-
-// 				backend.AssertUserHasVoted(t, 1, tt.expectVotedUserID)
-// 				return
-// 			}
-
-// 			if !errors.Is(err, vote.ErrNotAllowed) {
-// 				t.Fatalf("Expected NotAllowedError, got: %v", err)
-// 			}
-// 		})
-// 	}
-// }

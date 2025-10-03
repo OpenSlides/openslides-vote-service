@@ -417,11 +417,11 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageError(ErrInvalid, "Manually poll can not be started")
 	}
 
-	if poll.State != "created" {
-		return MessageErrorf(ErrInvalid, "Poll %d is not in the created state", pollID)
+	if poll.State == "finished" {
+		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
 	}
 
-	sql := `UPDATE poll SET state = 'started' WHERE id = $1 AND state = 'created';`
+	sql := `UPDATE poll SET state = 'started' WHERE id = $1 AND state != 'finished';`
 	commandTag, err := v.querier.Exec(ctx, sql, pollID)
 	if err != nil {
 		return fmt.Errorf("set poll %d to started: %w", pollID, err)
@@ -462,7 +462,13 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	defer tx.Rollback(ctx)
 
 	if poll.State == `started` {
-		votes := poll.VoteList
+		ds := dsmodels.New(v.flow)
+
+		votes, err := ds.Vote(poll.VoteIDs...).Get(ctx)
+		if err != nil {
+			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
+		}
+
 		result, err := CreateResult(poll.Method, poll.Config, votes)
 		if err != nil {
 			return fmt.Errorf("create poll result: %w", err)
@@ -559,22 +565,22 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	}
 
 	var body struct {
-		UserID int             `json:"user_id"`
-		Value  json.RawMessage `json:"value"`
+		UserID dsfetch.Maybe[int] `json:"user_id"`
+		Value  json.RawMessage    `json:"value"`
 	}
 
 	if err := json.NewDecoder(r).Decode(&body); err != nil {
-		return fmt.Errorf("decoding body: %w", err)
+		return MessageError(ErrInvalid, "Invalid body")
 	}
 
 	actingUserID := requestUserID
 	representedUserID := actingUserID
-	if body.UserID != 0 {
-		representedUserID = body.UserID
+	if userID, set := body.UserID.Value(); set {
+		representedUserID = userID
 	}
 
 	fetch := dsfetch.New(v.flow)
-	if err := allowedToVote(ctx, fetch, poll, actingUserID, representedUserID, poll.MeetingID); err != nil {
+	if err := allowedToVote(ctx, fetch, poll, representedUserID, actingUserID, poll.MeetingID); err != nil {
 		return fmt.Errorf("allowedToVote: %w", err)
 	}
 
@@ -603,7 +609,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					ELSE 'POLL_VALID'
 				END as poll_status
 			FROM poll
-			WHERE id = $2
+			WHERE id = $1
 		),
 		vote_check AS (
 			SELECT
@@ -613,12 +619,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					ELSE 'VOTE_OK'
 				END as vote_status
 			FROM vote
-			WHERE poll_id = $2 AND represented_user_id = $6
+			WHERE poll_id = $1 AND represented_user_id = $5
 		),
 		inserted AS (
 			INSERT INTO vote
-			(meeting_id, poll_id, value, weight, acting_user_id, represented_user_id)
-			SELECT $1, $2, $3, $4, $5, $6
+			(poll_id, value, weight, acting_user_id, represented_user_id)
+			SELECT $1, $2, $3, $4, $5
 			FROM poll_check p, vote_check v
 			WHERE p.poll_status = 'POLL_VALID' AND v.vote_status = 'VOTE_OK'
 			RETURNING id
@@ -634,7 +640,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		LEFT JOIN inserted i ON true;`
 
 	var status string
-	err = v.querier.QueryRow(ctx, sql, meetingID, pollID, voteValue, weight, actingUserID, representedUserID).Scan(
+	err = v.querier.QueryRow(ctx, sql, pollID, voteValue, weight, actingUserID, representedUserID).Scan(
 		&status,
 	)
 	if err != nil {
@@ -665,8 +671,16 @@ func allowedToVote(
 	actingUserID int,
 	meetingID int,
 ) error {
+	if representedUserID == 0 {
+		return MessageError(ErrNotAllowed, "Anonymous can not vote")
+	}
+
+	if actingUserID == 0 {
+		return MessageError(ErrNotAllowed, "For anonymous can not be voted")
+	}
+
 	if err := ensurePresent(ctx, ds, meetingID, actingUserID); err != nil {
-		return fmt.Errorf("ensure acting user is present: %w", err)
+		return fmt.Errorf("ensure acting user %d is present: %w", actingUserID, err)
 	}
 
 	representedMeetingUserID, found, err := getMeetingUser(ctx, ds, representedUserID, meetingID)
@@ -884,6 +898,10 @@ func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, conte
 }
 
 func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingID, user int) error {
+	if user == 0 {
+		return MessageErrorf(ErrNotAllowed, "Anonymous is not present in meeting %d", meetingID)
+	}
+
 	presentMeetings, err := ds.User_IsPresentInMeetingIDs(user).Value(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching is present in meetings: %w", err)
