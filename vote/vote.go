@@ -34,12 +34,26 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 	}
 
 	bg := func(ctx context.Context, errorHandler func(error)) {
-		// TODO: listen to state changes
-		// For example, check for state changes and preload data, when a poll gets started.
-		v.flow.Update(ctx, func(m map[dskey.Key][]byte, err error) {
+		v.flow.Update(ctx, func(changedData map[dskey.Key][]byte, err error) {
 			if err != nil {
 				errorHandler(err)
-				// TODO: Do I have to kill the server?
+			}
+
+			// This listens on the message bus to see, if a poll got started. If
+			// so, it preloads its data. This is only relevant, if a poll gets
+			// started on another instance.
+			for key, value := range changedData {
+				if key.CollectionField() == "poll/state" && string(value) == `"started"` {
+					poll, err := dsmodels.New(v.flow).Poll(key.ID()).First(ctx)
+					if err != nil {
+						errorHandler(fmt.Errorf("Error fetching poll for preload: %w", err))
+						continue
+					}
+					if err := Preload(ctx, dsfetch.New(v.flow), poll); err != nil {
+						errorHandler(fmt.Errorf("Error preloading poll: %w", err))
+						continue
+					}
+				}
 			}
 		})
 	}
