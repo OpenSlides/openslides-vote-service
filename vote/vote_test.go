@@ -619,15 +619,8 @@ func TestVoteStart(t *testing.T) {
 			})
 
 			t.Run("Not started poll", func(t *testing.T) {
-				counter := flow.(*dsmock.CounterFlow)
-				counter.Reset()
-
 				if err := service.Start(ctx, 5, 5); err != nil {
 					t.Errorf("Start returned unexpected error: %v", err)
-				}
-
-				if c := counter.Count(); c > 3 {
-					t.Errorf("Start used %d requests to the datastore, expected max 3:\n%s", c, counter.PrintRequests())
 				}
 			})
 
@@ -1243,12 +1236,10 @@ func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(servic
 	}
 	defer conn.Close(ctx)
 
-	counter := dsmock.NewCounterFlow(flow)
-
-	service, _, err := vote.New(ctx, counter, conn)
+	service, _, err := vote.New(ctx, flow, conn)
 	if err != nil {
 		t.Fatalf("Error creating vote: %v", err)
 	}
 
-	fn(service, counter)
+	fn(service, flow)
 }

@@ -10,18 +10,13 @@ import (
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
+	"github.com/OpenSlides/openslides-go/datastore/dskey"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/perm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
-
-type DBQuerier interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-}
 
 // Vote holds the state of the service.
 //
@@ -41,7 +36,12 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 	bg := func(ctx context.Context, errorHandler func(error)) {
 		// TODO: listen to state changes
 		// For example, check for state changes and preload data, when a poll gets started.
-		go v.flow.Update(ctx, nil)
+		v.flow.Update(ctx, func(m map[dskey.Key][]byte, err error) {
+			if err != nil {
+				errorHandler(err)
+				// TODO: Do I have to kill the server?
+			}
+		})
 	}
 
 	return v, bg, nil
@@ -419,6 +419,10 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 
 	if poll.State == "finished" {
 		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
+	}
+
+	if err := Preload(ctx, dsfetch.New(v.flow), poll); err != nil {
+		return fmt.Errorf("preloading poll: %w", err)
 	}
 
 	sql := `UPDATE poll SET state = 'started' WHERE id = $1 AND state != 'finished';`
@@ -918,4 +922,96 @@ func hasCommon(list1, list2 []int) bool {
 	return slices.ContainsFunc(list1, func(a int) bool {
 		return slices.Contains(list2, a)
 	})
+}
+
+// Preload loads all data in the cache, that is needed later for the vote
+// requests.
+func Preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
+	var dummyBool bool
+	var dummyIntSlice []int
+	var dummyString string
+	var dummyManybeInt dsfetch.Maybe[int]
+	var dummyInt int
+	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Lazy(&dummyBool)
+
+	meetingUserIDsList := make([][]int, len(poll.EntitledGroupIDs))
+	for i, groupID := range poll.EntitledGroupIDs {
+		ds.Group_MeetingUserIDs(groupID).Lazy(&meetingUserIDsList[i])
+	}
+
+	// First database request to get meeting/enable_vote_weight and all
+	// meeting_users from all entitled groups.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("fetching users: %w", err)
+	}
+
+	var userIDs []*int
+	for _, meetingUserIDs := range meetingUserIDsList {
+		for _, muID := range meetingUserIDs {
+			var uid int
+			userIDs = append(userIDs, &uid)
+			ds.MeetingUser_UserID(muID).Lazy(&uid)
+			ds.MeetingUser_GroupIDs(muID).Lazy(&dummyIntSlice)
+			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyString)
+			ds.MeetingUser_VoteDelegatedToID(muID).Lazy(&dummyManybeInt)
+			ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
+		}
+	}
+
+	// Second database request to get all user ids and meeting_user_data.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("preload meeting user data: %w", err)
+	}
+
+	var delegatedMeetingUserIDs []int
+	for _, muIDs := range meetingUserIDsList {
+		for _, muID := range muIDs {
+			// This does not send a db request, since the value was fetched in
+			// the block above.
+			mID, err := ds.MeetingUser_VoteDelegatedToID(muID).Value(ctx)
+			if err != nil {
+				return fmt.Errorf("getting vote delegated to for meeting user %d: %w", muID, err)
+			}
+			if id, ok := mID.Value(); ok {
+				delegatedMeetingUserIDs = append(delegatedMeetingUserIDs, id)
+			}
+		}
+	}
+
+	delegatedUserIDs := make([]int, len(delegatedMeetingUserIDs))
+	for i, muID := range delegatedMeetingUserIDs {
+		ds.MeetingUser_UserID(muID).Lazy(&delegatedUserIDs[i])
+		ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
+	}
+
+	// Third database request to get all delegated user ids. Only fetches data
+	// if there are delegates.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("preloading delegate user ids: %w", err)
+	}
+
+	for _, uID := range userIDs {
+		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyString)
+		ds.User_MeetingUserIDs(*uID).Lazy(&dummyIntSlice)
+		ds.User_IsPresentInMeetingIDs(*uID).Lazy(&dummyIntSlice)
+	}
+	for _, uID := range delegatedUserIDs {
+		ds.User_IsPresentInMeetingIDs(uID).Lazy(&dummyIntSlice)
+		ds.User_MeetingUserIDs(uID).Lazy(&dummyIntSlice)
+	}
+
+	// Thrid or forth database request to get is present_in_meeting for all users and delegates.
+	if err := ds.Execute(ctx); err != nil {
+		return fmt.Errorf("preloading user data: %w", err)
+	}
+
+	return nil
+}
+
+type DBQuerier interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

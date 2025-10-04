@@ -498,9 +498,7 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 # Aktueller Stand / Offene TODOs
 
-- Alte Tests durchgehen und entweder aktualisieren oder löschen
-- Preload von Tests on create - auch wenn ein poll von einer anderen Instanz angelegt wird.
-- Ggf. Fehlermeldung an den Client verschönern
+- Preload von Tests wenn ein poll von einer anderen Instanz angelegt wird.
 - Finalize manually polls
 - Write poll/voted_ids when poll gets stopped
 - Methods in README dokumentieren
