@@ -248,7 +248,7 @@ func TestAll(t *testing.T) {
 	)
 }
 
-func TestCreateManually(t *testing.T) {
+func TestManually(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
@@ -283,36 +283,54 @@ func TestCreateManually(t *testing.T) {
 	`
 
 	withData(t, pg, data, func(service *vote.Vote, flow flow.Flow) {
-		body := `{
-			"title": "my poll",
-			"content_object_id": "motion/5",
-			"method": "motion",
-			"visibility": "manually",
-			"meeting_id": 1,
-			"result": {"no":"23","yes":"42"}
-		}`
+		t.Run("Create", func(t *testing.T) {
+			body := `{
+				"title": "my poll",
+				"content_object_id": "motion/5",
+				"method": "motion",
+				"visibility": "manually",
+				"meeting_id": 1,
+				"result": {"no":"23","yes":"42"}
+			}`
 
-		id, err := service.Create(ctx, 5, strings.NewReader(body))
-		if err != nil {
-			t.Fatalf("Error creating poll: %v", err)
-		}
+			id, err := service.Create(ctx, 5, strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
 
-		if id != 1 {
-			t.Errorf("Expected id 1, got %d", id)
-		}
+			if id != 1 {
+				t.Errorf("Expected id 1, got %d", id)
+			}
 
-		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
-		if err != nil {
-			t.Fatalf("Fetch poll: %v", err)
-		}
+			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+			if err != nil {
+				t.Fatalf("Fetch poll: %v", err)
+			}
 
-		if poll.State != "finished" {
-			t.Errorf("Poll is in state %s, expected state finished", poll.State)
-		}
+			if poll.State != "finished" {
+				t.Errorf("Poll is in state %s, expected state finished", poll.State)
+			}
 
-		if poll.Result != `{"no":"23","yes":"42"}` {
-			t.Errorf("Result does not match")
-		}
+			if poll.Result != `{"no":"23","yes":"42"}` {
+				t.Errorf("Result does not match")
+			}
+		})
+
+		t.Run("Reset", func(t *testing.T) {
+			err := service.Reset(ctx, 1, 5)
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
+
+			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+			if err != nil {
+				t.Fatalf("Fetch poll: %v", err)
+			}
+
+			if poll.State != "finished" {
+				t.Errorf("State == %s. A manually poll has to be in state finished after a reset", poll.State)
+			}
+		})
 	})
 }
 

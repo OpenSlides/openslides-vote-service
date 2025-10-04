@@ -1,7 +1,7 @@
 # OpenSlides Vote Service
 
 The Vote Service is part of the OpenSlides environments. It is responsible for
-the poll and vote collections. It handles the electronic voting.
+the `poll` and `vote` collections. It handles the electronic voting.
 
 The service has no internal state but uses the normal postgres database to save
 the polls.
@@ -75,14 +75,14 @@ To start a poll means that the users can send their votes.
 `/system/vote/finalize?id=XX`
 
 To finalize a poll means that users can not send their votes anymore. It
-creates a `poll/result` field.
+creates the `poll/result` field.
 
 The request has two optional attributes: `publish` and `anonymize`. `publish`
 sets the field `poll/state` to `published`. `anonymize` removes all user ids
 from the corresponding `vote` objects.
 
 The request can be send many times. It only creates the result the first time.
-But `publish` and `anonymize` can be used on a later request.
+`publish` and `anonymize` can be used on a later request.
 
 To stop a poll and publish and anonymize it at the same time, the following request can be used:
 
@@ -93,7 +93,7 @@ To stop a poll and publish and anonymize it at the same time, the following requ
 
 `/system/vote/reset?id=XX`
 
-Reset sets the state back to `started` and removes all vote objects.
+Reset sets the state back to `created` and removes all vote objects.
 
 
 ### Send a vote
@@ -129,6 +129,45 @@ Valid values for the vote depend on the `poll/method`.
 
 The service only handles write requests. All Reads have to be done via the
 autoupdate-service.
+
+
+## Features
+
+### Manually Polls
+
+Manually polls are polls without electronic voting. The result is calculated
+from individual vote-requests from the users, but the manager sets the result
+manually. A poll is manually, when the field `poll/visibility` is set to
+`manually`.
+
+Manually polls behave diferently. When created, the field `poll/state` is set to
+`finished`. The poll result can be set either wih the create request or with an
+update request. The server does not validate the field `poll/result`, but accept
+any string.
+
+vote-requests are not possible. A finalize-request is possible, but only to set
+the `poll/published` field. A reset-request sets/leaves the state at `finished`.
+
+
+### Delegation
+
+A user can delegate his voice to another user. This is only possible in a
+meeting, where `meeting/users_enable_vote_delegation` is set to true.
+
+The term `acting_user` means the user, that sends the request. The term
+`represented_user` is the user, for whom the acting user sends the vote.
+
+If `meeting/users_forbid_delegator_to_vote` is set to true, then only the user,
+where the voice was delegated can vote. If set to `false`, then the
+represented_user keeps the permission to vote for himself.
+
+
+### poll/visibility
+
+...
+
+
+### Vote Weight
 
 
 ## Poll methods

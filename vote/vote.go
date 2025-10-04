@@ -243,7 +243,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 	defer tx.Rollback(ctx)
 
-	sql, values := ui.createQuery(pollID)
+	sql, values := ui.query(pollID)
 	if len(values) > 0 {
 		if _, err := tx.Exec(ctx, sql, values...); err != nil {
 			return fmt.Errorf("update poll: %w", err)
@@ -305,6 +305,10 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 		return ui, nil
 	}
 
+	if ui.Visibility == "manually" {
+		return UpdateInput{}, MessageError(ErrNotAllowed, "A poll can not be changed manually")
+	}
+
 	if poll.State != "created" {
 		if ui.Method != "" {
 			return UpdateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
@@ -345,7 +349,7 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 	return ui, nil
 }
 
-func (ui UpdateInput) createQuery(pollID int) (string, []any) {
+func (ui UpdateInput) query(pollID int) (string, []any) {
 	var setParts []string
 	var args []any
 	argIndex := 1
@@ -465,7 +469,6 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if poll.State == "created" {
-		// TODO: What abount anually polls an publish flag?
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
 
@@ -521,7 +524,6 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		if _, err := tx.Exec(ctx, votedSQL, args...); err != nil {
 			return fmt.Errorf("insert voted_user_ids to user relations: %w", err)
 		}
-
 	}
 
 	sql := `UPDATE poll SET state = 'finished', published = $1 WHERE id = $2;`
@@ -572,15 +574,24 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
 	}
 
-	deleteSQL := `DELETE FROM vote WHERE poll_id = $1`
-	if _, err := tx.Exec(ctx, deleteSQL, pollID); err != nil {
+	deleteVoteQuery := `DELETE FROM vote WHERE poll_id = $1`
+	if _, err := tx.Exec(ctx, deleteVoteQuery, pollID); err != nil {
 		return fmt.Errorf("delete votes: %w", err)
 	}
 
-	updateSQL := `UPDATE poll SET state = 'created', published = false WHERE id = $1`
+	state := "created"
+	if poll.Visibility == "manually" {
+		state = "finished"
+	}
 
-	if _, err := tx.Exec(ctx, updateSQL, pollID); err != nil {
+	updateQuery := `UPDATE poll SET state = $1, published = false, result = '' WHERE id = $2`
+	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
 		return fmt.Errorf("reset poll state: %w", err)
+	}
+
+	deleteVotedQuery := `DELETE FROM nm_poll_voted_ids_user_t WHERE poll_id = $1`
+	if _, err := tx.Exec(ctx, deleteVotedQuery, pollID); err != nil {
+		return fmt.Errorf("delete poll votes: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
