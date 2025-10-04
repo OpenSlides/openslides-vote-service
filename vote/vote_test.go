@@ -306,6 +306,10 @@ func TestCreateManually(t *testing.T) {
 			t.Fatalf("Fetch poll: %v", err)
 		}
 
+		if poll.State != "finished" {
+			t.Errorf("Poll is in state %s, expected state finished", poll.State)
+		}
+
 		if poll.Result != `{"no":"23","yes":"42"}` {
 			t.Errorf("Result does not match")
 		}

@@ -101,9 +101,14 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 
 	sequentialNumber += 1
 
+	state := "created"
+	if ci.Visibility == "manually" {
+		state = "finished"
+	}
+
 	sql := `INSERT INTO poll
 		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, published)
-		VALUES ($1, $2, $3, $4, 'created', $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id;`
 
 	var newID int
@@ -114,6 +119,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.Method,
 		ci.Config,
 		ci.Visibility,
+		state,
 		sequentialNumber,
 		ci.ContentObjectID,
 		ci.MeetingID,
@@ -292,6 +298,13 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 		return UpdateInput{}, fmt.Errorf("decoding update input: %w", err)
 	}
 
+	if poll.Visibility == "manually" {
+		if len(ui.EntitledGroupIDs) > 0 {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
+		}
+		return ui, nil
+	}
+
 	if poll.State != "created" {
 		if ui.Method != "" {
 			return UpdateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
@@ -310,25 +323,12 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 		}
 	}
 
-	visibility := poll.Visibility
-	if ui.Visibility != "" {
-		visibility = ui.Visibility
+	if !electronicVotingEnabled {
+		return UpdateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
 	}
 
-	switch visibility {
-	case "manually":
-		if len(ui.EntitledGroupIDs) > 0 {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
-		}
-
-	default:
-		if !electronicVotingEnabled {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
-		}
-
-		if ui.Result != nil {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
-		}
+	if ui.Result != nil {
+		return UpdateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
 	}
 
 	if ui.Config != nil {
@@ -425,10 +425,6 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 
 	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
 		return fmt.Errorf("check permissions: %w", err)
-	}
-
-	if poll.Visibility == "manually" {
-		return MessageError(ErrInvalid, "Manually poll can not be started")
 	}
 
 	if poll.State == "finished" {

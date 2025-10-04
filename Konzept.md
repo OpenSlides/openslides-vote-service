@@ -497,7 +497,6 @@ würde sich im neuen Konzept aber leicht implementieren lassen.
 
 
 # Aktueller Stand / Offene TODOs
-- Finalize manually polls
 - Write poll/voted_ids when poll gets stopped
 - Methods in README dokumentieren
 
