@@ -490,14 +490,7 @@ Die Optionen sind:
 }
 ```
 
-### single_transferable_vote
-
-Der Wert ist als beispielshafter Platzhalter eingefügt. Single transferable vote
-würde sich im neuen Konzept aber leicht implementieren lassen.
-
-
 # Aktueller Stand / Offene TODOs
-- Write poll/voted_ids when poll gets stopped
 - Methods in README dokumentieren
 
 

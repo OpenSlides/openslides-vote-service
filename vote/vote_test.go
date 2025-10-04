@@ -714,9 +714,11 @@ func TestVoteFinalize(t *testing.T) {
 	vote/1:
 		poll_id: 5
 		value: '"yes"'
+		represented_user_id: 30
 	vote/2:
 		poll_id: 5
 		value: '"no"'
+		represented_user_id: 5
 	`
 
 	withData(
@@ -747,6 +749,10 @@ func TestVoteFinalize(t *testing.T) {
 
 				if poll.State != "finished" {
 					t.Errorf("Poll state is %s, expected finished", poll.State)
+				}
+
+				if slices.Compare(poll.VotedIDs, []int{30, 5}) == 0 {
+					t.Errorf("VotedIDs are %v, expected %v", poll.VotedIDs, []int{30, 5})
 				}
 			})
 
