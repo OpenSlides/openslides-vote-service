@@ -131,14 +131,17 @@ The service only handles write requests. All Reads have to be done via the
 autoupdate-service.
 
 
-## Features
+## poll/visibility
 
-### Manually Polls
+The field `poll/visibility` can be one of `manually`, `named`, `open` and
+`secret`.
+
+
+### manually
 
 Manually polls are polls without electronic voting. The result is calculated
 from individual vote-requests from the users, but the manager sets the result
-manually. A poll is manually, when the field `poll/visibility` is set to
-`manually`.
+manually.
 
 Manually polls behave diferently. When created, the field `poll/state` is set to
 `finished`. The poll result can be set either wih the create request or with an
@@ -148,6 +151,45 @@ any string.
 vote-requests are not possible. A finalize-request is possible, but only to set
 the `poll/published` field. A reset-request sets/leaves the state at `finished`.
 
+
+### named and open
+
+At the moment, the visibilities `named` and `open` behave nearly the same. They
+have two different meanings. In future versions, there will probably be
+different features for this two modes.
+
+The value `named` means that the mapping between votes and users is not deleted
+at the end. In a political context, a `named`-poll also means that eligible
+voters are called individually, publicly, and one after another, and asked for
+their vote. In the future, a feature could be considered where, for
+`named`-polls, users cannot vote themselves, but instead the manager is guided
+through a form in which they can enter the votes for all eligible voters one
+after another. A `named`-poll can not be anonymized.
+
+The value `open` is likely the normal case for a vote. The mapping between votes
+and users CAN be deleted afterwards with the `anonymize` flag of the finalize
+handler.
+
+
+### secret
+
+At the moment, a `secret`-poll is identical to an `open`- or `named`-poll. But
+is handled differently in the autoupdate-service. The field
+`vote/acting_user_id` and `vote/represented_user_id` get restricted for
+everyboddy.
+
+For the future, this value will be used for crypto votes. See the entry in the
+[wiki](https://github.com/OpenSlides/OpenSlides/wiki/DE%3AKonzept-geheime-Wahlen-mit-OpenSlides)
+
+
+## Poll methods
+
+The values of `poll/config`, `poll/result` and valid votes depend of the field `poll/method`.
+
+TODO: Describe the methods.
+
+
+## Other concepts
 
 ### Delegation
 
@@ -162,19 +204,27 @@ where the voice was delegated can vote. If set to `false`, then the
 represented_user keeps the permission to vote for himself.
 
 
-### poll/visibility
-
-...
-
-
 ### Vote Weight
 
+Everyvote has a weight. It is a decimal number. The default is `1.000000`. When
+`meeting/users_enable_vote_weight` is set to `true`, this value can be changed
+for each user. Each user has a default vote weight (`user/default_vote_weight`),
+that can be changed for each meeting (`meeting_user/vote_weight`).
 
-## Poll methods
+This weight is saved vote (`vote/weight`) and taken into account when generating
+the result.
 
-The values of `poll/config`, `poll/result` and valid votes depend of the field `poll/method`.
+The weight is a not a floating number, but a decimal number. JSON can not
+represent decimal numbers, so they are represented as strings. This is also the
+reason, that the vote results are represented as strings.
 
-TODO: Describe the methods.
+This feature does not work on crypto votes, since the server does not know,
+which vote belongs to which user.
+
+
+### Vote Splitting
+
+Not implemented yet.
 
 
 ## Configuration

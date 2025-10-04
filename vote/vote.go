@@ -532,6 +532,10 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if anonymize {
+		if poll.Visibility == "named" {
+			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
+		}
+
 		sql := `UPDATE vote
 				SET acting_user_id = NULL, represented_user_id = NULL
 				WHERE poll_id = $1`
