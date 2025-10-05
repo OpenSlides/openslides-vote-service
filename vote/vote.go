@@ -431,8 +431,6 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
-	fmt.Println(poll.State)
-
 	if poll.State == "finished" {
 		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
 	}
@@ -507,24 +505,25 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("set result of poll %d: %w", pollID, err)
 		}
 
-		// TODO: Add votedUserIDs in many2many talbe
+		if len(votedUserIDs) > 0 {
 
-		placeholders := make([]string, len(votedUserIDs))
-		args := make([]any, len(votedUserIDs)*2)
+			placeholders := make([]string, len(votedUserIDs))
+			args := make([]any, len(votedUserIDs)*2)
 
-		for i, votedUserID := range votedUserIDs {
-			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-			args[i*2] = votedUserID
-			args[i*2+1] = pollID
-		}
+			for i, votedUserID := range votedUserIDs {
+				placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+				args[i*2] = votedUserID
+				args[i*2+1] = pollID
+			}
 
-		votedSQL := fmt.Sprintf(
-			"INSERT INTO nm_poll_voted_ids_user_t (user_id, poll_id) VALUES %s",
-			strings.Join(placeholders, ", "),
-		)
+			votedSQL := fmt.Sprintf(
+				"INSERT INTO nm_poll_voted_ids_user_t (user_id, poll_id) VALUES %s",
+				strings.Join(placeholders, ", "),
+			)
 
-		if _, err := tx.Exec(ctx, votedSQL, args...); err != nil {
-			return fmt.Errorf("insert voted_user_ids to user relations: %w", err)
+			if _, err := tx.Exec(ctx, votedSQL, args...); err != nil {
+				return fmt.Errorf("insert voted_user_ids to user relations: %w", err)
+			}
 		}
 	}
 

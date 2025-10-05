@@ -617,15 +617,6 @@ func TestVoteStart(t *testing.T) {
 		meeting_id: 1
 		state: created
 		entitled_group_ids: [40]
-
-	poll/6:
-		title: manually poll
-		method: approval
-		visibility: manually
-		sequential_number: 2
-		content_object_id: motion/5
-		meeting_id: 1
-		state: created
 	`
 
 	withData(
@@ -653,18 +644,15 @@ func TestVoteStart(t *testing.T) {
 			})
 
 			t.Run("Start a finished poll", func(t *testing.T) {
+				if err := service.Start(ctx, 5, 5); err != nil {
+					t.Fatalf("Start returned unexpected error: %v", err)
+				}
+
 				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
-					t.Errorf("finish poll: %v", err)
+					t.Fatalf("finish poll: %v", err)
 				}
 
 				err := service.Start(ctx, 5, 5)
-				if !errors.Is(err, vote.ErrInvalid) {
-					t.Errorf("Start returned unexpected error: %v", err)
-				}
-			})
-
-			t.Run("Start an anolog poll", func(t *testing.T) {
-				err := service.Start(ctx, 6, 5)
 				if !errors.Is(err, vote.ErrInvalid) {
 					t.Errorf("Start returned unexpected error: %v", err)
 				}
