@@ -184,14 +184,72 @@ For the future, this value will be used for crypto votes. See the entry in the
 
 ## Poll methods
 
-The values of `poll/config`, `poll/result` and `vote/value` depend on the field
+The values of `poll/config`, `vote/value` and `poll/result` depend on the field
 `poll/method`.
 
 
 ### approval
 
+On an approval poll, the users can vote with `yes`, `no` or `abstain`. This is
+the usual method to vote on a motion.
+
+
+#### poll/config
+
+`allow_abstain`: if set to `true`, users are allowed to vote with `abstain`. The
+default is `true`.
+
+
+#### vote/value
+
+Valid votes look like: `{"value":"yes"}`, `{"value":"no"}` or
+`{"value":"abstain"}`.
+
+
+#### poll/result
+
+The poll result looks like:
+
+`{"yes": "32", "no": "20", "abstain": "10", "invalid": 2}`
+
+Attributes with a zero get discarded.
+
+The values are decimal values decoded as string. See [Vote Weight](#vote-weight).
+
 
 ### selection
+
+On a selection poll, the users select one or many options from a list of
+options. For example one candidate in a assignment-poll.
+
+
+#### poll/config
+
+`options` (required): map from a string to any value. The strings can by
+anything. For example assignment-candidate-ids, encoded as strings. The values
+are not used by the server, `null` would be valid values. The values can be used
+to descript the values, if the `poll/config` get inspected by a human. For
+example, it could be the username of the assignment-candidate:
+`{"options":{"1":"Max","2":"Hubert"}}`
+
+`max_options_amount`: The maximal amount of options a user can vote on. For
+example, with a value of `1`, a user is only allowed to vote for one candidate.
+The default is no limit.
+
+`min_options_amount`: The minimum amount of options, a user has to vote on. The
+default is no limit.
+
+`allow_nota`: Allow `nota` votes, where the user can disprove of all options.
+
+
+#### vote/value
+
+TODO
+
+
+#### poll/result
+
+TODO
 
 
 ### rating-score
@@ -200,9 +258,7 @@ The values of `poll/config`, `poll/result` and `vote/value` depend on the field
 ### rating approval
 
 
-## Other concepts
-
-### Delegation
+## Delegation
 
 A user can delegate his voice to another user. This is only possible in a
 meeting, where `meeting/users_enable_vote_delegation` is set to true.
@@ -215,7 +271,7 @@ where the voice was delegated can vote. If set to `false`, then the
 represented_user keeps the permission to vote for himself.
 
 
-### Vote Weight
+## Vote Weight
 
 Everyvote has a weight. It is a decimal number. The default is `1.000000`. When
 `meeting/users_enable_vote_weight` is set to `true`, this value can be changed
@@ -233,11 +289,32 @@ This feature does not work on crypto votes, since the server does not know,
 which vote belongs to which user.
 
 
-### Vote Splitting
+## Vote Splitting
 
 Not implemented yet.
 
+https://github.com/OpenSlides/openslides-vote-service/issues/392
 
-## Configuration
+
+## Invalid Votes
+
+Normaly, the services validates the vote requests from the users. So invalid
+votes in the database and therefore in the `poll/result` should not be possible.
+
+When the field `poll/allow_invalid` is set to true, then the service skips the
+validation and saves the vote exactly, how the user has provided it. An invalid
+vote can have any (invalid) value.
+
+On crypto votes, the server can not read the value and has to accept it. Invalid
+votes also accur, when the value can not be decrypted.
+
+When a poll has invalid votes, the amount gets written in the poll result. for example:
+
+`{"invalid":1,"no":"1","yes":"2"}`
+
+The value is an integer and not a decimal value decoded as string.
+
+
+## Configuration of the service
 
 The service is configured with environment variables. See [all environment variables](environment.md).

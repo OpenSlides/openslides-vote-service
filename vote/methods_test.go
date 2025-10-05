@@ -267,7 +267,7 @@ func TestCreateResult(t *testing.T) {
 		expectResult string
 	}{
 		{
-			name:   "Approval: Vote Yes",
+			name:   "Approval",
 			method: "approval",
 			config: "",
 			votes: []dsmodels.Vote{
