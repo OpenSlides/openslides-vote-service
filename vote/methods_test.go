@@ -355,6 +355,16 @@ func TestCreateResult(t *testing.T) {
 			},
 			expectResult: `{"gregor":{"no":"1","yes":"1"},"hans":{"no":"1","yes":"5"},"tom":{"yes":"1"}}`,
 		},
+		{
+			name:   "Rating-Approval with out abstain but with invalid",
+			method: "rating-approval",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"},"allow_abstain":false}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"tom":"yes","gregor":"abstain"}`},
+				{Value: `{"tom":"yes","gregor":"no"}`},
+			},
+			expectResult: `{"gregor":{"no":"1"},"invalid":1,"tom":{"yes":"1"}}`,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 

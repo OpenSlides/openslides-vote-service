@@ -240,22 +240,101 @@ The default is no limit.
 default is no limit.
 
 `allow_nota`: Allow `nota` votes, where the user can disprove of all options.
+The default is false.
 
 
 #### vote/value
 
-TODO
+A vote is a list of options from the config, represented by there key. For
+example:
+
+`{"value":["1"]}` to vote for "Max" in the example above.
+
+To abstain from a vote, an empty list can be delivered: `{"value":[]}`
+
+If `allow_nota` is set, then a user can vote with
+[nota](https://en.wikipedia.org/wiki/None_of_the_above): `{"value":"nota}`. This
+means, that he disaproves all options.
 
 
 #### poll/result
 
-TODO
+A result can look like this:
+`{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3}`
+
+This means, that users with a combined vote-weight of 40 have voted for the
+option with the key "1", 23 for the option "2", 6 with the string `nota`, 7 with
+an empty list and 3 with an invalid vote.
 
 
 ### rating-score
 
+A `rating-score`-poll is simular then a `selection`-poll, but the users can give
+a numeric value to each option. For example give each candiate 3 votes.
 
-### rating approval
+
+#### poll/config
+
+`options` (required), `max_options_amount` and `min_options_amount`: Are the
+same as from a selection-poll. For example:
+`{"options":{"1":"Max","2":"Hubert","3":"Hans"},"max_options_amount":2,"min_options_amount":1}`
+
+`max_votes_per_option`: The maximal number for each option. The default is no
+limit.
+
+`max_vote_sum`: The maximal number of points, that can be shared between the
+options. The default is no limit.
+
+`min_vote_sum`: The minimum number of points, that have to be shared between the
+options. The default is no limit.
+
+
+#### vote/value
+
+A Vote is an object/dictotary from the option-key to the numberic score. For
+example: `{"value":{"1":3, "2":1}}`.
+
+An empty object means abstain: `{"value":{}}`
+
+
+#### poll/result
+
+A result can look like simular to a `selection`-result:
+`{"1":"40","2":"23",abstain":"7","invalid":3}`
+
+
+### rating-approval
+
+`rating-approval` is simular to `rating-score`, but for each option, the user
+can give a value like `"Yes"`, `"No"` or `"Abstain"`.
+
+
+#### poll/config
+
+`options` (required), `max_options_amount` and `min_options_amount`: The same as
+for `selection` or `rating-score`.
+
+`allow_abstain`: The same as for `approval`.
+
+
+#### vote/value
+
+A vote value looks like a combination between `rating-score` and `approval`:
+`{"value":{"1":"yes","2":"abstain"}}`.
+
+
+#### poll/result
+
+A `rating-aproval`-result looks like:
+`{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
+
+This means, that for the option with the key `"1"`, there where 5 votes with
+`Yes`, one vote with `No` and no `abstain`. For the option with the key `"2"`,
+there where one `Yes`, 6 `Abstain` and no `No`. There where one invalid vote.
+
+A vote is invalid, if one of its values is invalid. For example a vote like
+`{"value":{"1":"yes","2":"INVALID-VALUE"}}` is counted as invalid for both
+candidates.
 
 
 ## Delegation
@@ -308,7 +387,8 @@ vote can have any (invalid) value.
 On crypto votes, the server can not read the value and has to accept it. Invalid
 votes also accur, when the value can not be decrypted.
 
-When a poll has invalid votes, the amount gets written in the poll result. for example:
+When a poll has invalid votes, the amount gets written in the poll result. for
+example:
 
 `{"invalid":1,"no":"1","yes":"2"}`
 

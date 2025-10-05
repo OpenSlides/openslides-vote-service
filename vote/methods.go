@@ -289,7 +289,7 @@ type methodRatingApprovalConfig struct {
 	Options          map[string]json.RawMessage `json:"options"`
 	MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
 	MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
-	Abstain          dsfetch.Maybe[bool]        `json:"abstain"`
+	AllowAbstain     dsfetch.Maybe[bool]        `json:"allow_abstain"`
 }
 
 type methodRatingApproval struct{}
