@@ -11,14 +11,14 @@ the polls.
 
 All requests to the vote-service have to be POST-requests.
 
-With the exception of the "vote", all requests can only be sent by a manager.
+With the exception of the vote request, all requests can only be sent by a manager.
 The permission depends on the field `content_object_id` of the corresponding poll.
 
 - motions: `motion.can_manage`
 - assignments: `assignment.can_manage`
 - topic: `poll.can_manage`
 
-With the exception of the create request, all requests need an http-get-argument
+With the exception of the create request, all requests need an HTTP GET argument
 in the url, to specify the poll-id. For example `/system/vote/update?id=23`
 
 
@@ -48,7 +48,7 @@ The request expects a body with the fields to create the poll:
 
 `/system/vote/update?id=XX`
 
-The fields `content_object_id` and `meetin_id` can not be changed. You have to
+The fields `content_object_id` and `meeting_id` can not be changed. You have to
 create a new poll to "update" them.
 
 The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
@@ -143,9 +143,9 @@ Manually polls are polls without electronic voting. The result is calculated
 from individual vote-requests from the users, but the manager sets the result
 manually.
 
-Manually polls behave diferently. When created, the field `poll/state` is set to
-`finished`. The poll result can be set either wih the create request or with an
-update request. The server does not validate the field `poll/result`, but accept
+Manual polls behave differently. When created, the field `poll/state` is set to
+`finished`. The poll result can be set either with the create request or with an
+update request. The server does not validate the field `poll/result`, but accepts
 any string.
 
 vote-requests are not possible. A finalize-request is possible, but only to set
@@ -159,7 +159,7 @@ have two different meanings. In future versions, there will probably be
 different features for this two modes.
 
 The value `named` means that the mapping between votes and users is not deleted
-at the end. In a political context, a `named`-poll also means that eligible
+at the end. In a political context, a 'named' poll also means that eligible
 voters are called individually, publicly, and one after another, and asked for
 their vote. In the future, a feature could be considered where, for
 `named`-polls, users cannot vote themselves, but instead the manager is guided
@@ -176,9 +176,9 @@ handler.
 At the moment, a `secret`-poll is identical to an `open`- or `named`-poll. But
 is handled differently in the autoupdate-service. The field
 `vote/acting_user_id` and `vote/represented_user_id` get restricted for
-everyboddy.
+everybody.
 
-For the future, this value will be used for crypto votes. See the entry in the
+In the future, these values will be used for crypto votes. See the entry in the
 [wiki](https://github.com/OpenSlides/OpenSlides/wiki/DE%3AKonzept-geheime-Wahlen-mit-OpenSlides)
 
 
@@ -228,7 +228,7 @@ options. For example one candidate in a assignment-poll.
 `options` (required): map from a string to any value. The strings can by
 anything. For example assignment-candidate-ids, encoded as strings. The values
 are not used by the server, `null` would be valid values. The values can be used
-to descript the values, if the `poll/config` get inspected by a human. For
+to describe the values, if the `poll/config` get inspected by a human. For
 example, it could be the username of the assignment-candidate:
 `{"options":{"1":"Max","2":"Hubert"}}`
 
@@ -239,7 +239,7 @@ The default is no limit.
 `min_options_amount`: The minimum amount of options, a user has to vote on. The
 default is no limit.
 
-`allow_nota`: Allow `nota` votes, where the user can disprove of all options.
+`allow_nota`: Allow `nota` votes, where the user can disapprove of all options.
 The default is false.
 
 
@@ -253,8 +253,8 @@ example:
 To abstain from a vote, an empty list can be delivered: `{"value":[]}`
 
 If `allow_nota` is set, then a user can vote with
-[nota](https://en.wikipedia.org/wiki/None_of_the_above): `{"value":"nota}`. This
-means, that he disaproves all options.
+[nota](https://en.wikipedia.org/wiki/None_of_the_above): `{"value":"nota"}`. This
+means, that they disapprove all options.
 
 
 #### poll/result
@@ -269,8 +269,8 @@ an empty list and 3 with an invalid vote.
 
 ### rating-score
 
-A `rating-score`-poll is simular then a `selection`-poll, but the users can give
-a numeric value to each option. For example give each candiate 3 votes.
+A `rating-score` poll is similar to a `selection` poll, but the users can give
+a numeric value to each option. For example give each candidate 3 votes.
 
 
 #### poll/config
@@ -291,7 +291,7 @@ options. The default is no limit.
 
 #### vote/value
 
-A Vote is an object/dictotary from the option-key to the numberic score. For
+A Vote is an object/dictionary from the option-key to the numeric score. For
 example: `{"value":{"1":3, "2":1}}`.
 
 An empty object means abstain: `{"value":{}}`
@@ -305,7 +305,7 @@ A result can look like simular to a `selection`-result:
 
 ### rating-approval
 
-`rating-approval` is simular to `rating-score`, but for each option, the user
+`rating-approval` is similar to `rating-score`, but for each option, the user
 can give a value like `"Yes"`, `"No"` or `"Abstain"`.
 
 
@@ -325,7 +325,7 @@ A vote value looks like a combination between `rating-score` and `approval`:
 
 #### poll/result
 
-A `rating-aproval`-result looks like:
+A `rating-approval` result looks like:
 `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
 
 This means, that for the option with the key `"1"`, there where 5 votes with
@@ -352,7 +352,7 @@ represented_user keeps the permission to vote for himself.
 
 ## Vote Weight
 
-Everyvote has a weight. It is a decimal number. The default is `1.000000`. When
+Every vote has a weight. It is a decimal number. The default is `1.000000`. When
 `meeting/users_enable_vote_weight` is set to `true`, this value can be changed
 for each user. Each user has a default vote weight (`user/default_vote_weight`),
 that can be changed for each meeting (`meeting_user/vote_weight`).
@@ -360,7 +360,7 @@ that can be changed for each meeting (`meeting_user/vote_weight`).
 This weight is saved vote (`vote/weight`) and taken into account when generating
 the result.
 
-The weight is a not a floating number, but a decimal number. JSON can not
+The weight is not a floating number, but a decimal number. JSON can not
 represent decimal numbers, so they are represented as strings. This is also the
 reason, that the vote results are represented as strings.
 
@@ -377,7 +377,7 @@ https://github.com/OpenSlides/openslides-vote-service/issues/392
 
 ## Invalid Votes
 
-Normaly, the services validates the vote requests from the users. So invalid
+Normally, the service validates the vote requests from the users. So invalid
 votes in the database and therefore in the `poll/result` should not be possible.
 
 When the field `poll/allow_invalid` is set to true, then the service skips the
@@ -385,7 +385,7 @@ validation and saves the vote exactly, how the user has provided it. An invalid
 vote can have any (invalid) value.
 
 On crypto votes, the server can not read the value and has to accept it. Invalid
-votes also accur, when the value can not be decrypted.
+votes also occur, when the value can not be decrypted.
 
 When a poll has invalid votes, the amount gets written in the poll result. for
 example:
