@@ -75,7 +75,7 @@ func TestAll(t *testing.T) {
 				body := `{
 					"title": "my pol",
 					"content_object_id": "motion/5",
-					"method": "motion",
+					"method": "approval",
 					"visibility": "open",
 					"meeting_id": 1,
 					"entitled_group_ids": [41]
@@ -287,7 +287,7 @@ func TestManually(t *testing.T) {
 			body := `{
 				"title": "my poll",
 				"content_object_id": "motion/5",
-				"method": "motion",
+				"method": "approval",
 				"visibility": "manually",
 				"meeting_id": 1,
 				"result": {"no":"23","yes":"42"}
@@ -377,7 +377,7 @@ func TestVote(t *testing.T) {
 
 	poll/5:
 		title: my poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -430,7 +430,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -453,7 +453,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -476,7 +476,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -500,7 +500,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -525,7 +525,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -610,7 +610,7 @@ func TestVoteStart(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -620,7 +620,7 @@ func TestVoteStart(t *testing.T) {
 
 	poll/6:
 		title: manually poll
-		method: motion
+		method: approval
 		visibility: manually
 		sequential_number: 2
 		content_object_id: motion/5
@@ -654,7 +654,7 @@ func TestVoteStart(t *testing.T) {
 
 			t.Run("Start a finished poll", func(t *testing.T) {
 				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
-					t.Errorf("Stop poll")
+					t.Errorf("finish poll: %v", err)
 				}
 
 				err := service.Start(ctx, 5, 5)
@@ -721,7 +721,7 @@ func TestVoteFinalize(t *testing.T) {
 
 	poll/5:
 		title: poll with votes
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -840,7 +840,7 @@ func TestVoteVote(t *testing.T) {
 
 	poll/5:
 		title: poll with votes
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -987,7 +987,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5

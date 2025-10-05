@@ -184,9 +184,20 @@ For the future, this value will be used for crypto votes. See the entry in the
 
 ## Poll methods
 
-The values of `poll/config`, `poll/result` and valid votes depend of the field `poll/method`.
+The values of `poll/config`, `poll/result` and `vote/value` depend on the field
+`poll/method`.
 
-TODO: Describe the methods.
+
+### approval
+
+
+### selection
+
+
+### rating-score
+
+
+### rating approval
 
 
 ## Other concepts

@@ -431,6 +431,8 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
+	fmt.Println(poll.State)
+
 	if poll.State == "finished" {
 		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
 	}
@@ -843,14 +845,14 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 
 func ValidateConfig(method string, config string) error {
 	switch method {
-	case methodMotion{}.Name():
-		return methodMotion{}.ValidateConfig(config)
+	case methodApproval{}.Name():
+		return methodApproval{}.ValidateConfig(config)
 	case methodSelection{}.Name():
 		return methodSelection{}.ValidateConfig(config)
-	case methodRating{}.Name():
-		return methodRating{}.ValidateConfig(config)
-	case methodRatingMotion{}.Name():
-		return methodRatingMotion{}.ValidateConfig(config)
+	case methodRatingScore{}.Name():
+		return methodRatingScore{}.ValidateConfig(config)
+	case methodRatingApproval{}.Name():
+		return methodRatingApproval{}.ValidateConfig(config)
 	default:
 		return MessageErrorf(ErrInvalid, "Unknown poll method: %s", method)
 	}
@@ -858,14 +860,14 @@ func ValidateConfig(method string, config string) error {
 
 func ValidateVote(method string, config string, vote json.RawMessage) error {
 	switch method {
-	case methodMotion{}.Name():
-		return methodMotion{}.ValidateVote(config, vote)
+	case methodApproval{}.Name():
+		return methodApproval{}.ValidateVote(config, vote)
 	case methodSelection{}.Name():
 		return methodSelection{}.ValidateVote(config, vote)
-	case methodRating{}.Name():
-		return methodRating{}.ValidateVote(config, vote)
-	case methodRatingMotion{}.Name():
-		return methodRatingMotion{}.ValidateVote(config, vote)
+	case methodRatingScore{}.Name():
+		return methodRatingScore{}.ValidateVote(config, vote)
+	case methodRatingApproval{}.Name():
+		return methodRatingApproval{}.ValidateVote(config, vote)
 	default:
 		return fmt.Errorf("unknown poll method: %s", method)
 	}
@@ -873,14 +875,14 @@ func ValidateVote(method string, config string, vote json.RawMessage) error {
 
 func CreateResult(method string, config string, votes []dsmodels.Vote) (string, error) {
 	switch method {
-	case methodMotion{}.Name():
-		return methodMotion{}.Result(config, votes)
+	case methodApproval{}.Name():
+		return methodApproval{}.Result(config, votes)
 	case methodSelection{}.Name():
 		return methodSelection{}.Result(config, votes)
-	case methodRating{}.Name():
-		return methodRating{}.Result(config, votes)
-	case methodRatingMotion{}.Name():
-		return methodRatingMotion{}.Result(config, votes)
+	case methodRatingScore{}.Name():
+		return methodRatingScore{}.Result(config, votes)
+	case methodRatingApproval{}.Name():
+		return methodRatingApproval{}.Result(config, votes)
 	default:
 		return "", fmt.Errorf("unknown poll method: %s", method)
 	}

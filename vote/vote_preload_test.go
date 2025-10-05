@@ -71,7 +71,7 @@ func TestVoteNoRequests(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -256,7 +256,7 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: motion
+				method: approval
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
@@ -307,7 +307,7 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: motion
+				method: approval
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
@@ -360,7 +360,7 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: motion
+				method: approval
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
@@ -418,7 +418,7 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: motion
+				method: approval
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
@@ -486,7 +486,7 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: motion
+				method: approval
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
