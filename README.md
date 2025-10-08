@@ -42,6 +42,7 @@ The request expects a body with the fields to create the poll:
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
 - `result` (only if visibility == manually)
+- `allow_vote_split` (default: false)
 
 
 ### Update a poll
@@ -115,12 +116,13 @@ The request body has to be in the form:
 {
   "user_id": 23,
   "value": "Yes"
+  "split": false
 }
 ```
 
 In this example, the request user would send the Vote `Yes` for the user with
 the id 23. If the acting user and the represented user are the same, then field
-`user_id` is not needed.
+`user_id` is not needed. `split` activates [vote_split](#vote split)
 
 Valid values for the vote depend on the `poll/method`.
 
@@ -368,11 +370,23 @@ This feature does not work on crypto votes, since the server does not know,
 which vote belongs to which user.
 
 
-## Vote Splitting
+## Vote Split
 
-Not implemented yet.
+When `poll/allow_vote_split` is set to true, the users are allowed to split
+there vote. They do so, by sending multiple votes with a weight value, where the
+sum of all weights has to be lower or equal then there allowed weight. Normally
+1.
 
-https://github.com/OpenSlides/openslides-vote-service/issues/392
+A splitted vote looks like: `{"value":{"0.3":"yes","0.7":"no"},"split":true}`
+
+The attribute `split` says, that vote-split is activated for that vote, then,
+the `value` attribute is an object/dict, where the keys are decimals and the
+values the normal values.
+
+To be valid, each vote-part has to be valid. If one one part is invalid, the
+hole vote is treated as invalid.
+
+vote split is not possible for secret polls.
 
 
 ## Invalid Votes

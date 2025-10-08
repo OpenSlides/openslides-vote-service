@@ -445,7 +445,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"1.000000",
+			"1",
 		},
 		{
 			"Weight enabled, user has no weight",
@@ -468,7 +468,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"1.000000",
+			"1",
 		},
 		{
 			"Weight enabled, user has default weight",
@@ -492,7 +492,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"2.000000",
+			"2",
 		},
 		{
 			"Weight enabled, user has default weight and meeting weight",
@@ -517,7 +517,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_id: 1
 				vote_weight: "3.000000"
 			`,
-			"3.000000",
+			"3",
 		},
 		{
 			"Weight enabled, user has default weight and meeting weight in other meeting",
@@ -545,7 +545,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_id: 2
 				vote_weight: "3.000000"
 			`,
-			"2.000000",
+			"2",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -555,7 +555,7 @@ func TestVoteWeight(t *testing.T) {
 				t.Fatalf("CalcVote: %v", err)
 			}
 
-			if weight != tt.expectWeight {
+			if weight.String() != tt.expectWeight {
 				t.Errorf("got weight %q, expected %q", weight, tt.expectWeight)
 			}
 		})

@@ -16,6 +16,7 @@ import (
 	"github.com/OpenSlides/openslides-go/perm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/shopspring/decimal"
 )
 
 // Vote holds the state of the service.
@@ -107,8 +108,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	sql := `INSERT INTO poll
-		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, published)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, published, allow_vote_split)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id;`
 
 	var newID int
@@ -125,6 +126,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.MeetingID,
 		string(ci.Result),
 		ci.Published,
+		ci.AllowVoteSplit,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
@@ -166,6 +168,7 @@ type CreateInput struct {
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 	Published        bool            `json:"published"`
 	Result           json.RawMessage `json:"result"`
+	AllowVoteSplit   bool            `json:"allow_vote_split"`
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, error) {
@@ -192,6 +195,10 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, e
 
 	if ci.Visibility == "" {
 		return CreateInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
+	}
+
+	if ci.Visibility == "secret" && ci.AllowVoteSplit {
+		return CreateInput{}, MessageError(ErrInvalid, "Vote splitting is not allowed for secret polls")
 	}
 
 	switch ci.Visibility {
@@ -290,6 +297,7 @@ type UpdateInput struct {
 	EntitledGroupIDs []int               `json:"entitled_group_ids"`
 	Published        dsfetch.Maybe[bool] `json:"published"`
 	Result           json.RawMessage     `json:"result"`
+	AllowVoteSplit   dsfetch.Maybe[bool] `json:"allow_vote_split"`
 }
 
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (UpdateInput, error) {
@@ -324,6 +332,10 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 
 		if ui.EntitledGroupIDs != nil {
 			return UpdateInput{}, MessageError(ErrNotAllowed, "entitled group ids can only be changed before the poll has started")
+		}
+
+		if !ui.AllowVoteSplit.Null() {
+			return UpdateInput{}, MessageError(ErrNotAllowed, "allow vote split can only be changed before the poll has started")
 		}
 	}
 
@@ -387,6 +399,12 @@ func (ui UpdateInput) query(pollID int) (string, []any) {
 	if ui.Result != nil {
 		setParts = append(setParts, fmt.Sprintf("result = $%d", argIndex))
 		args = append(args, string(ui.Result))
+		argIndex++
+	}
+
+	if allowVoteSplit, hasValue := ui.AllowVoteSplit.Value(); hasValue {
+		setParts = append(setParts, fmt.Sprintf("allow_vote_split = $%d", argIndex))
+		args = append(args, allowVoteSplit)
 		argIndex++
 	}
 
@@ -486,7 +504,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
 		}
 
-		result, err := CreateResult(poll.Method, poll.Config, votes)
+		result, err := CreateResult(poll, votes)
 		if err != nil {
 			return fmt.Errorf("create poll result: %w", err)
 		}
@@ -627,10 +645,15 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	var body struct {
 		UserID dsfetch.Maybe[int] `json:"user_id"`
 		Value  json.RawMessage    `json:"value"`
+		Split  bool               `json:"split"`
 	}
 
 	if err := json.NewDecoder(r).Decode(&body); err != nil {
 		return MessageError(ErrInvalid, "Invalid body")
+	}
+
+	if body.Split && !poll.AllowVoteSplit {
+		return MessageErrorf(ErrInvalid, "Vote split is not allowed for poll %d", poll.ID)
 	}
 
 	actingUserID := requestUserID
@@ -644,17 +667,28 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		return fmt.Errorf("allowedToVote: %w", err)
 	}
 
-	if !poll.AllowInvalid {
-		if err := ValidateVote(poll.Method, poll.Config, body.Value); err != nil {
-			return fmt.Errorf("validate vote: %w", err)
-		}
-	}
-
 	meetingID := poll.MeetingID
 	voteValue := string(body.Value)
 	weight, err := CalcVoteWeight(ctx, fetch, meetingID, representedUserID)
 	if err != nil {
 		return fmt.Errorf("calc vote weight: %w", err)
+	}
+
+	if !poll.AllowInvalid {
+		splitted := map[decimal.Decimal]json.RawMessage{decimal.Zero: body.Value}
+
+		if body.Split {
+			splitted, err = split(weight, body.Value)
+			if err != nil {
+				return fmt.Errorf("split vote: %w", err)
+			}
+		}
+
+		for _, value := range splitted {
+			if err := ValidateVote(poll.Method, poll.Config, value); err != nil {
+				return fmt.Errorf("validate vote: %w", err)
+			}
+		}
 	}
 
 	// TODO: Maybe make this a function in the schema.
@@ -719,6 +753,25 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	default:
 		return fmt.Errorf("unknown vote sql status %s", status)
 	}
+}
+
+// split split sa vote and valides the weight
+func split(maxWeight decimal.Decimal, value json.RawMessage) (map[decimal.Decimal]json.RawMessage, error) {
+	var splitVotes map[decimal.Decimal]json.RawMessage
+	if err := json.Unmarshal(value, &splitVotes); err != nil {
+		return nil, errors.Join(MessageError(ErrInvalid, "Invalid split votes"), err)
+	}
+
+	var splitWeightSum decimal.Decimal
+	for splitWeight := range splitVotes {
+		splitWeightSum = splitWeightSum.Add(splitWeight)
+	}
+
+	if splitWeightSum.Cmp(maxWeight) == 1 {
+		return nil, MessageError(ErrInvalid, "Split weight exceeds your vote weight.")
+	}
+
+	return splitVotes, nil
 }
 
 // allowedToVote checks, that the represented user can vote and the acting user
@@ -805,15 +858,15 @@ func allowedToVote(
 // CalcVoteWeight calculates the vote weight for a user in a meeting.
 //
 // voteweight is a DecimalField with 6 zeros.
-func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, userID int) (string, error) {
-	const defaultVoteWeight = "1.000000"
+func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, userID int) (decimal.Decimal, error) {
+	defaultVoteWeight, _ := decimal.NewFromString("1.000000")
 
 	meetingUserID, found, err := getMeetingUser(ctx, fetch, userID, meetingID)
 	if err != nil {
-		return "", fmt.Errorf("getting meeting user: %w", err)
+		return decimal.Decimal{}, fmt.Errorf("getting meeting user: %w", err)
 	}
 	if !found {
-		return "", fmt.Errorf("user %d has no meeting_user in meeting %d", userID, meetingID)
+		return decimal.Decimal{}, fmt.Errorf("user %d has no meeting_user in meeting %d", userID, meetingID)
 	}
 
 	var voteWeightEnabled bool
@@ -824,7 +877,7 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	fetch.User_DefaultVoteWeight(userID).Lazy(&userDefaultVoteWeight)
 
 	if err := fetch.Execute(ctx); err != nil {
-		return "", fmt.Errorf("getting vote weight values from db: %w", err)
+		return decimal.Decimal{}, fmt.Errorf("getting vote weight values from db: %w", err)
 	}
 
 	if !voteWeightEnabled {
@@ -832,11 +885,11 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	}
 
 	if meetingUserVoteWeight != "" {
-		return meetingUserVoteWeight, nil
+		return decimal.NewFromString(meetingUserVoteWeight)
 	}
 
 	if userDefaultVoteWeight != "" {
-		return userDefaultVoteWeight, nil
+		return decimal.NewFromString(userDefaultVoteWeight)
 	}
 
 	return defaultVoteWeight, nil
@@ -872,19 +925,69 @@ func ValidateVote(method string, config string, vote json.RawMessage) error {
 	}
 }
 
-func CreateResult(method string, config string, votes []dsmodels.Vote) (string, error) {
-	switch method {
-	case methodApproval{}.Name():
-		return methodApproval{}.Result(config, votes)
-	case methodSelection{}.Name():
-		return methodSelection{}.Result(config, votes)
-	case methodRatingScore{}.Name():
-		return methodRatingScore{}.Result(config, votes)
-	case methodRatingApproval{}.Name():
-		return methodRatingApproval{}.Result(config, votes)
-	default:
-		return "", fmt.Errorf("unknown poll method: %s", method)
+func CreateResult(poll dsmodels.Poll, votes []dsmodels.Vote) (string, error) {
+	if poll.AllowVoteSplit {
+		votes = splitVote(poll, votes)
 	}
+
+	switch poll.Method {
+	case methodApproval{}.Name():
+		return methodApproval{}.Result(poll.Config, votes)
+	case methodSelection{}.Name():
+		return methodSelection{}.Result(poll.Config, votes)
+	case methodRatingScore{}.Name():
+		return methodRatingScore{}.Result(poll.Config, votes)
+	case methodRatingApproval{}.Name():
+		return methodRatingApproval{}.Result(poll.Config, votes)
+	default:
+		return "", fmt.Errorf("unknown poll method: %s", poll.Method)
+	}
+}
+
+func splitVote(poll dsmodels.Poll, votes []dsmodels.Vote) []dsmodels.Vote {
+	var splittedVotes []dsmodels.Vote
+	for _, vote := range votes {
+		if !vote.Split {
+			splittedVotes = append(splittedVotes, vote)
+			continue
+		}
+
+		weight, err := decimal.NewFromString(vote.Weight)
+		if err != nil {
+			splittedVotes = append(splittedVotes, vote)
+			continue
+		}
+
+		splitted, err := split(weight, json.RawMessage(vote.Value))
+		if err != nil {
+			// If the vote value can not be splitted, just use it as value.
+			// It will probably be counted as invalid.
+			splittedVotes = append(splittedVotes, vote)
+			continue
+		}
+
+		splittedVotes = append(splittedVotes, votesFromSplitted(poll, vote, splitted)...)
+	}
+	return splittedVotes
+}
+
+func votesFromSplitted(poll dsmodels.Poll, vote dsmodels.Vote, splitted map[decimal.Decimal]json.RawMessage) []dsmodels.Vote {
+	var fromThisVote []dsmodels.Vote
+	for splitWeight, splitValue := range splitted {
+		if err := ValidateVote(poll.Method, poll.Config, splitValue); err != nil {
+			return []dsmodels.Vote{vote}
+		}
+
+		fromThisVote = append(fromThisVote, dsmodels.Vote{
+			PollID:            vote.PollID,
+			Weight:            splitWeight.String(),
+			Value:             string(splitValue),
+			ActingUserID:      vote.ActingUserID,
+			RepresentedUserID: vote.RepresentedUserID,
+			Split:             true,
+		})
+	}
+	return fromThisVote
 }
 
 func fetchPoll(ctx context.Context, getter flow.Getter, pollID int) (dsmodels.Poll, error) {
