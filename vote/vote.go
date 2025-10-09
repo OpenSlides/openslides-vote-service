@@ -1099,6 +1099,7 @@ func Preload(ctx context.Context, flow flow.Getter, poll dsmodels.Poll) error {
 	}
 
 	q := dsmodels.New(flow).Poll(poll.ID)
+	q = q.Preload(q.EntitledGroupList().MeetingUserList().User())
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedTo().User())
 	_, err := q.First(ctx)
 	if err != nil {

@@ -245,6 +245,7 @@ func TestPreload(t *testing.T) {
 					username: admin
 					organization_management_level: superadmin
 				30:
+					organization_id: 1
 					username: tom
 
 			meeting_user:
@@ -295,8 +296,10 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 
 			meeting_user:
 				30:
@@ -342,10 +345,13 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 				31:
 					username: gregor
+					organization_id: 1
 
 			meeting_user:
 				30:
@@ -400,10 +406,13 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 				31:
 					username: gregor
+					organization_id: 1
 
 			meeting_user:
 				30:
