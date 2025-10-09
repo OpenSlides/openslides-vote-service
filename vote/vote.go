@@ -1086,19 +1086,13 @@ func hasCommon(list1, list2 []int) bool {
 // Preload loads all data in the cache, that is needed later for the vote
 // requests.
 func Preload(ctx context.Context, flow flow.Getter, poll dsmodels.Poll) error {
-	ds := dsfetch.New(flow)
+	ds := dsmodels.New(flow)
 	var dummyBool bool
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
 	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Lazy(&dummyBool)
 	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Lazy(&dummyBool)
 
-	// First database request to get meeting/enable_vote_weight and all
-	// meeting_users from all entitled groups.
-	if err := ds.Execute(ctx); err != nil {
-		return fmt.Errorf("fetching users: %w", err)
-	}
-
-	q := dsmodels.New(flow).Poll(poll.ID)
+	q := ds.Poll(poll.ID)
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().User())
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedTo().User())
 	_, err := q.First(ctx)
