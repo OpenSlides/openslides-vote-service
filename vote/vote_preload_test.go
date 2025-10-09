@@ -264,7 +264,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -317,7 +317,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -373,7 +373,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -434,7 +434,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -510,22 +510,14 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			4,
+			5,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
-			fetcher := dsmodels.New(ds)
 
-			poll, err := fetcher.Poll(5).First(ctx)
-			if err != nil {
-				t.Fatalf("loadPoll returned: %v", err)
-			}
-
-			dsCount.Reset()
-
-			if err := vote.Preload(ctx, dsfetch.New(ds), poll); err != nil {
+			if err := vote.Preload(ctx, dsfetch.New(ds), 5, 1); err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 

@@ -50,7 +50,7 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 						errorHandler(fmt.Errorf("Error fetching poll for preload: %w", err))
 						continue
 					}
-					if err := Preload(ctx, dsfetch.New(v.flow), poll); err != nil {
+					if err := Preload(ctx, dsfetch.New(v.flow), poll.ID, poll.MeetingID); err != nil {
 						errorHandler(fmt.Errorf("Error preloading poll: %w", err))
 						continue
 					}
@@ -453,7 +453,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
 	}
 
-	if err := Preload(ctx, dsfetch.New(v.flow), poll); err != nil {
+	if err := Preload(ctx, dsfetch.New(v.flow), poll.ID, poll.MeetingID); err != nil {
 		return fmt.Errorf("preloading poll: %w", err)
 	}
 
@@ -1085,14 +1085,14 @@ func hasCommon(list1, list2 []int) bool {
 
 // Preload loads all data in the cache, that is needed later for the vote
 // requests.
-func Preload(ctx context.Context, flow flow.Getter, poll dsmodels.Poll) error {
+func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) error {
 	ds := dsmodels.New(flow)
 	var dummyBool bool
-	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
-	ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Lazy(&dummyBool)
-	ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersEnableVoteWeight(meetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersEnableVoteDelegations(meetingID).Lazy(&dummyBool)
+	ds.Meeting_UsersForbidDelegatorToVote(meetingID).Lazy(&dummyBool)
 
-	q := ds.Poll(poll.ID)
+	q := ds.Poll(pollID)
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().User())
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedTo().User())
 	_, err := q.First(ctx)
