@@ -75,7 +75,7 @@ func TestAll(t *testing.T) {
 				body := `{
 					"title": "my pol",
 					"content_object_id": "motion/5",
-					"method": "motion",
+					"method": "approval",
 					"visibility": "open",
 					"meeting_id": 1,
 					"entitled_group_ids": [41]
@@ -248,7 +248,7 @@ func TestAll(t *testing.T) {
 	)
 }
 
-func TestCreateManually(t *testing.T) {
+func TestManually(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
@@ -283,32 +283,54 @@ func TestCreateManually(t *testing.T) {
 	`
 
 	withData(t, pg, data, func(service *vote.Vote, flow flow.Flow) {
-		body := `{
-			"title": "my poll",
-			"content_object_id": "motion/5",
-			"method": "motion",
-			"visibility": "manually",
-			"meeting_id": 1,
-			"result": {"no":"23","yes":"42"}
-		}`
+		t.Run("Create", func(t *testing.T) {
+			body := `{
+				"title": "my poll",
+				"content_object_id": "motion/5",
+				"method": "approval",
+				"visibility": "manually",
+				"meeting_id": 1,
+				"result": {"no":"23","yes":"42"}
+			}`
 
-		id, err := service.Create(ctx, 5, strings.NewReader(body))
-		if err != nil {
-			t.Fatalf("Error creating poll: %v", err)
-		}
+			id, err := service.Create(ctx, 5, strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
 
-		if id != 1 {
-			t.Errorf("Expected id 1, got %d", id)
-		}
+			if id != 1 {
+				t.Errorf("Expected id 1, got %d", id)
+			}
 
-		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
-		if err != nil {
-			t.Fatalf("Fetch poll: %v", err)
-		}
+			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+			if err != nil {
+				t.Fatalf("Fetch poll: %v", err)
+			}
 
-		if poll.Result != `{"no":"23","yes":"42"}` {
-			t.Errorf("Result does not match")
-		}
+			if poll.State != "finished" {
+				t.Errorf("Poll is in state %s, expected state finished", poll.State)
+			}
+
+			if poll.Result != `{"no":"23","yes":"42"}` {
+				t.Errorf("Result does not match")
+			}
+		})
+
+		t.Run("Reset", func(t *testing.T) {
+			err := service.Reset(ctx, 1, 5)
+			if err != nil {
+				t.Fatalf("Error creating poll: %v", err)
+			}
+
+			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+			if err != nil {
+				t.Fatalf("Fetch poll: %v", err)
+			}
+
+			if poll.State != "finished" {
+				t.Errorf("State == %s. A manually poll has to be in state finished after a reset", poll.State)
+			}
+		})
 	})
 }
 
@@ -355,7 +377,7 @@ func TestVote(t *testing.T) {
 
 	poll/5:
 		title: my poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -408,7 +430,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -423,7 +445,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"1.000000",
+			"1",
 		},
 		{
 			"Weight enabled, user has no weight",
@@ -431,7 +453,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -446,7 +468,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"1.000000",
+			"1",
 		},
 		{
 			"Weight enabled, user has default weight",
@@ -454,7 +476,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -470,7 +492,7 @@ func TestVoteWeight(t *testing.T) {
 				group_ids: [1]
 				meeting_id: 1
 			`,
-			"2.000000",
+			"2",
 		},
 		{
 			"Weight enabled, user has default weight and meeting weight",
@@ -478,7 +500,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -495,7 +517,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_id: 1
 				vote_weight: "3.000000"
 			`,
-			"3.000000",
+			"3",
 		},
 		{
 			"Weight enabled, user has default weight and meeting weight in other meeting",
@@ -503,7 +525,7 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: motion
+				method: approval
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
@@ -523,7 +545,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_id: 2
 				vote_weight: "3.000000"
 			`,
-			"2.000000",
+			"2",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -533,7 +555,7 @@ func TestVoteWeight(t *testing.T) {
 				t.Fatalf("CalcVote: %v", err)
 			}
 
-			if weight != tt.expectWeight {
+			if weight.String() != tt.expectWeight {
 				t.Errorf("got weight %q, expected %q", weight, tt.expectWeight)
 			}
 		})
@@ -588,22 +610,13 @@ func TestVoteStart(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
 		meeting_id: 1
 		state: created
 		entitled_group_ids: [40]
-
-	poll/6:
-		title: manually poll
-		method: motion
-		visibility: manually
-		sequential_number: 2
-		content_object_id: motion/5
-		meeting_id: 1
-		state: created
 	`
 
 	withData(
@@ -631,18 +644,15 @@ func TestVoteStart(t *testing.T) {
 			})
 
 			t.Run("Start a finished poll", func(t *testing.T) {
+				if err := service.Start(ctx, 5, 5); err != nil {
+					t.Fatalf("Start returned unexpected error: %v", err)
+				}
+
 				if err := service.Finalize(ctx, 5, 5, false, false); err != nil {
-					t.Errorf("Stop poll")
+					t.Fatalf("finish poll: %v", err)
 				}
 
 				err := service.Start(ctx, 5, 5)
-				if !errors.Is(err, vote.ErrInvalid) {
-					t.Errorf("Start returned unexpected error: %v", err)
-				}
-			})
-
-			t.Run("Start an anolog poll", func(t *testing.T) {
-				err := service.Start(ctx, 6, 5)
 				if !errors.Is(err, vote.ErrInvalid) {
 					t.Errorf("Start returned unexpected error: %v", err)
 				}
@@ -699,7 +709,7 @@ func TestVoteFinalize(t *testing.T) {
 
 	poll/5:
 		title: poll with votes
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -710,9 +720,11 @@ func TestVoteFinalize(t *testing.T) {
 	vote/1:
 		poll_id: 5
 		value: '"yes"'
+		represented_user_id: 30
 	vote/2:
 		poll_id: 5
 		value: '"no"'
+		represented_user_id: 5
 	`
 
 	withData(
@@ -743,6 +755,10 @@ func TestVoteFinalize(t *testing.T) {
 
 				if poll.State != "finished" {
 					t.Errorf("Poll state is %s, expected finished", poll.State)
+				}
+
+				if slices.Compare(poll.VotedIDs, []int{30, 5}) == 0 {
+					t.Errorf("VotedIDs are %v, expected %v", poll.VotedIDs, []int{30, 5})
 				}
 			})
 
@@ -812,7 +828,7 @@ func TestVoteVote(t *testing.T) {
 
 	poll/5:
 		title: poll with votes
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -959,7 +975,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: motion
+		method: approval
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
