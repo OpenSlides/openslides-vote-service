@@ -1,7 +1,6 @@
 package vote_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -213,7 +212,7 @@ func TestVoteNoRequests(t *testing.T) {
 func TestPreload(t *testing.T) {
 	// Tests, that the preload function needs a specific number of requests to
 	// postgres.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -457,15 +456,23 @@ func TestPreload(t *testing.T) {
 
 			user:
 				50:
+					username: user50
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				51:
+					username: user51
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				52:
+					username: user52
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				53:
+					username: user53
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 			meeting_user:
