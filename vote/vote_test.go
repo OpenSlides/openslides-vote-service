@@ -73,7 +73,7 @@ func TestAll(t *testing.T) {
 		func(service *vote.Vote, flow flow.Flow) {
 			t.Run("Create", func(t *testing.T) {
 				body := `{
-					"title": "my pol",
+					"title": "my poll",
 					"content_object_id": "motion/5",
 					"method": "approval",
 					"visibility": "open",
@@ -90,14 +90,13 @@ func TestAll(t *testing.T) {
 					t.Errorf("Expected id 1, got %d", id)
 				}
 
-				key := dskey.MustKey("poll/1/title")
-				result, err := flow.Get(ctx, key)
+				poll, err := dsmodels.New(flow).Poll(1).First(ctx)
 				if err != nil {
-					t.Fatalf("Error getting title from created poll: %v", err)
+					t.Fatalf("Error fetch poll: %v", err)
 				}
 
-				if string(result[key]) != `"my pol"` {
-					t.Errorf("Expected title 'my poll', got %s", result[key])
+				if poll.Title != `my poll` {
+					t.Errorf("Expected title 'my poll', got %s", poll.Title)
 				}
 			})
 
