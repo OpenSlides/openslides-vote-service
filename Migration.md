@@ -235,9 +235,7 @@ verwendet, sondern option.text.
 
 ## Einzelvergleich
 
-
-
-Poll related model changes:
+### Alte Felder
 
 * meeting/poll_default_backend was removed. No migration necessary. Just remove the value.
 * motion/option_ids was removed. I think, it can just be removed (ignored) since it has no meaning.
@@ -267,7 +265,7 @@ Poll related model changes:
 * vote/meeting_id was removed. No migration necessary.
 
 
-# New fields
+### Neue Felder
 
 * poll/method
 * poll/config
