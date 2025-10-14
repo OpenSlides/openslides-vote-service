@@ -234,8 +234,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeightEnabled bool
-	var meetingUserVoteWeight decimal.Decimal
-	var userDefaultVoteWeight decimal.Decimal
+	var meetingUserVoteWeight dsfetch.Maybe[decimal.Decimal]
+	var userDefaultVoteWeight dsfetch.Maybe[decimal.Decimal]
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&voteWeightEnabled)
 	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
 	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
@@ -244,16 +244,18 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("getting vote weight: %w", err)
 	}
 
-	var voteWeight string
+	var voteWeight *decimal.Decimal
 	if voteWeightEnabled {
-		voteWeight = meetingUserVoteWeight.String()
-		if voteWeight == "" {
-			voteWeight = userDefaultVoteWeight.String()
+		if val, isSet := meetingUserVoteWeight.Value(); isSet {
+			voteWeight = &val
+		} else if val, isSet := userDefaultVoteWeight.Value(); isSet {
+			voteWeight = &val
 		}
 	}
 
-	if voteWeight == "" {
-		voteWeight = "1.000000"
+	if voteWeight == nil {
+		defaultVoteWeight := decimal.NewFromInt(1)
+		voteWeight = &defaultVoteWeight
 	}
 
 	log.Debug("Using voteWeight %s", voteWeight)
@@ -267,7 +269,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		requestUser,
 		voteUser,
 		vote.Value.original,
-		voteWeight,
+		voteWeight.StringFixed(6),
 	}
 
 	if poll.Type != "named" {
@@ -586,7 +588,7 @@ type Backend interface {
 func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	var dummyBool bool
 	var dummyIntSlice []int
-	var dummyDecimal decimal.Decimal
+	var dummyDecimal dsfetch.Maybe[decimal.Decimal]
 	var dummyManybeInt dsfetch.Maybe[int]
 	var dummyInt int
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
