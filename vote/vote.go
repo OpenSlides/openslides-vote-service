@@ -15,6 +15,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
+	"github.com/shopspring/decimal"
 )
 
 // Vote holds the state of the service.
@@ -233,8 +234,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeightEnabled bool
-	var meetingUserVoteWeight string
-	var userDefaultVoteWeight string
+	var meetingUserVoteWeight decimal.Decimal
+	var userDefaultVoteWeight decimal.Decimal
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&voteWeightEnabled)
 	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
 	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
@@ -245,9 +246,9 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	var voteWeight string
 	if voteWeightEnabled {
-		voteWeight = meetingUserVoteWeight
+		voteWeight = meetingUserVoteWeight.String()
 		if voteWeight == "" {
-			voteWeight = userDefaultVoteWeight
+			voteWeight = userDefaultVoteWeight.String()
 		}
 	}
 
@@ -585,7 +586,7 @@ type Backend interface {
 func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	var dummyBool bool
 	var dummyIntSlice []int
-	var dummyString string
+	var dummyDecimal decimal.Decimal
 	var dummyManybeInt dsfetch.Maybe[int]
 	var dummyInt int
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
@@ -610,7 +611,7 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 			userIDs = append(userIDs, &uid)
 			ds.MeetingUser_UserID(muID).Lazy(&uid)
 			ds.MeetingUser_GroupIDs(muID).Lazy(&dummyIntSlice)
-			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyString)
+			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyDecimal)
 			ds.MeetingUser_VoteDelegatedToID(muID).Lazy(&dummyManybeInt)
 			ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
 		}
@@ -649,7 +650,7 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	}
 
 	for _, uID := range userIDs {
-		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyString)
+		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyDecimal)
 		ds.User_MeetingUserIDs(*uID).Lazy(&dummyIntSlice)
 		ds.User_IsPresentInMeetingIDs(*uID).Lazy(&dummyIntSlice)
 	}
