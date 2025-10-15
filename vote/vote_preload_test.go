@@ -1,7 +1,6 @@
 package vote_test
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -213,7 +212,7 @@ func TestVoteNoRequests(t *testing.T) {
 func TestPreload(t *testing.T) {
 	// Tests, that the preload function needs a specific number of requests to
 	// postgres.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -246,6 +245,7 @@ func TestPreload(t *testing.T) {
 					username: admin
 					organization_management_level: superadmin
 				30:
+					organization_id: 1
 					username: tom
 
 			meeting_user:
@@ -264,7 +264,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -296,8 +296,10 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 
 			meeting_user:
 				30:
@@ -315,7 +317,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -343,10 +345,13 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 				31:
 					username: gregor
+					organization_id: 1
 
 			meeting_user:
 				30:
@@ -368,7 +373,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -401,10 +406,13 @@ func TestPreload(t *testing.T) {
 				5:
 					username: admin
 					organization_management_level: superadmin
+					organization_id: 1
 				30:
 					username: tom
+					organization_id: 1
 				31:
 					username: gregor
+					organization_id: 1
 
 			meeting_user:
 				30:
@@ -426,7 +434,7 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			3,
+			4,
 		},
 
 		{
@@ -457,15 +465,23 @@ func TestPreload(t *testing.T) {
 
 			user:
 				50:
+					username: user50
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				51:
+					username: user51
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				52:
+					username: user52
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				53:
+					username: user53
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 			meeting_user:
@@ -494,22 +510,14 @@ func TestPreload(t *testing.T) {
 				state: created
 				entitled_group_ids: [40,41]
 			`,
-			4,
+			5,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
-			fetcher := dsmodels.New(ds)
 
-			poll, err := fetcher.Poll(5).First(ctx)
-			if err != nil {
-				t.Fatalf("loadPoll returned: %v", err)
-			}
-
-			dsCount.Reset()
-
-			if err := vote.Preload(ctx, dsfetch.New(ds), poll); err != nil {
+			if err := vote.Preload(ctx, dsfetch.New(ds), 5, 1); err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 

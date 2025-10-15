@@ -351,11 +351,6 @@ func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) 
 	return nil
 }
 
-type DecimalOrMap struct {
-	decimal decimal.Decimal
-	values  map[string]decimal.Decimal
-}
-
 func (m methodRatingApproval) Result(config string, votes []dsmodels.Vote) (string, error) {
 	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0
@@ -363,7 +358,7 @@ func (m methodRatingApproval) Result(config string, votes []dsmodels.Vote) (stri
 	for _, vote := range votes {
 		if err := m.ValidateVote(config, json.RawMessage(vote.Value)); err != nil {
 			if errors.Is(err, ErrInvalid) {
-				invalid += 1
+				invalid++
 				continue
 			}
 			return "", fmt.Errorf("validating vote: %w", err)
@@ -436,7 +431,7 @@ func iterateValues(
 	for _, vote := range votes {
 		if err := m.ValidateVote(config, json.RawMessage(vote.Value)); err != nil {
 			if errors.Is(err, ErrInvalid) {
-				invalid += 1
+				invalid++
 				continue
 			}
 			return "", fmt.Errorf("validating vote: %w", err)

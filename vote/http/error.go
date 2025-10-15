@@ -60,10 +60,10 @@ func writeFormattedError(w io.Writer, err error, logger logger) {
 		msg = vote.ErrInternal.Error()
 	}
 
-	w.Write([]byte(errorAsJson(errType, msg)))
+	w.Write([]byte(errorAsJSON(errType, msg)))
 }
 
-func errorAsJson(errType string, msg string) string {
+func errorAsJSON(errType string, msg string) string {
 	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, errType, msg)
 }
 
