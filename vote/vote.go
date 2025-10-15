@@ -62,7 +62,7 @@ func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(co
 	return v, bg, nil
 }
 
-// Creates a poll, returning the poll id.
+// Create create a poll, returning the poll id.
 func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int, error) {
 	electronicVotingEnabled, err := dsfetch.New(v.flow).Organization_EnableElectronicVoting(1).Value(ctx)
 	if err != nil {
@@ -100,7 +100,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		}
 	}
 
-	sequentialNumber += 1
+	sequentialNumber++
 
 	state := "created"
 	if ci.Visibility == "manually" {
@@ -158,7 +158,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	return newID, nil
 }
 
-type CreateInput struct {
+type createInput struct {
 	Title            string          `json:"title"`
 	ContentObjectID  string          `json:"content_object_id"`
 	MeetingID        int             `json:"meeting_id"`
@@ -171,59 +171,60 @@ type CreateInput struct {
 	AllowVoteSplit   bool            `json:"allow_vote_split"`
 }
 
-func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (CreateInput, error) {
-	var ci CreateInput
+func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
+	var ci createInput
 	if err := json.NewDecoder(r).Decode(&ci); err != nil {
-		return CreateInput{}, fmt.Errorf("reading json: %w", err)
+		return createInput{}, fmt.Errorf("reading json: %w", err)
 	}
 
 	if ci.Title == "" {
-		return CreateInput{}, MessageError(ErrInvalid, "Title can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Title can not be empty")
 	}
 
 	if ci.ContentObjectID == "" {
-		return CreateInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
 	}
 
 	if ci.MeetingID == 0 {
-		return CreateInput{}, MessageError(ErrInvalid, "Meeting ID can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Meeting ID can not be empty")
 	}
 
 	if ci.Method == "" {
-		return CreateInput{}, MessageError(ErrInvalid, "Method can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Method can not be empty")
 	}
 
 	if ci.Visibility == "" {
-		return CreateInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
 	}
 
 	if ci.Visibility == "secret" && ci.AllowVoteSplit {
-		return CreateInput{}, MessageError(ErrInvalid, "Vote splitting is not allowed for secret polls")
+		return createInput{}, MessageError(ErrInvalid, "Vote splitting is not allowed for secret polls")
 	}
 
 	switch ci.Visibility {
 	case "manually":
 		if len(ci.EntitledGroupIDs) > 0 {
-			return CreateInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
+			return createInput{}, MessageError(ErrInvalid, "Entitled Group IDs can not be set when visibility is set to manually")
 		}
 
 	default:
 		if !electronicVotingEnabled {
-			return CreateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
+			return createInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
 		}
 
 		if ci.Result != nil {
-			return CreateInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
+			return createInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
 		}
 	}
 
 	if err := ValidateConfig(ci.Method, string(ci.Config)); err != nil {
-		return CreateInput{}, fmt.Errorf("validate config: %w", err)
+		return createInput{}, fmt.Errorf("validate config: %w", err)
 	}
 
 	return ci, nil
 }
 
+// Update changes a poll.2
 func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
@@ -289,7 +290,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	return nil
 }
 
-type UpdateInput struct {
+type updateInput struct {
 	Title            string              `json:"title"`
 	Method           string              `json:"method"`
 	Config           json.RawMessage     `json:"config"`
@@ -300,51 +301,51 @@ type UpdateInput struct {
 	AllowVoteSplit   dsfetch.Maybe[bool] `json:"allow_vote_split"`
 }
 
-func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (UpdateInput, error) {
-	var ui UpdateInput
+func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
+	var ui updateInput
 	if err := json.NewDecoder(r).Decode(&ui); err != nil {
-		return UpdateInput{}, fmt.Errorf("decoding update input: %w", err)
+		return updateInput{}, fmt.Errorf("decoding update input: %w", err)
 	}
 
 	if poll.Visibility == "manually" {
 		if len(ui.EntitledGroupIDs) > 0 {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
+			return updateInput{}, MessageError(ErrNotAllowed, "Entitled Group IDs can not be set when visibility is set to manually")
 		}
 		return ui, nil
 	}
 
 	if ui.Visibility == "manually" {
-		return UpdateInput{}, MessageError(ErrNotAllowed, "A poll can not be changed manually")
+		return updateInput{}, MessageError(ErrNotAllowed, "A poll can not be changed manually")
 	}
 
 	if poll.State != "created" {
 		if ui.Method != "" {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
 		}
 
 		if ui.Config != nil {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
 		}
 
 		if ui.Visibility != "" {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "visibility can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "visibility can only be changed before the poll has started")
 		}
 
 		if ui.EntitledGroupIDs != nil {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "entitled group ids can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "entitled group ids can only be changed before the poll has started")
 		}
 
 		if !ui.AllowVoteSplit.Null() {
-			return UpdateInput{}, MessageError(ErrNotAllowed, "allow vote split can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "allow vote split can only be changed before the poll has started")
 		}
 	}
 
 	if !electronicVotingEnabled {
-		return UpdateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
+		return updateInput{}, MessageError(ErrNotAllowed, "Electronic voting is not enabled. Only polls with visibility set to manually are allowed.")
 	}
 
 	if ui.Result != nil {
-		return UpdateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
+		return updateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
 	}
 
 	if ui.Config != nil {
@@ -354,14 +355,14 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 		}
 
 		if err := ValidateConfig(method, string(ui.Config)); err != nil {
-			return UpdateInput{}, fmt.Errorf("validate config: %w", err)
+			return updateInput{}, fmt.Errorf("validate config: %w", err)
 		}
 	}
 
 	return ui, nil
 }
 
-func (ui UpdateInput) query(pollID int) (string, []any) {
+func (ui updateInput) query(pollID int) (string, []any) {
 	var setParts []string
 	var args []any
 	argIndex := 1
@@ -421,6 +422,7 @@ func (ui UpdateInput) query(pollID int) (string, []any) {
 	return query, args
 }
 
+// Delete removes a poll.
 func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
@@ -571,6 +573,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	return nil
 }
 
+// Reset removes all votes from a poll and sets its state to created.
 func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
@@ -622,13 +625,6 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	}
 
 	return nil
-}
-
-type VoteResult struct {
-	Success bool   `json:"success"`
-	Status  string `json:"status"`
-	VoteID  *int   `json:"vote_id,omitempty"`
-	Message string `json:"message"`
 }
 
 // Vote validates and saves the vote.
@@ -895,6 +891,7 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	return defaultVoteWeight, nil
 }
 
+// ValidateConfig checks that the config field is correct.
 func ValidateConfig(method string, config string) error {
 	switch method {
 	case methodApproval{}.Name():
@@ -910,6 +907,7 @@ func ValidateConfig(method string, config string) error {
 	}
 }
 
+// ValidateVote checks, if a vote is invalid.
 func ValidateVote(method string, config string, vote json.RawMessage) error {
 	switch method {
 	case methodApproval{}.Name():
@@ -925,6 +923,7 @@ func ValidateVote(method string, config string, vote json.RawMessage) error {
 	}
 }
 
+// CreateResult creates the result from a list of votes.
 func CreateResult(poll dsmodels.Poll, votes []dsmodels.Vote) (string, error) {
 	if poll.AllowVoteSplit {
 		votes = splitVote(poll, votes)
@@ -1102,6 +1101,7 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 	return nil
 }
 
+// DBQuerier is either a pgx-connection or a pgx-pool.
 type DBQuerier interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
