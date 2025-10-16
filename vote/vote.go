@@ -244,19 +244,19 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("getting vote weight: %w", err)
 	}
 
-	var voteWeight string
+	var voteWeight decimal.Decimal
 	if voteWeightEnabled {
-		voteWeight = meetingUserVoteWeight.String()
-		if voteWeight == "" {
-			voteWeight = userDefaultVoteWeight.String()
+		voteWeight = meetingUserVoteWeight
+		if voteWeight.IsZero() {
+			voteWeight = userDefaultVoteWeight
 		}
 	}
 
-	if voteWeight == "" {
-		voteWeight = "1.000000"
+	if voteWeight.IsZero() {
+		voteWeight = decimal.NewFromInt(1)
 	}
 
-	log.Debug("Using voteWeight %s", voteWeight)
+	log.Debug("Using voteWeight %s", voteWeight.String())
 
 	voteData := struct {
 		RequestUser int             `json:"request_user_id,omitempty"`
@@ -267,7 +267,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		requestUser,
 		voteUser,
 		vote.Value.original,
-		voteWeight,
+		voteWeight.StringFixed(6),
 	}
 
 	if poll.Type != "named" {
