@@ -2,33 +2,27 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-func handleInternal(handler Handler) http.Handler {
-	return resolveError(handler, true)
-}
+type logger func(fmt string, a ...any) (int, error)
 
-func handleExternal(handler Handler) http.Handler {
-	return resolveError(handler, false)
-}
+func getResolveError(logger logger) func(handler Handler) http.HandlerFunc {
+	return func(handler Handler) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			err := handler.ServeHTTP(w, r)
+			if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
 
-func resolveError(handler Handler, internalRoute bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		err := handler.ServeHTTP(w, r)
-		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return
+			writeStatusCode(w, err)
+			writeFormattedError(w, err, logger)
 		}
-
-		writeStatusCode(w, err)
-		writeFormattedError(w, err, internalRoute)
 	}
 }
 
@@ -46,40 +40,31 @@ func writeStatusCode(w http.ResponseWriter, err error) {
 		statusCode = 500
 	}
 
-	log.Debug("HTTP: Returning status %d", statusCode)
 	w.WriteHeader(statusCode)
 }
 
-func writeFormattedError(w io.Writer, err error, internalRoute bool) {
+func writeFormattedError(w io.Writer, err error, logger logger) {
 	errType := "internal"
+	msg := err.Error()
 	var errTyped interface {
 		error
 		Type() string
 	}
 	if errors.As(err, &errTyped) {
 		errType = errTyped.Type()
+		msg = errTyped.Error()
 	}
 
-	msg := err.Error()
 	if errType == "internal" {
-		log.Info("Error: %s", msg)
-		if !internalRoute {
-			msg = vote.ErrInternal.Error()
-		}
+		logger("Error: %s\n", msg)
+		msg = vote.ErrInternal.Error()
 	}
 
-	out := struct {
-		Error string `json:"error"`
-		MSG   string `json:"message"`
-	}{
-		errType,
-		msg,
-	}
+	w.Write([]byte(errorAsJSON(errType, msg)))
+}
 
-	if err := json.NewEncoder(w).Encode(out); err != nil {
-		log.Info("Error encoding error message: %v", err)
-		fmt.Fprint(w, `{"error":"internal", "message":"Something went wrong encoding the error message"}`)
-	}
+func errorAsJSON(errType string, msg string) string {
+	return fmt.Sprintf(`{"error":"%s","message":"%s"}`, errType, msg)
 }
 
 type statusCodeError struct {
