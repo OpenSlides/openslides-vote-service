@@ -364,13 +364,9 @@ func (m methodRatingApproval) Result(config string, votes []dsmodels.Vote) (stri
 			return "", fmt.Errorf("validating vote: %w", err)
 		}
 
-		weightStr := vote.Weight
-		if weightStr == "" {
-			weightStr = "1"
-		}
-		weight, err := decimal.NewFromString(weightStr)
-		if err != nil {
-			return "", fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
+		weight := vote.Weight
+		if vote.Weight.IsZero() {
+			weight = decimal.NewFromInt(1)
 		}
 
 		var votedOptions map[string]json.RawMessage
@@ -437,13 +433,9 @@ func iterateValues(
 			return "", fmt.Errorf("validating vote: %w", err)
 		}
 
-		weight := vote.Weight
-		if weight == "" {
-			weight = "1"
-		}
-		factor, err := decimal.NewFromString(weight)
-		if err != nil {
-			return "", fmt.Errorf("invalid weight `%s` in vote %d: %w", vote.Weight, vote.ID, err)
+		factor := vote.Weight
+		if factor.IsZero() {
+			factor = decimal.NewFromInt(1)
 		}
 
 		if err := fn(vote.Value, factor, result); err != nil {

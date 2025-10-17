@@ -7,6 +7,7 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-vote-service/vote"
+	"github.com/shopspring/decimal"
 )
 
 func TestValidateVote(t *testing.T) {
@@ -267,130 +268,130 @@ func TestCreateResult(t *testing.T) {
 		votes        []dsmodels.Vote
 		expectResult string
 	}{
-		// {
-		// 	name:   "Approval",
-		// 	method: "approval",
-		// 	config: "",
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `"Yes"`},
-		// 		{Value: `"Yes"`},
-		// 		{Value: `"No"`},
-		// 	},
-		// 	expectResult: `{"no":"1","yes":"2"}`,
-		// },
-		// {
-		// 	name:   "Approval with invalid",
-		// 	method: "approval",
-		// 	config: "",
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `"Yes"`},
-		// 		{Value: `"Yes"`},
-		// 		{Value: `"No"`},
-		// 		{Value: `"ABC"`},
-		// 	},
-		// 	expectResult: `{"invalid":1,"no":"1","yes":"2"}`,
-		// },
+		{
+			name:   "Approval",
+			method: "approval",
+			config: "",
+			votes: []dsmodels.Vote{
+				{Value: `"Yes"`},
+				{Value: `"Yes"`},
+				{Value: `"No"`},
+			},
+			expectResult: `{"no":"1","yes":"2"}`,
+		},
+		{
+			name:   "Approval with invalid",
+			method: "approval",
+			config: "",
+			votes: []dsmodels.Vote{
+				{Value: `"Yes"`},
+				{Value: `"Yes"`},
+				{Value: `"No"`},
+				{Value: `"ABC"`},
+			},
+			expectResult: `{"invalid":1,"no":"1","yes":"2"}`,
+		},
 		{
 			name:       "Approval with split",
 			method:     "approval",
 			config:     "",
 			allowSplit: true,
 			votes: []dsmodels.Vote{
-				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: true, Weight: "1"},  // valid
-				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: false, Weight: "1"}, // split not set
-				{Value: `{"1.3":"Yes","1.7":"No"}`, Split: true, Weight: "1"},  // Vote weight is too hight
-				{Value: `{"0.3":"Yes","0.7":"ABC"}`, Split: true, Weight: "1"}, // One vote is invalid
+				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: true, Weight: decimal.NewFromInt(1)},  // valid
+				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: false, Weight: decimal.NewFromInt(1)}, // split not set
+				{Value: `{"1.3":"Yes","1.7":"No"}`, Split: true, Weight: decimal.NewFromInt(1)},  // Vote weight is too hight
+				{Value: `{"0.3":"Yes","0.7":"ABC"}`, Split: true, Weight: decimal.NewFromInt(1)}, // One vote is invalid
 			},
 			expectResult: `{"invalid":3,"no":"0.7","yes":"0.3"}`,
 		},
-		// {
-		// 	name:       "Approval with split not enabled",
-		// 	method:     "approval",
-		// 	config:     "",
-		// 	allowSplit: false,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `{"0.3":"Yes","0.7":"No"}`, Split: true, Weight: "1"},
-		// 		{Value: `{"0.3":"Yes","0.7":"No"}`, Split: false, Weight: "1"},
-		// 		{Value: `{"1.3":"Yes","1.7":"No"}`, Split: true, Weight: "1"},
-		// 	},
-		// 	expectResult: `{"invalid":3}`,
-		// },
-		// {
-		// 	name:   "Selection",
-		// 	method: "selection",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `["tom","gregor"]`},
-		// 		{Value: `["gregor","hans"]`},
-		// 		{Value: `["hans"]`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"gregor":"2","hans":"6","tom":"1"}`,
-		// },
-		// {
-		// 	name:   "Selection abstain",
-		// 	method: "selection",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `["tom","gregor"]`},
-		// 		{Value: `[]`},
-		// 		{Value: `[]`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"abstain":"6","gregor":"1","tom":"1"}`,
-		// },
-		// {
-		// 	name:   "Selection nota",
-		// 	method: "selection",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"},"allow_nota":true}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `["tom","gregor"]`},
-		// 		{Value: `"nota"`},
-		// 		{Value: `"nota"`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"gregor":"1","nota":"6","tom":"1"}`,
-		// },
-		// {
-		// 	name:   "Rating-Score",
-		// 	method: "rating-score",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `{"tom":3,"gregor":3}`},
-		// 		{Value: `{"gregor":2,"hans":3}`},
-		// 		{Value: `{"hans":5}`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"gregor":"5","hans":"28","tom":"3"}`,
-		// },
-		// {
-		// 	name:   "Rating-Score Abstain",
-		// 	method: "rating-score",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `{"tom":3,"gregor":3}`},
-		// 		{Value: `{}`},
-		// 		{Value: `{}`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"abstain":"6","gregor":"3","tom":"3"}`,
-		// },
-		// {
-		// 	name:   "Rating-Approval",
-		// 	method: "rating-approval",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `{"tom":"yes","gregor":"no"}`},
-		// 		{Value: `{"gregor":"yes","hans":"no"}`},
-		// 		{Value: `{"hans":"yes"}`, Weight: "5"},
-		// 	},
-		// 	expectResult: `{"gregor":{"no":"1","yes":"1"},"hans":{"no":"1","yes":"5"},"tom":{"yes":"1"}}`,
-		// },
-		// {
-		// 	name:   "Rating-Approval with out abstain but with invalid",
-		// 	method: "rating-approval",
-		// 	config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"},"allow_abstain":false}`,
-		// 	votes: []dsmodels.Vote{
-		// 		{Value: `{"tom":"yes","gregor":"abstain"}`},
-		// 		{Value: `{"tom":"yes","gregor":"no"}`},
-		// 	},
-		// 	expectResult: `{"gregor":{"no":"1"},"invalid":1,"tom":{"yes":"1"}}`,
-		// },
+		{
+			name:       "Approval with split not enabled",
+			method:     "approval",
+			config:     "",
+			allowSplit: false,
+			votes: []dsmodels.Vote{
+				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: true, Weight: decimal.NewFromInt(1)},
+				{Value: `{"0.3":"Yes","0.7":"No"}`, Split: false, Weight: decimal.NewFromInt(1)},
+				{Value: `{"1.3":"Yes","1.7":"No"}`, Split: true, Weight: decimal.NewFromInt(1)},
+			},
+			expectResult: `{"invalid":3}`,
+		},
+		{
+			name:   "Selection",
+			method: "selection",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
+			votes: []dsmodels.Vote{
+				{Value: `["tom","gregor"]`},
+				{Value: `["gregor","hans"]`},
+				{Value: `["hans"]`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"gregor":"2","hans":"6","tom":"1"}`,
+		},
+		{
+			name:   "Selection abstain",
+			method: "selection",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
+			votes: []dsmodels.Vote{
+				{Value: `["tom","gregor"]`},
+				{Value: `[]`},
+				{Value: `[]`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"abstain":"6","gregor":"1","tom":"1"}`,
+		},
+		{
+			name:   "Selection nota",
+			method: "selection",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"},"allow_nota":true}`,
+			votes: []dsmodels.Vote{
+				{Value: `["tom","gregor"]`},
+				{Value: `"nota"`},
+				{Value: `"nota"`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"gregor":"1","nota":"6","tom":"1"}`,
+		},
+		{
+			name:   "Rating-Score",
+			method: "rating-score",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"tom":3,"gregor":3}`},
+				{Value: `{"gregor":2,"hans":3}`},
+				{Value: `{"hans":5}`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"gregor":"5","hans":"28","tom":"3"}`,
+		},
+		{
+			name:   "Rating-Score Abstain",
+			method: "rating-score",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"tom":3,"gregor":3}`},
+				{Value: `{}`},
+				{Value: `{}`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"abstain":"6","gregor":"3","tom":"3"}`,
+		},
+		{
+			name:   "Rating-Approval",
+			method: "rating-approval",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"}}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"tom":"yes","gregor":"no"}`},
+				{Value: `{"gregor":"yes","hans":"no"}`},
+				{Value: `{"hans":"yes"}`, Weight: decimal.NewFromInt(5)},
+			},
+			expectResult: `{"gregor":{"no":"1","yes":"1"},"hans":{"no":"1","yes":"5"},"tom":{"yes":"1"}}`,
+		},
+		{
+			name:   "Rating-Approval with out abstain but with invalid",
+			method: "rating-approval",
+			config: `{"options":{"tom":"Tom","gregor":"Gregor","hans":"Hans"},"allow_abstain":false}`,
+			votes: []dsmodels.Vote{
+				{Value: `{"tom":"yes","gregor":"abstain"}`},
+				{Value: `{"tom":"yes","gregor":"no"}`},
+			},
+			expectResult: `{"gregor":{"no":"1"},"invalid":1,"tom":{"yes":"1"}}`,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			poll := dsmodels.Poll{

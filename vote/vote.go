@@ -847,8 +847,8 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 	}
 
 	var voteWeightEnabled bool
-	var meetingUserVoteWeight string
-	var userDefaultVoteWeight string
+	var meetingUserVoteWeight decimal.Decimal
+	var userDefaultVoteWeight decimal.Decimal
 	fetch.Meeting_UsersEnableVoteWeight(meetingID).Lazy(&voteWeightEnabled)
 	fetch.MeetingUser_VoteWeight(meetingUserID).Lazy(&meetingUserVoteWeight)
 	fetch.User_DefaultVoteWeight(userID).Lazy(&userDefaultVoteWeight)
@@ -861,12 +861,12 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingID int, us
 		return defaultVoteWeight, nil
 	}
 
-	if meetingUserVoteWeight != "" {
-		return decimal.NewFromString(meetingUserVoteWeight)
+	if !meetingUserVoteWeight.IsZero() {
+		return meetingUserVoteWeight, nil
 	}
 
-	if userDefaultVoteWeight != "" {
-		return decimal.NewFromString(userDefaultVoteWeight)
+	if !userDefaultVoteWeight.IsZero() {
+		return userDefaultVoteWeight, nil
 	}
 
 	return defaultVoteWeight, nil
@@ -932,13 +932,7 @@ func splitVote(poll dsmodels.Poll, votes []dsmodels.Vote) []dsmodels.Vote {
 			continue
 		}
 
-		weight, err := decimal.NewFromString(vote.Weight)
-		if err != nil {
-			splittedVotes = append(splittedVotes, vote)
-			continue
-		}
-
-		splitted, err := split(weight, json.RawMessage(vote.Value))
+		splitted, err := split(vote.Weight, json.RawMessage(vote.Value))
 		if err != nil {
 			// If the vote value can not be splitted, just use it as value.
 			// It will probably be counted as invalid.
@@ -960,7 +954,7 @@ func votesFromSplitted(poll dsmodels.Poll, vote dsmodels.Vote, splitted map[deci
 
 		fromThisVote = append(fromThisVote, dsmodels.Vote{
 			PollID:            vote.PollID,
-			Weight:            splitWeight.String(),
+			Weight:            splitWeight,
 			Value:             string(splitValue),
 			ActingUserID:      vote.ActingUserID,
 			RepresentedUserID: vote.RepresentedUserID,
