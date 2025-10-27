@@ -15,6 +15,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsrecorder"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/log"
+	"github.com/shopspring/decimal"
 )
 
 // Vote holds the state of the service.
@@ -233,8 +234,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 
 	// voteData.Weight is a DecimalField with 6 zeros.
 	var voteWeightEnabled bool
-	var meetingUserVoteWeight string
-	var userDefaultVoteWeight string
+	var meetingUserVoteWeight decimal.Decimal
+	var userDefaultVoteWeight decimal.Decimal
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&voteWeightEnabled)
 	ds.MeetingUser_VoteWeight(voteMeetingUserID).Lazy(&meetingUserVoteWeight)
 	ds.User_DefaultVoteWeight(voteUser).Lazy(&userDefaultVoteWeight)
@@ -243,19 +244,19 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		return fmt.Errorf("getting vote weight: %w", err)
 	}
 
-	var voteWeight string
+	var voteWeight decimal.Decimal
 	if voteWeightEnabled {
 		voteWeight = meetingUserVoteWeight
-		if voteWeight == "" {
+		if voteWeight.IsZero() {
 			voteWeight = userDefaultVoteWeight
 		}
 	}
 
-	if voteWeight == "" {
-		voteWeight = "1.000000"
+	if voteWeight.IsZero() {
+		voteWeight = decimal.NewFromInt(1)
 	}
 
-	log.Debug("Using voteWeight %s", voteWeight)
+	log.Debug("Using voteWeight %s", voteWeight.String())
 
 	voteData := struct {
 		RequestUser int             `json:"request_user_id,omitempty"`
@@ -266,7 +267,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) e
 		requestUser,
 		voteUser,
 		vote.Value.original,
-		voteWeight,
+		voteWeight.StringFixed(6),
 	}
 
 	if poll.Type != "named" {
@@ -585,7 +586,7 @@ type Backend interface {
 func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	var dummyBool bool
 	var dummyIntSlice []int
-	var dummyString string
+	var dummyDecimal decimal.Decimal
 	var dummyManybeInt dsfetch.Maybe[int]
 	var dummyInt int
 	ds.Meeting_UsersEnableVoteWeight(poll.MeetingID).Lazy(&dummyBool)
@@ -610,7 +611,7 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 			userIDs = append(userIDs, &uid)
 			ds.MeetingUser_UserID(muID).Lazy(&uid)
 			ds.MeetingUser_GroupIDs(muID).Lazy(&dummyIntSlice)
-			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyString)
+			ds.MeetingUser_VoteWeight(muID).Lazy(&dummyDecimal)
 			ds.MeetingUser_VoteDelegatedToID(muID).Lazy(&dummyManybeInt)
 			ds.MeetingUser_MeetingID(muID).Lazy(&dummyInt)
 		}
@@ -649,7 +650,7 @@ func preload(ctx context.Context, ds *dsfetch.Fetch, poll dsmodels.Poll) error {
 	}
 
 	for _, uID := range userIDs {
-		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyString)
+		ds.User_DefaultVoteWeight(*uID).Lazy(&dummyDecimal)
 		ds.User_MeetingUserIDs(*uID).Lazy(&dummyIntSlice)
 		ds.User_IsPresentInMeetingIDs(*uID).Lazy(&dummyIntSlice)
 	}
