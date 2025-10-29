@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
@@ -151,6 +152,26 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		}
 	}
 
+	if len(ci.OptionUserIDs) > 0 {
+		placeholders := make([]string, len(ci.OptionUserIDs))
+		args := make([]any, len(ci.OptionUserIDs)*2)
+
+		for i, userID := range ci.OptionUserIDs {
+			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+			args[i*2] = userID
+			args[i*2+1] = newID
+		}
+
+		groupSQL := fmt.Sprintf(
+			"INSERT INTO nm_poll_config_option_user_ids_user_t (user_id, poll_id) VALUES %s",
+			strings.Join(placeholders, ", "),
+		)
+
+		if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+			return 0, fmt.Errorf("insert user-poll relations: %w", err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit transaction: %w", err)
 	}
@@ -164,6 +185,7 @@ type createInput struct {
 	MeetingID        int             `json:"meeting_id"`
 	Method           string          `json:"method"`
 	Config           json.RawMessage `json:"config"`
+	OptionUserIDs    []int           `json:"option_user_ids"`
 	Visibility       string          `json:"visibility"`
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 	Published        bool            `json:"published"`
@@ -217,11 +239,53 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, e
 		}
 	}
 
+	newConfig, err := setOptions(ci.Config, ci.OptionUserIDs)
+	if err != nil {
+		return createInput{}, fmt.Errorf("set options: %w", err)
+	}
+	ci.Config = newConfig
+
 	if err := ValidateConfig(ci.Method, string(ci.Config)); err != nil {
 		return createInput{}, fmt.Errorf("validate config: %w", err)
 	}
 
 	return ci, nil
+}
+
+func setOptions(encodedConfig json.RawMessage, optionIDs []int) (json.RawMessage, error) {
+	if optionIDs == nil {
+		return encodedConfig, nil
+	}
+
+	optionIDsStr := make([]string, len(optionIDs))
+	for i := range len(optionIDs) {
+		optionIDsStr[i] = strconv.Itoa(optionIDs[i])
+	}
+
+	encodedIDsStr, err := json.Marshal(optionIDsStr)
+	if err != nil {
+		return nil, fmt.Errorf("encode ids as string: %w", err)
+	}
+
+	config := make(map[string]json.RawMessage)
+
+	if encodedConfig != nil {
+		if err := json.Unmarshal(encodedConfig, &config); err != nil {
+			return nil, fmt.Errorf("decoding config: %w", err)
+		}
+
+		if _, ok := config["options"]; ok {
+			return nil, MessageError(ErrNotAllowed, "config.options and option_user_ids can not be set at the same time.")
+		}
+	}
+
+	config["options"] = encodedIDsStr
+
+	result, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("encoding config: %w", err)
+	}
+	return result, nil
 }
 
 // Update changes a poll.2
@@ -294,6 +358,7 @@ type updateInput struct {
 	Title            string              `json:"title"`
 	Method           string              `json:"method"`
 	Config           json.RawMessage     `json:"config"`
+	OptionUserIDs    []int               `json:"option_user_ids"`
 	Visibility       string              `json:"visibility"`
 	EntitledGroupIDs []int               `json:"entitled_group_ids"`
 	Published        dsfetch.Maybe[bool] `json:"published"`
@@ -327,6 +392,10 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 			return updateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
 		}
 
+		if ui.OptionUserIDs != nil {
+			return updateInput{}, MessageError(ErrNotAllowed, "user ids can only be changed before the poll has started")
+		}
+
 		if ui.Visibility != "" {
 			return updateInput{}, MessageError(ErrNotAllowed, "visibility can only be changed before the poll has started")
 		}
@@ -347,6 +416,16 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 	if ui.Result != nil {
 		return updateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
 	}
+
+	if ui.Config == nil {
+		ui.Config = json.RawMessage(poll.Config)
+	}
+
+	newConfig, err := setOptions(ui.Config, ui.OptionUserIDs)
+	if err != nil {
+		return updateInput{}, fmt.Errorf("set options: %w", err)
+	}
+	ui.Config = newConfig
 
 	if ui.Config != nil {
 		method := poll.Method

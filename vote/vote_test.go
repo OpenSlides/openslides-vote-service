@@ -334,6 +334,77 @@ func TestManually(t *testing.T) {
 	})
 }
 
+func TestCreateWithUserOptions(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	organization/1/enable_electronic_voting: true
+
+	assignment/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my assignment
+
+	list_of_speakers/7:
+		content_object_id: assignment/5
+		sequential_number: 1
+		meeting_id: 1
+
+	user:
+		30:
+			username: tom
+			organization_management_level: superadmin
+		31:
+			username: jim
+		32:
+			username: hugo
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("With option_user_ids", func(t *testing.T) {
+				defer pg.Cleanup(t)
+
+				body := `{"title":"My poll","content_object_id":"assignment/5","meeting_id":1,"method":"selection","visibility":"open","option_user_ids":[30,31,32]}`
+				id, err := service.Create(ctx, 30, strings.NewReader(body))
+				if err != nil {
+					t.Fatalf("Error creating poll: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				poll, err := ds.Poll(id).First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting pol: %v", err)
+				}
+
+				if !slices.Equal(poll.ConfigOptionUserIDs, []int{30, 31, 32}) {
+					t.Errorf("poll.ConfigOptionUserIDs: got %v, expected %v", poll.ConfigOptionUserIDs, []int{30, 31, 32})
+				}
+
+				if poll.Config != `{"options":["30","31","32"]}` {
+					t.Errorf("poll.Config: got %v, expected %v", poll.Config, `{"options":["30","31","32"]}`)
+				}
+			})
+		},
+	)
+
+}
+
 func TestVote(t *testing.T) {
 	t.Parallel()
 

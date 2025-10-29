@@ -33,17 +33,20 @@ check depends on the field `content_object_id` in the request body.
 The request expects a body with the fields to create the poll:
 
 - `title` (required)
-- `description` (optional)
 - `content_object_id` (required)
 - `meeting_id` (required)
 - `method` (required)
 - `config` (depends on the method)
+- `option_user_ids` (when config.options are user_ids)
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
 - `result` (only if visibility == manually)
 - `allow_vote_split` (default: false)
 
+
+The field `option_user_ids` can be used to set the `options`-Attribute of the
+config, when the options are user ids.
 
 ### Update a poll
 
@@ -52,9 +55,9 @@ The request expects a body with the fields to create the poll:
 The fields `content_object_id` and `meeting_id` can not be changed. You have to
 create a new poll to "update" them.
 
-The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
-changed, before the poll has started. You can reset a poll to change this
-values.
+The fields `method`, `config`, `option_user_ids`, `visibility` and
+`entitled_group_ids` can only be changed, before the poll has started. You can
+reset a poll to change this values.
 
 
 ### Delete a poll
@@ -227,12 +230,10 @@ options. For example one candidate in a assignment-poll.
 
 #### poll/config
 
-`options` (required): map from a string to any value. The strings can by
-anything. For example assignment-candidate-ids, encoded as strings. The values
-are not used by the server, `null` would be valid values. The values can be used
-to describe the values, if the `poll/config` get inspected by a human. For
-example, it could be the username of the assignment-candidate:
-`{"options":{"1":"Max","2":"Hubert"}}`
+`options` (required): string list of the options. The strings can by anything.
+For example assignment-candidate-ids, encoded as strings. For example,
+it could be the username of the assignment-candidate:
+`{"options":{"1","2"}}`
 
 `max_options_amount`: The maximal amount of options a user can vote on. For
 example, with a value of `1`, a user is only allowed to vote for one candidate.
@@ -279,7 +280,7 @@ a numeric value to each option. For example give each candidate 3 votes.
 
 `options` (required), `max_options_amount` and `min_options_amount`: Are the
 same as from a selection-poll. For example:
-`{"options":{"1":"Max","2":"Hubert","3":"Hans"},"max_options_amount":2,"min_options_amount":1}`
+`{"options":{"1","2","3"},"max_options_amount":2,"min_options_amount":1}`
 
 `max_votes_per_option`: The maximal number for each option. The default is no
 limit.
@@ -411,4 +412,5 @@ The value is an integer and not a decimal value decoded as string.
 
 ## Configuration of the service
 
-The service is configured with environment variables. See [all environment variables](environment.md).
+The service is configured with environment variables. See [all environment
+variables](environment.md).
