@@ -84,32 +84,14 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	// TODO: Can be removed afer https://github.com/OpenSlides/openslides-meta/issues/219 is fixed.
-	var sequentialNumber int
-	err = tx.QueryRow(ctx, `
-		SELECT sequential_number
-		FROM poll
-		WHERE meeting_id = $1
-		ORDER BY sequential_number DESC
-		LIMIT 1
-		FOR UPDATE`, ci.MeetingID).Scan(&sequentialNumber)
-
-	if err != nil {
-		if err != pgx.ErrNoRows {
-			return 0, fmt.Errorf("get max sequential number: %w", err)
-		}
-	}
-
-	sequentialNumber++
-
 	state := "created"
 	if ci.Visibility == "manually" {
 		state = "finished"
 	}
 
 	sql := `INSERT INTO poll
-		(title, method, config, visibility, state, sequential_number, content_object_id, meeting_id, result, published, allow_vote_split)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		(title, method, config, visibility, state, content_object_id, meeting_id, result, published, allow_vote_split)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id;`
 
 	var newID int
@@ -121,7 +103,6 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.Config,
 		ci.Visibility,
 		state,
-		sequentialNumber,
 		ci.ContentObjectID,
 		ci.MeetingID,
 		string(ci.Result),
