@@ -24,7 +24,7 @@ type method interface {
 	Name() string
 	ValidateConfig(config string) error
 	ValidateVote(config string, vote json.RawMessage) error
-	Result(config string, votes []dsmodels.Vote) (string, error)
+	Result(config string, votes []dsmodels.Ballot) (string, error)
 }
 
 type methodApprovalConfig struct {
@@ -71,7 +71,7 @@ func (m methodApproval) ValidateVote(config string, vote json.RawMessage) error 
 	}
 }
 
-func (m methodApproval) Result(config string, votes []dsmodels.Vote) (string, error) {
+func (m methodApproval) Result(config string, votes []dsmodels.Ballot) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		switch strings.ToLower(value) {
 		case `"yes"`:
@@ -86,10 +86,10 @@ func (m methodApproval) Result(config string, votes []dsmodels.Vote) (string, er
 }
 
 type methodSelectionConfig struct {
-	Options          map[string]json.RawMessage `json:"options"`
-	MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
-	MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
-	AllowNota        bool                       `json:"allow_nota"`
+	Options          []string           `json:"options"`
+	MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
+	MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
+	AllowNota        bool               `json:"allow_nota"`
 }
 
 type methodSelection struct{}
@@ -109,9 +109,9 @@ func (m methodSelection) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method selection needs at least one option")
 	}
 
-	for key := range cfg.Options {
-		if slices.Contains(reservedOptionNames, key) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+	for _, option := range cfg.Options {
+		if slices.Contains(reservedOptionNames, option) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", option)
 		}
 	}
 
@@ -145,7 +145,7 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 		return invalidVote("too few options")
 	}
 	for _, option := range choice {
-		if _, ok := cfg.Options[option]; !ok {
+		if !slices.Contains(cfg.Options, option) {
 			return invalidVote("unknown option %s", option)
 		}
 	}
@@ -153,7 +153,7 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 	return nil
 }
 
-func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, error) {
+func (m methodSelection) Result(config string, votes []dsmodels.Ballot) (string, error) {
 	var cfg methodSelectionConfig
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return "", fmt.Errorf("invalid configuration: %w", err)
@@ -182,12 +182,12 @@ func (m methodSelection) Result(config string, votes []dsmodels.Vote) (string, e
 }
 
 type methodRatingScoreConfig struct {
-	Options           map[string]json.RawMessage `json:"options"`
-	MaxOptionsAmount  dsfetch.Maybe[int]         `json:"max_options_amount"`
-	MinOptionsAmount  dsfetch.Maybe[int]         `json:"min_options_amount"`
-	MaxVotesPerOption dsfetch.Maybe[int]         `json:"max_votes_per_option"`
-	MaxVoteSum        dsfetch.Maybe[int]         `json:"max_vote_sum"`
-	MinVoteSum        dsfetch.Maybe[int]         `json:"min_vote_sum"`
+	Options           []string           `json:"options"`
+	MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
+	MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
+	MaxVotesPerOption dsfetch.Maybe[int] `json:"max_votes_per_option"`
+	MaxVoteSum        dsfetch.Maybe[int] `json:"max_vote_sum"`
+	MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
 }
 
 type methodRatingScore struct{}
@@ -207,9 +207,9 @@ func (m methodRatingScore) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method rating-score needs at least one option")
 	}
 
-	for key := range cfg.Options {
-		if slices.Contains(reservedOptionNames, key) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+	for _, option := range cfg.Options {
+		if slices.Contains(reservedOptionNames, option) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option", option)
 		}
 	}
 
@@ -238,7 +238,7 @@ func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) err
 
 	var sum int
 	for option, choice := range choice {
-		if _, ok := cfg.Options[option]; !ok {
+		if !slices.Contains(cfg.Options, option) {
 			return invalidVote("unknown option %s", option)
 		}
 
@@ -265,7 +265,7 @@ func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) err
 	return nil
 }
 
-func (m methodRatingScore) Result(config string, votes []dsmodels.Vote) (string, error) {
+func (m methodRatingScore) Result(config string, votes []dsmodels.Ballot) (string, error) {
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions map[string]int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
@@ -286,10 +286,10 @@ func (m methodRatingScore) Result(config string, votes []dsmodels.Vote) (string,
 }
 
 type methodRatingApprovalConfig struct {
-	Options          map[string]json.RawMessage `json:"options"`
-	MaxOptionsAmount dsfetch.Maybe[int]         `json:"max_options_amount"`
-	MinOptionsAmount dsfetch.Maybe[int]         `json:"min_options_amount"`
-	AllowAbstain     dsfetch.Maybe[bool]        `json:"allow_abstain"`
+	Options          []string            `json:"options"`
+	MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
+	MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
+	AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
 }
 
 type methodRatingApproval struct{}
@@ -309,9 +309,9 @@ func (m methodRatingApproval) ValidateConfig(config string) error {
 		return MessageError(ErrInvalid, "Poll with method rating-approval needs at least one option")
 	}
 
-	for key := range cfg.Options {
-		if slices.Contains(reservedOptionNames, key) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", key)
+	for _, option := range cfg.Options {
+		if slices.Contains(reservedOptionNames, option) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option", option)
 		}
 	}
 
@@ -339,7 +339,7 @@ func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) 
 	}
 
 	for option, choice := range choice {
-		if _, ok := cfg.Options[option]; !ok {
+		if !slices.Contains(cfg.Options, option) {
 			return invalidVote("unknown option %s", option)
 		}
 
@@ -351,7 +351,7 @@ func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) 
 	return nil
 }
 
-func (m methodRatingApproval) Result(config string, votes []dsmodels.Vote) (string, error) {
+func (m methodRatingApproval) Result(config string, votes []dsmodels.Ballot) (string, error) {
 	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0
 
@@ -419,7 +419,7 @@ func addInvalid(result []byte, invalid int) ([]byte, error) {
 func iterateValues(
 	m method,
 	config string,
-	votes []dsmodels.Vote,
+	votes []dsmodels.Ballot,
 	fn func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error,
 ) (string, error) {
 	result := make(map[string]decimal.Decimal)

@@ -70,13 +70,17 @@ func TestVoteNoRequests(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
 		meeting_id: 1
 		state: created
 		entitled_group_ids: [40]
+
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
 	`
 
 	for _, tt := range []struct {
@@ -110,7 +114,7 @@ func TestVoteNoRequests(t *testing.T) {
 					vote_delegated_to_id: 31
 
 			`,
-			`{"user_id":40,"value":"Yes"}`,
+			`{"meeting_user_id":41,"value":"Yes"}`,
 			40,
 		},
 		{
@@ -142,7 +146,7 @@ func TestVoteNoRequests(t *testing.T) {
 					group_ids: [40]
 					vote_delegated_to_id: 31
 			`,
-			`{"user_id":40,"value":"Yes"}`,
+			`{"meeting_user_id":41,"value":"Yes"}`,
 			40,
 		},
 	} {
@@ -192,14 +196,14 @@ func TestVoteNoRequests(t *testing.T) {
 
 			ds := dsmodels.New(counter) // Use the counter here to skip the cache
 			q := ds.Poll(5)
-			q = q.Preload(q.VoteList())
+			q = q.Preload(q.BallotList())
 			poll, err := q.First(ctx)
 			if err != nil {
 				t.Fatalf("Error: Getting votes from poll: %v", err)
 			}
-			found := slices.ContainsFunc(poll.VoteList, func(vote dsmodels.Vote) bool {
-				userID, _ := vote.RepresentedUserID.Value()
-				return userID == tt.expectVotedUserID
+			found := slices.ContainsFunc(poll.BallotList, func(ballot dsmodels.Ballot) bool {
+				meetingUserID, _ := ballot.RepresentedMeetingUserID.Value()
+				return meetingUserID == tt.expectVotedUserID
 			})
 
 			if !found {
@@ -256,15 +260,19 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
 				meeting_id: 1
 				state: created
 				entitled_group_ids: [40]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			4,
+			5,
 		},
 
 		{
@@ -309,15 +317,19 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
 				meeting_id: 1
 				state: created
 				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			4,
+			5,
 		},
 
 		{
@@ -365,15 +377,19 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
 				meeting_id: 1
 				state: created
 				entitled_group_ids: [40]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			4,
+			5,
 		},
 
 		{
@@ -426,15 +442,19 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
 				meeting_id: 1
 				state: created
 				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			4,
+			5,
 		},
 
 		{
@@ -502,15 +522,19 @@ func TestPreload(t *testing.T) {
 
 			poll/5:
 				title: normal poll
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				sequential_number: 1
 				content_object_id: motion/5
 				meeting_id: 1
 				state: created
 				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			5,
+			6,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

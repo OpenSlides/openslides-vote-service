@@ -149,13 +149,13 @@ func TestAll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Vote(1).First(t.Context())
+				vote, err := ds.Ballot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
 
-				if id, _ := vote.ActingUserID.Value(); id != 30 {
-					t.Errorf("Expected acting user ID to be 1, got %d", id)
+				if id, _ := vote.ActingMeetingUserID.Value(); id != 30 {
+					t.Errorf("Expected acting meeting_user ID to be 1, got %d", id)
 				}
 
 				if vote.Value != `"Yes"` {
@@ -206,13 +206,13 @@ func TestAll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Vote(1).First(t.Context())
+				vote, err := ds.Ballot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
 
-				if id, set := vote.ActingUserID.Value(); set {
-					t.Errorf("Expected acting user ID not to be set, but is is %d", id)
+				if id, set := vote.ActingMeetingUserID.Value(); set {
+					t.Errorf("Expected acting meeting_user ID not to be set, but is is %d", id)
 				}
 			})
 
@@ -400,13 +400,13 @@ func TestVote(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Vote(1).First(t.Context())
+				vote, err := ds.Ballot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
 
-				if id, _ := vote.ActingUserID.Value(); id != 30 {
-					t.Errorf("Expected acting user ID to be 1, got %d", id)
+				if id, _ := vote.ActingMeetingUserID.Value(); id != 30 {
+					t.Errorf("Expected acting meeting_user ID to be 1, got %d", id)
 				}
 
 				if vote.Value != `"Yes"` {
@@ -430,11 +430,15 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
 				title: myPoll
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 
 			meeting/1/id: 1
 
@@ -442,6 +446,7 @@ func TestVoteWeight(t *testing.T) {
 				is_present_in_meeting_ids: [1]
 				meeting_user_ids: [10]
 			meeting_user/10:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 1
 			`,
@@ -453,11 +458,15 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
 				title: myPoll
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -465,6 +474,7 @@ func TestVoteWeight(t *testing.T) {
 				is_present_in_meeting_ids: [1]
 				meeting_user_ids: [10]
 			meeting_user/10:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 1
 			`,
@@ -476,11 +486,15 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
 				title: myPoll
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -489,6 +503,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_user_ids: [10]
 				default_vote_weight: "2.000000"
 			meeting_user/10:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 1
 			`,
@@ -500,11 +515,15 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
 				title: myPoll
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -513,6 +532,7 @@ func TestVoteWeight(t *testing.T) {
 				meeting_user_ids: [10]
 				default_vote_weight: "2.000000"
 			meeting_user/10:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 1
 				vote_weight: "3.000000"
@@ -525,11 +545,15 @@ func TestVoteWeight(t *testing.T) {
 			poll/1:
 				meeting_id: 1
 				entitled_group_ids: [1]
-				method: approval
+				config_id: poll_config_approval/77
 				visibility: open
 				content_object_id: some_field/1
 				sequential_number: 1
 				title: myPoll
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -538,9 +562,11 @@ func TestVoteWeight(t *testing.T) {
 				meeting_user_ids: [10,11]
 				default_vote_weight: "2.000000"
 			meeting_user/10:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 1
 			meeting_user/11:
+				user_id: 1
 				group_ids: [1]
 				meeting_id: 2
 				vote_weight: "3.000000"
@@ -550,7 +576,7 @@ func TestVoteWeight(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ds := dsfetch.New(dsmock.Stub(dsmock.YAMLData(tt.data)))
-			weight, err := vote.CalcVoteWeight(t.Context(), ds, 1, 1)
+			weight, err := vote.CalcVoteWeight(t.Context(), ds, 10)
 			if err != nil {
 				t.Fatalf("CalcVote: %v", err)
 			}
@@ -1205,13 +1231,13 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 						ds := dsmodels.New(flow)
 						q := ds.Poll(5)
-						q = q.Preload(q.VoteList())
+						q = q.Preload(q.BallotList())
 						poll, err := q.First(ctx)
 						if err != nil {
 							t.Fatalf("Error: Getting votes from poll: %v", err)
 						}
-						found := slices.ContainsFunc(poll.VoteList, func(vote dsmodels.Vote) bool {
-							userID, _ := vote.RepresentedUserID.Value()
+						found := slices.ContainsFunc(poll.BallotList, func(vote dsmodels.Ballot) bool {
+							userID, _ := vote.RepresentedMeetingUserID.Value()
 							return userID == tt.expectVotedUserID
 						})
 
