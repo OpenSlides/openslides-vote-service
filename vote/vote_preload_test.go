@@ -84,10 +84,10 @@ func TestVoteNoRequests(t *testing.T) {
 	`
 
 	for _, tt := range []struct {
-		name              string
-		data              string
-		vote              string
-		expectVotedUserID int
+		name                           string
+		data                           string
+		vote                           string
+		expectRepresentedMeetingUserID int
 	}{
 		{
 			"normal vote",
@@ -100,7 +100,7 @@ func TestVoteNoRequests(t *testing.T) {
 
 			`,
 			`{"value":"Yes"}`,
-			30,
+			31,
 		},
 		{
 			"delegation vote",
@@ -115,7 +115,7 @@ func TestVoteNoRequests(t *testing.T) {
 
 			`,
 			`{"meeting_user_id":41,"value":"Yes"}`,
-			40,
+			41,
 		},
 		{
 			"vote weight enabled",
@@ -130,7 +130,7 @@ func TestVoteNoRequests(t *testing.T) {
 				users_enable_vote_weight: true
 			`,
 			`{"value":"Yes"}`,
-			30,
+			31,
 		},
 		{
 			"vote weight enabled and delegated",
@@ -147,7 +147,7 @@ func TestVoteNoRequests(t *testing.T) {
 					vote_delegated_to_id: 31
 			`,
 			`{"meeting_user_id":41,"value":"Yes"}`,
-			40,
+			41,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,11 +203,11 @@ func TestVoteNoRequests(t *testing.T) {
 			}
 			found := slices.ContainsFunc(poll.BallotList, func(ballot dsmodels.Ballot) bool {
 				meetingUserID, _ := ballot.RepresentedMeetingUserID.Value()
-				return meetingUserID == tt.expectVotedUserID
+				return meetingUserID == tt.expectRepresentedMeetingUserID
 			})
 
 			if !found {
-				t.Errorf("user %d has not voted", tt.expectVotedUserID)
+				t.Errorf("user %d has not voted", tt.expectRepresentedMeetingUserID)
 			}
 		})
 	}

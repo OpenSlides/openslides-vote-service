@@ -35,11 +35,10 @@ check depends on the field `content_object_id` in the request body.
 The request expects a body with the fields to create the poll:
 
 - `title` (required)
-- `description` (optional)
 - `content_object_id` (required)
 - `meeting_id` (required)
 - `method` (required)
-- `config` (depends on the method)
+- `config` (required, depends on the [method](##Poll methods))
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
@@ -58,6 +57,8 @@ The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
 changed, before the poll has started. You can reset a poll to change this
 values.
 
+The config can only be changed at a whole. If it is set in an update request, it
+overwrites all config values.
 
 ### Delete a poll
 

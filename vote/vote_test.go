@@ -76,6 +76,7 @@ func TestAll(t *testing.T) {
 					"title": "my pol",
 					"content_object_id": "motion/5",
 					"method": "approval",
+					"config": {},
 					"visibility": "open",
 					"meeting_id": 1,
 					"entitled_group_ids": [41]
@@ -154,8 +155,8 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
 
-				if id, _ := vote.ActingMeetingUserID.Value(); id != 30 {
-					t.Errorf("Expected acting meeting_user ID to be 1, got %d", id)
+				if id, _ := vote.ActingMeetingUserID.Value(); id != 300 {
+					t.Errorf("Expected acting meeting_user ID to be 300, got %d", id)
 				}
 
 				if vote.Value != `"Yes"` {
@@ -288,6 +289,7 @@ func TestManually(t *testing.T) {
 				"title": "my poll",
 				"content_object_id": "motion/5",
 				"method": "approval",
+				"config": {},
 				"visibility": "manually",
 				"meeting_id": 1,
 				"result": {"no":"23","yes":"42"}
@@ -375,9 +377,13 @@ func TestVote(t *testing.T) {
 		name: delegate
 		meeting_id: 1
 
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
+
 	poll/5:
 		title: my poll
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -405,8 +411,8 @@ func TestVote(t *testing.T) {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
 
-				if id, _ := vote.ActingMeetingUserID.Value(); id != 30 {
-					t.Errorf("Expected acting meeting_user ID to be 1, got %d", id)
+				if id, _ := vote.ActingMeetingUserID.Value(); id != 300 {
+					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", id)
 				}
 
 				if vote.Value != `"Yes"` {
@@ -636,13 +642,18 @@ func TestVoteStart(t *testing.T) {
 
 	poll/5:
 		title: normal poll
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
 		meeting_id: 1
 		state: created
 		entitled_group_ids: [40]
+
+
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
 	`
 
 	withData(
@@ -729,13 +740,18 @@ func TestVoteFinalize(t *testing.T) {
 		user_id: 30
 		meeting_id: 1
 
+	meeting_user/500:
+		group_ids: [40]
+		user_id: 5
+		meeting_id: 1
+
 	group/40:
 		name: delegate
 		meeting_id: 1
 
 	poll/5:
 		title: poll with votes
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -743,14 +759,18 @@ func TestVoteFinalize(t *testing.T) {
 		state: started
 		entitled_group_ids: [40]
 
-	vote/1:
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
+
+	ballot/1:
 		poll_id: 5
 		value: '"yes"'
-		represented_user_id: 30
-	vote/2:
+		represented_meeting_user_id: 300
+	ballot/2:
 		poll_id: 5
 		value: '"no"'
-		represented_user_id: 5
+		represented_meeting_user_id: 500
 	`
 
 	withData(
@@ -854,13 +874,17 @@ func TestVoteVote(t *testing.T) {
 
 	poll/5:
 		title: poll with votes
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
 		meeting_id: 1
 		state: started
 		entitled_group_ids: [40]
+
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
 	`
 
 	withData(
@@ -999,9 +1023,13 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			user_id: 40
 			meeting_id: 1
 
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
+
 	poll/5:
 		title: normal poll
-		method: approval
+		config_id: poll_config_approval/77
 		visibility: open
 		sequential_number: 1
 		content_object_id: motion/5
@@ -1016,7 +1044,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		data string
 		vote string
 
-		expectVotedUserID int
+		expectRepresentedMeetingUserID int
 	}{
 		{
 			"Not delegated",
@@ -1029,7 +1057,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			`,
 			`{"value":"Yes"}`,
 
-			30,
+			31,
 		},
 
 		{
@@ -1063,9 +1091,9 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user/31:
 				group_ids: [40]
 			`,
-			`{"user_id": 30, "value":"Yes"}`,
+			`{"meeting_user_id": 31, "value":"Yes"}`,
 
-			30,
+			31,
 		},
 
 		{
@@ -1078,9 +1106,9 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user/31:
 				group_ids: [40]
 			`,
-			`{"user_id": 30, "value":"Yes"}`,
+			`{"meeting_user_id": 31, "value":"Yes"}`,
 
-			30,
+			31,
 		},
 
 		{
@@ -1092,7 +1120,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user/31:
 				group_ids: [40]
 			`,
-			`{"user_id": 0, "value":"Yes"}`,
+			`{"meeting_user_id": 0, "value":"Yes"}`,
 
 			0,
 		},
@@ -1106,7 +1134,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user/31:
 				group_ids: [40]
 			`,
-			`{"user_id": 40, "value":"Yes"}`,
+			`{"meeting_user_id": 41, "value":"Yes"}`,
 
 			0,
 		},
@@ -1122,9 +1150,9 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					group_ids: [40]
 					vote_delegated_to_id: 31
 			`,
-			`{"user_id": 40, "value":"Yes"}`,
+			`{"meeting_user_id": 41, "value":"Yes"}`,
 
-			40,
+			41,
 		},
 
 		{
@@ -1139,7 +1167,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 					group_ids: [40]
 					vote_delegated_to_id: 31
 			`,
-			`{"user_id": 40, "value":"Yes"}`,
+			`{"meeting_user_id": 41, "value":"Yes"}`,
 
 			0,
 		},
@@ -1154,7 +1182,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				41:
 					vote_delegated_to_id: 31
 			`,
-			`{"user_id": 40, "value":"Yes"}`,
+			`{"meeting_user_id": 41, "value":"Yes"}`,
 
 			0,
 		},
@@ -1170,9 +1198,9 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				group_ids: [40]
 				vote_delegated_to_id: 41
 			`,
-			`{"user_id": 30, "value":"Yes"}`,
+			`{"meeting_user_id": 31, "value":"Yes"}`,
 
-			30,
+			31,
 		},
 
 		{
@@ -1186,7 +1214,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				group_ids: [40]
 				vote_delegated_to_id: 41
 			`,
-			`{"user_id": 30, "value":"Yes"}`,
+			`{"meeting_user_id": 31, "value":"Yes"}`,
 
 			0,
 		},
@@ -1205,9 +1233,9 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				group_ids: [40]
 				vote_delegated_to_id: 41
 			`,
-			`{"user_id": 30, "value":"Yes"}`,
+			`{"meeting_user_id": 31, "value":"Yes"}`,
 
-			30,
+			31,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1224,7 +1252,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 				func(service *vote.Vote, flow flow.Flow) {
 					err := service.Vote(ctx, 5, 30, strings.NewReader(tt.vote))
 
-					if tt.expectVotedUserID != 0 {
+					if tt.expectRepresentedMeetingUserID != 0 {
 						if err != nil {
 							t.Fatalf("Vote returned unexpected error: %v", err)
 						}
@@ -1238,11 +1266,11 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 						}
 						found := slices.ContainsFunc(poll.BallotList, func(vote dsmodels.Ballot) bool {
 							userID, _ := vote.RepresentedMeetingUserID.Value()
-							return userID == tt.expectVotedUserID
+							return userID == tt.expectRepresentedMeetingUserID
 						})
 
 						if !found {
-							t.Errorf("user %d has not voted", tt.expectVotedUserID)
+							t.Errorf("user %d has not voted", tt.expectRepresentedMeetingUserID)
 						}
 
 						return
