@@ -178,20 +178,21 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		configObjectID = fmt.Sprintf("poll_config_approval/%d", configID)
 
 	case "selection":
-		var cfg methodSelectionConfig
+		var cfg struct {
+			MaxOptionsAmount int  `json:"max_options_amount"`
+			MinOptionsAmount int  `json:"min_options_amount"`
+			AllowNota        bool `json:"allow_nota"`
+		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
 			return fmt.Errorf("parsing selection config: %w", err)
 		}
-
-		maxOptionsAmount := valueOrZero(cfg.MaxOptionsAmount)
-		minOptionsAmount := valueOrZero(cfg.MinOptionsAmount)
 
 		var configID int
 		sql := `INSERT INTO poll_config_selection
 		(poll_id, max_options_amount, min_options_amount, allow_nota)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, pollID, maxOptionsAmount, minOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
+		if err := tx.QueryRow(ctx, sql, pollID, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
 			return fmt.Errorf("save approval config: %w", err)
 		}
 
@@ -202,23 +203,32 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 	case "rating_score":
-		var cfg methodRatingScoreConfig
+		var cfg struct {
+			MaxOptionsAmount  int `json:"max_options_amount"`
+			MinOptionsAmount  int `json:"min_options_amount"`
+			MaxVotesPerOption int `json:"max_votes_per_option"`
+			MaxVoteSum        int `json:"max_vote_sum"`
+			MinVoteSum        int `json:"min_vote_sum"`
+		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
 			return fmt.Errorf("parsing rating score config: %w", err)
 		}
-
-		maxOptionsAmount := valueOrZero(cfg.MaxOptionsAmount)
-		minOptionsAmount := valueOrZero(cfg.MinOptionsAmount)
-		maxVotesPerOption := valueOrZero(cfg.MaxVotesPerOption)
-		maxVoteSum := valueOrZero(cfg.MaxVoteSum)
-		minVoteSum := valueOrZero(cfg.MinVoteSum)
 
 		var configID int
 		sql := `INSERT INTO poll_config_rating_score
 		(poll_id, max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, pollID, maxOptionsAmount, minOptionsAmount, maxVotesPerOption, maxVoteSum, minVoteSum).Scan(&configID); err != nil {
+		if err := tx.QueryRow(
+			ctx,
+			sql,
+			pollID,
+			cfg.MaxOptionsAmount,
+			cfg.MinOptionsAmount,
+			cfg.MaxVotesPerOption,
+			cfg.MaxVoteSum,
+			cfg.MinVoteSum,
+		).Scan(&configID); err != nil {
 			return fmt.Errorf("save approval config: %w", err)
 		}
 
@@ -229,13 +239,15 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 	case "rating_approval":
-		var cfg methodRatingApprovalConfig
+		var cfg struct {
+			MaxOptionsAmount int                 `json:"max_options_amount"`
+			MinOptionsAmount int                 `json:"min_options_amount"`
+			AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
+		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
 			return fmt.Errorf("parsing rating approval config: %w", err)
 		}
 
-		maxOptionsAmount := valueOrZero(cfg.MaxOptionsAmount)
-		minOptionsAmount := valueOrZero(cfg.MinOptionsAmount)
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
@@ -246,7 +258,14 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		(poll_id, max_options_amount, min_options_amount, allow_abstain)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, pollID, maxOptionsAmount, minOptionsAmount, allowAbstain).Scan(&configID); err != nil {
+		if err := tx.QueryRow(
+			ctx,
+			sql,
+			pollID,
+			cfg.MaxOptionsAmount,
+			cfg.MinOptionsAmount,
+			allowAbstain,
+		).Scan(&configID); err != nil {
 			return fmt.Errorf("save approval config: %w", err)
 		}
 
@@ -276,6 +295,16 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 
 	if len(cfg.Options) == 0 {
 		return MessageError(ErrInvalid, "Need at least value in options")
+	}
+
+	for _, option := range cfg.Options {
+		str, ok := option.(string)
+		if !ok {
+			continue
+		}
+		if slices.Contains(reservedOptionNames, str) {
+			return MessageErrorf(ErrInternal, "%s is not allowed as an option", option)
+		}
 	}
 
 	var sqlColumns string
@@ -373,10 +402,6 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, e
 		if ci.Result != nil {
 			return createInput{}, MessageError(ErrInvalid, "Result can only be set when visibility is set to manually")
 		}
-	}
-
-	if err := ValidateConfig(ci.Method, string(ci.Config)); err != nil {
-		return createInput{}, fmt.Errorf("validate config: %w", err)
 	}
 
 	return ci, nil
@@ -515,17 +540,6 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 
 	if ui.Result != nil {
 		return updateInput{}, MessageError(ErrNotAllowed, "Result can only be set when visibility is set to manually")
-	}
-
-	if ui.Config != nil {
-		method := pollMethod(poll)
-		if ui.Method != "" {
-			method = ui.Method
-		}
-
-		if err := ValidateConfig(method, string(ui.Config)); err != nil {
-			return updateInput{}, fmt.Errorf("validate config: %w", err)
-		}
 	}
 
 	return ui, nil
@@ -698,7 +712,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
 		}
 
-		config, err := v.encodeConfig(ctx, poll)
+		config, err := v.EncodeConfig(ctx, poll)
 		if err != nil {
 			return fmt.Errorf("encode config: %w", err)
 		}
@@ -883,7 +897,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		}
 
 		method := pollMethod(poll)
-		config, err := v.encodeConfig(ctx, poll)
+		config, err := v.EncodeConfig(ctx, poll)
 		if err != nil {
 			return fmt.Errorf("encode config: %w", err)
 		}
@@ -958,7 +972,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	}
 }
 
-func (v *Vote) encodeConfig(ctx context.Context, poll dsmodels.Poll) (string, error) {
+// EncodeConfig encodes the configuration of a poll into a string.
+func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, error) {
 	configCollection, configIDStr, found := strings.Cut(poll.ConfigID, "/")
 	if !found {
 		return "", fmt.Errorf("poll %d has an invalid config_id: %s", poll.ID, poll.ConfigID)
@@ -989,13 +1004,8 @@ func (v *Vote) encodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 			return "", fmt.Errorf("fetching poll_config_selection: %w", err)
 		}
 
-		optionIDs := make([]string, len(configDB.OptionIDs))
-		for i, id := range configDB.OptionIDs {
-			optionIDs[i] = strconv.Itoa(id)
-		}
-
 		config = methodSelectionConfig{
-			Options:          optionIDs,
+			Options:          configDB.OptionIDs,
 			MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
 			MinOptionsAmount: maybeZeroIsNull(configDB.MinOptionsAmount),
 			AllowNota:        configDB.AllowNota,
@@ -1007,13 +1017,8 @@ func (v *Vote) encodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 			return "", fmt.Errorf("fetching poll_config_rating_score: %w", err)
 		}
 
-		optionIDs := make([]string, len(configDB.OptionIDs))
-		for i, id := range configDB.OptionIDs {
-			optionIDs[i] = strconv.Itoa(id)
-		}
-
 		config = methodRatingScoreConfig{
-			Options:           optionIDs,
+			Options:           configDB.OptionIDs,
 			MaxOptionsAmount:  maybeZeroIsNull(configDB.MaxOptionsAmount),
 			MinOptionsAmount:  maybeZeroIsNull(configDB.MinOptionsAmount),
 			MaxVotesPerOption: maybeZeroIsNull(configDB.MaxVotesPerOption),
@@ -1027,13 +1032,8 @@ func (v *Vote) encodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 			return "", fmt.Errorf("fetching poll_config_rating_approval: %w", err)
 		}
 
-		optionIDs := make([]string, len(configDB.OptionIDs))
-		for i, id := range configDB.OptionIDs {
-			optionIDs[i] = strconv.Itoa(id)
-		}
-
 		config = methodRatingApprovalConfig{
-			Options:          optionIDs,
+			Options:          configDB.OptionIDs,
 			MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
 			MinOptionsAmount: maybeZeroIsNull(configDB.MinOptionsAmount),
 			AllowAbstain:     dsfetch.MaybeValue(configDB.AllowAbstain),
@@ -1189,22 +1189,6 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingUserID int
 	}
 
 	return defaultVoteWeight, nil
-}
-
-// ValidateConfig checks that the config field is correct.
-func ValidateConfig(method string, config string) error {
-	switch method {
-	case methodApproval{}.Name():
-		return methodApproval{}.ValidateConfig(config)
-	case methodSelection{}.Name():
-		return methodSelection{}.ValidateConfig(config)
-	case methodRatingScore{}.Name():
-		return methodRatingScore{}.ValidateConfig(config)
-	case methodRatingApproval{}.Name():
-		return methodRatingApproval{}.ValidateConfig(config)
-	default:
-		return MessageErrorf(ErrInvalid, "Unknown poll method: %s", method)
-	}
 }
 
 // ValidateBallot checks, if a vote is invalid.

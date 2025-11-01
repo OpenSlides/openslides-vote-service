@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
@@ -22,7 +23,6 @@ var reservedOptionNames = []string{keyAbstain, keyNota, keyInvalid}
 
 type method interface {
 	Name() string
-	ValidateConfig(config string) error
 	ValidateVote(config string, vote json.RawMessage) error
 	Result(config string, votes []dsmodels.Ballot) (string, error)
 }
@@ -35,18 +35,6 @@ type methodApproval struct{}
 
 func (m methodApproval) Name() string {
 	return "approval"
-}
-
-func (m methodApproval) ValidateConfig(config string) error {
-	var cfg methodApprovalConfig
-
-	if config != "" {
-		if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-			return MessageErrorf(ErrInvalid, "Invalid json: %v", err)
-		}
-	}
-
-	return nil
 }
 
 func (m methodApproval) ValidateVote(config string, vote json.RawMessage) error {
@@ -86,7 +74,7 @@ func (m methodApproval) Result(config string, votes []dsmodels.Ballot) (string, 
 }
 
 type methodSelectionConfig struct {
-	Options          []string           `json:"options"`
+	Options          []int              `json:"options"`
 	MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
 	MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
 	AllowNota        bool               `json:"allow_nota"`
@@ -98,26 +86,6 @@ func (m methodSelection) Name() string {
 	return "selection"
 }
 
-func (m methodSelection) ValidateConfig(config string) error {
-	var cfg methodSelectionConfig
-
-	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-		return MessageErrorf(ErrInvalid, "Invalid json: %v", err)
-	}
-
-	if len(cfg.Options) == 0 {
-		return MessageError(ErrInvalid, "Poll with method selection needs at least one option")
-	}
-
-	for _, option := range cfg.Options {
-		if slices.Contains(reservedOptionNames, option) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option key", option)
-		}
-	}
-
-	return nil
-}
-
 func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg methodSelectionConfig
 
@@ -125,7 +93,7 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice []string
+	var choice []int
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		if cfg.AllowNota && strings.ToLower(string(vote)) == `"nota"` {
 			return nil
@@ -146,7 +114,7 @@ func (m methodSelection) ValidateVote(config string, vote json.RawMessage) error
 	}
 	for _, option := range choice {
 		if !slices.Contains(cfg.Options, option) {
-			return invalidVote("unknown option %s", option)
+			return invalidVote("unknown option id %d", option)
 		}
 	}
 
@@ -160,7 +128,7 @@ func (m methodSelection) Result(config string, votes []dsmodels.Ballot) (string,
 	}
 
 	return iterateValues(m, config, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
-		var votedOptions []string
+		var votedOptions []int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
 			if cfg.AllowNota && strings.ToLower(value) == `"nota"` {
 				result[keyNota] = result[keyNota].Add(weight)
@@ -170,7 +138,7 @@ func (m methodSelection) Result(config string, votes []dsmodels.Ballot) (string,
 		}
 
 		for _, votedOption := range votedOptions {
-			result[votedOption] = result[votedOption].Add(weight)
+			result[strconv.Itoa(votedOption)] = result[strconv.Itoa(votedOption)].Add(weight)
 		}
 
 		if len(votedOptions) == 0 {
@@ -182,7 +150,7 @@ func (m methodSelection) Result(config string, votes []dsmodels.Ballot) (string,
 }
 
 type methodRatingScoreConfig struct {
-	Options           []string           `json:"options"`
+	Options           []int              `json:"options"`
 	MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
 	MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
 	MaxVotesPerOption dsfetch.Maybe[int] `json:"max_votes_per_option"`
@@ -196,26 +164,6 @@ func (m methodRatingScore) Name() string {
 	return "rating-score"
 }
 
-func (m methodRatingScore) ValidateConfig(config string) error {
-	var cfg methodRatingScoreConfig
-
-	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-		return MessageErrorf(ErrInvalid, "Invalid json: %v", err)
-	}
-
-	if len(cfg.Options) == 0 {
-		return MessageError(ErrInvalid, "Poll with method rating-score needs at least one option")
-	}
-
-	for _, option := range cfg.Options {
-		if slices.Contains(reservedOptionNames, option) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option", option)
-		}
-	}
-
-	return nil
-}
-
 func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg methodRatingScoreConfig
 
@@ -223,7 +171,7 @@ func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) err
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice map[string]int
+	var choice map[int]int
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
@@ -239,7 +187,7 @@ func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) err
 	var sum int
 	for option, choice := range choice {
 		if !slices.Contains(cfg.Options, option) {
-			return invalidVote("unknown option %s", option)
+			return invalidVote("unknown option id %d", option)
 		}
 
 		if choice < 0 {
@@ -286,7 +234,7 @@ func (m methodRatingScore) Result(config string, votes []dsmodels.Ballot) (strin
 }
 
 type methodRatingApprovalConfig struct {
-	Options          []string            `json:"options"`
+	Options          []int               `json:"options"`
 	MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
 	MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
 	AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
@@ -298,26 +246,6 @@ func (m methodRatingApproval) Name() string {
 	return "rating-approval"
 }
 
-func (m methodRatingApproval) ValidateConfig(config string) error {
-	var cfg methodRatingApprovalConfig
-
-	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-		return MessageErrorf(ErrInvalid, "Invalid json: %v", err)
-	}
-
-	if len(cfg.Options) == 0 {
-		return MessageError(ErrInvalid, "Poll with method rating-approval needs at least one option")
-	}
-
-	for _, option := range cfg.Options {
-		if slices.Contains(reservedOptionNames, option) {
-			return MessageErrorf(ErrInternal, "%s is not allowed as an option", option)
-		}
-	}
-
-	return nil
-}
-
 func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) error {
 	var cfg methodRatingApprovalConfig
 
@@ -325,7 +253,7 @@ func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) 
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	var choice map[string]json.RawMessage
+	var choice map[int]json.RawMessage
 	if err := json.Unmarshal(vote, &choice); err != nil {
 		return errors.Join(invalidVote("Vote has invalid format"), fmt.Errorf("decoding vote: %w", err))
 	}
@@ -340,11 +268,11 @@ func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) 
 
 	for option, choice := range choice {
 		if !slices.Contains(cfg.Options, option) {
-			return invalidVote("unknown option %s", option)
+			return invalidVote("unknown option id %d", option)
 		}
 
 		if err := (methodApproval{}).ValidateVote(config, choice); err != nil {
-			return fmt.Errorf("validating option %s: %w", option, err)
+			return fmt.Errorf("validating option id %d: %w", option, err)
 		}
 	}
 

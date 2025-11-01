@@ -249,6 +249,110 @@ func TestAll(t *testing.T) {
 	)
 }
 
+func TestCreateWithOptions(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	organization/1/enable_electronic_voting: true
+	user:
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+		10:
+			username: user10
+		20:
+			username: user20
+		30:
+			username: user30
+
+	meeting_user:
+		11:
+			user_id: 10
+			meeting_id: 1
+		21:
+			user_id: 20
+			meeting_id: 1
+		31:
+			user_id: 30
+			meeting_id: 1
+
+	assignment/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my assignment
+
+	list_of_speakers/7:
+		content_object_id: assignment/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1/welcome_title: hello world
+	`
+
+	withData(t, pg, data, func(service *vote.Vote, flow flow.Flow) {
+		body := `{
+				"title": "my poll",
+				"content_object_id": "assignment/5",
+				"method": "selection",
+				"config": {"option_type":"meeting_user","options":[31,11,21]},
+				"visibility": "open",
+				"meeting_id": 1
+			}`
+
+		id, err := service.Create(ctx, 5, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("Error creating poll: %v", err)
+		}
+
+		if id != 1 {
+			t.Errorf("Expected id 1, got %d", id)
+		}
+
+		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+		if err != nil {
+			t.Fatalf("Fetch poll: %v", err)
+		}
+
+		cfg, err := service.EncodeConfig(ctx, poll)
+		if err != nil {
+			t.Fatalf("Encode config: %v", err)
+		}
+
+		expected := `{"options":[1,2,3],"max_options_amount":null,"min_options_amount":null,"allow_nota":false}`
+		if cfg != expected {
+			t.Errorf("Created config `%s`, expected `%s`", cfg, expected)
+		}
+
+		options, err := dsmodels.New(flow).PollConfigOption(1, 2, 3).Get(ctx)
+		if err != nil {
+			t.Fatalf("Get options: %v", err)
+		}
+		if options[0].Weight != 0 || options[1].Weight != 1 || options[2].Weight != 2 {
+			t.Errorf("Expected weights to be 0,1,2, got %d, %d, %d", options[0].Weight, options[1].Weight, options[2].Weight)
+		}
+
+		o1, _ := options[0].MeetingUserID.Value()
+		o2, _ := options[1].MeetingUserID.Value()
+		o3, _ := options[2].MeetingUserID.Value()
+		if o1 != 31 || o2 != 11 || o3 != 21 {
+			t.Errorf("Expected meeting user ids to be 31,11,21, got %d, %d, %d", o1, o2, o3)
+		}
+	})
+}
+
 func TestManually(t *testing.T) {
 	t.Parallel()
 
