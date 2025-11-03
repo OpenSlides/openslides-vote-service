@@ -100,7 +100,10 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ctx,
 		sql,
 		ci.Title,
-		"poll_config_approval/1", // Temporaty value to make postgres happy. Will be set later.
+		// Temporaty value to make postgres happy. Will be set later. This
+		// workaound can be removed, once this is fixed:
+		// https://github.com/OpenSlides/openslides-meta/issues/339
+		"poll_config_approval/1",
 		ci.Visibility,
 		state,
 		ci.ContentObjectID,
