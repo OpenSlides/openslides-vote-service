@@ -1,7 +1,8 @@
 # OpenSlides Vote Service
 
 The Vote Service is part of the OpenSlides environments. It is responsible for
-the `poll` and `vote` collections. It handles the electronic voting.
+the `poll`, `poll_config_X`, `poll_config_option` and `ballot` collections. It
+handles the electronic voting.
 
 The service has no internal state but uses the normal postgres database to save
 the polls.
@@ -11,8 +12,9 @@ the polls.
 
 All requests to the vote-service have to be POST-requests.
 
-With the exception of the vote request, all requests can only be sent by a manager.
-The permission depends on the field `content_object_id` of the corresponding poll.
+With the exception of the vote request, all requests can only be sent by a
+manager. The permission depends on the field `content_object_id` of the
+corresponding poll.
 
 - motions: `motion.can_manage`
 - assignments: `assignment.can_manage`
@@ -33,11 +35,10 @@ check depends on the field `content_object_id` in the request body.
 The request expects a body with the fields to create the poll:
 
 - `title` (required)
-- `description` (optional)
 - `content_object_id` (required)
 - `meeting_id` (required)
 - `method` (required)
-- `config` (depends on the method)
+- `config` (required, depends on the [method](##Poll methods))
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
@@ -56,75 +57,79 @@ The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
 changed, before the poll has started. You can reset a poll to change this
 values.
 
+The config can only be changed at a whole. If it is set in an update request, it
+overwrites all config values.
 
 ### Delete a poll
 
 `/system/vote/delete?id=XX`
 
-The delete request removes the poll and all its votes in any state. Be careful.
+The delete request removes the poll and all its ballots in any state. Be careful.
 
 
 ### Start a poll
 
 `/system/vote/start?id=XX`
 
-To start a poll means that the users can send their votes.
+To start a poll means that the users can send their ballots.
 
 
 ### Finalize a poll
 
 `/system/vote/finalize?id=XX`
 
-To finalize a poll means that users can not send their votes anymore. It
+To finalize a poll means that users can not send their ballots anymore. It
 creates the `poll/result` field.
 
 The request has two optional attributes: `publish` and `anonymize`. `publish`
 sets the field `poll/state` to `published`. `anonymize` removes all user ids
-from the corresponding `vote` objects.
+from the corresponding `ballot` objects.
 
 The request can be send many times. It only creates the result the first time.
 `publish` and `anonymize` can be used on a later request.
 
-To stop a poll and publish and anonymize it at the same time, the following request can be used:
+To stop a poll and publish and anonymize it at the same time, the following
+request can be used:
 
-`/system/vote/finalize?id=XX&publish&anonymize`
+`/system/vote/finalize?id=42&publish&anonymize`
 
 
 ### Reset a poll
 
 `/system/vote/reset?id=XX`
 
-Reset sets the state back to `created` and removes all vote objects.
+Reset sets the state back to `created` and removes all `ballot` objects.
 
 
-### Send a vote
+### Send a ballot
 
 A vote-request is a post request with the ballot as body. Only logged in users
 can vote. The body has to be valid json.
 
-The service distinguishes between two users on each vote-request. The acting user
-is the request user, that sends the vote-request. The represented user is the
-user, for whom the vote is sent. Both users can actually be the same user.
+The service distinguishes between two users on each vote-request. The acting
+user is the request user, that sends the vote-request. The represented user is
+the user, for whom the ballot is sent. Both users can be the same.
 
-The acting user has to be present in the meeting and needs the permission to vote
-for the represented user. The represented user has to be in one of the group of
-the field `poll/entitled_group_ids`.
+The acting user has to be present in the meeting and needs the permission to
+vote for the represented user. The represented user has to be in one of the
+group of the field `poll/entitled_group_ids`.
 
 The request body has to be in the form:
 
 ```json
 {
-  "user_id": 23,
-  "value": "Yes"
+  "meeting_user_id": 23,
+  "value": "Yes",
   "split": false
 }
 ```
 
 In this example, the request user would send the Vote `Yes` for the user with
-the id 23. If the acting user and the represented user are the same, then field
-`user_id` is not needed. `split` activates [vote_split](#vote split)
+the meeting_user_id 23. If the acting user and the represented user are the
+same, then field `meeting_user_id` is not needed. `split` activates
+[vote_split](#vote split)
 
-Valid values for the vote depend on the `poll/method`.
+Valid values for the vote depend on the poll method.
 
 
 ### Read the poll
@@ -147,8 +152,8 @@ manually.
 
 Manual polls behave differently. When created, the field `poll/state` is set to
 `finished`. The poll result can be set either with the create request or with an
-update request. The server does not validate the field `poll/result`, but accepts
-any string.
+update request. The server does not validate the field `poll/result`, but
+accepts any string.
 
 vote-requests are not possible. A finalize-request is possible, but only to set
 the `poll/published` field. A reset-request sets/leaves the state at `finished`.
@@ -177,7 +182,7 @@ handler.
 
 At the moment, a `secret`-poll is identical to an `open`- or `named`-poll. But
 is handled differently in the autoupdate-service. The field
-`vote/acting_user_id` and `vote/represented_user_id` get restricted for
+`ballot/acting_user_id` and `ballot/represented_user_id` get restricted for
 everybody.
 
 In the future, these values will be used for crypto votes. See the entry in the
@@ -186,8 +191,11 @@ In the future, these values will be used for crypto votes. See the entry in the
 
 ## Poll methods
 
-The values of `poll/config`, `vote/value` and `poll/result` depend on the field
-`poll/method`.
+The values of `config`in the poll-create-request, `ballot/value` and
+`poll/result` depend on the field poll method.
+
+The method of a poll can be calculated by looking at the collection-part of the
+generic-relation-field `poll.config_id`.
 
 
 ### approval
@@ -196,15 +204,15 @@ On an approval poll, the users can vote with `yes`, `no` or `abstain`. This is
 the usual method to vote on a motion.
 
 
-#### poll/config
+#### config
 
 `allow_abstain`: if set to `true`, users are allowed to vote with `abstain`. The
 default is `true`.
 
 
-#### vote/value
+#### ballot/value
 
-Valid votes look like: `{"value":"yes"}`, `{"value":"no"}` or
+Valid ballots look like: `{"value":"yes"}`, `{"value":"no"}` or
 `{"value":"abstain"}`.
 
 
@@ -216,7 +224,8 @@ The poll result looks like:
 
 Attributes with a zero get discarded.
 
-The values are decimal values decoded as string. See [Vote Weight](#vote-weight).
+The values are decimal values decoded as string. See [Vote
+Weight](#vote-weight).
 
 
 ### selection
@@ -225,14 +234,14 @@ On a selection poll, the users select one or many options from a list of
 options. For example one candidate in a assignment-poll.
 
 
-#### poll/config
+#### config
 
-`options` (required): map from a string to any value. The strings can by
-anything. For example assignment-candidate-ids, encoded as strings. The values
-are not used by the server, `null` would be valid values. The values can be used
-to describe the values, if the `poll/config` get inspected by a human. For
-example, it could be the username of the assignment-candidate:
-`{"options":{"1":"Max","2":"Hubert"}}`
+`option_type` (required): The type of the options. Can be `text` or
+`meeting_user`.
+
+`options` (required): list of options. If option_type is `text`, the list-values
+have to be from type string. If `option_type` is `meeting_user`, the values have
+to be existing meeting_user_ids.
 
 `max_options_amount`: The maximal amount of options a user can vote on. For
 example, with a value of `1`, a user is only allowed to vote for one candidate.
@@ -242,17 +251,14 @@ The default is no limit.
 default is no limit.
 
 `allow_nota`: Allow `nota` votes, where the user can disapprove of all options.
-The default is false.
+The default is `false`.
 
 
-#### vote/value
+#### ballot/value
 
-A vote is a list of options from the config, represented by there key. For
-example:
+A ballot is a list of option ids. For example: `{"value":[1]}`.
 
-`{"value":["1"]}` to vote for "Max" in the example above.
-
-To abstain from a vote, an empty list can be delivered: `{"value":[]}`
+To abstain from a poll, an empty list can be delivered: `{"value":[]}`
 
 If `allow_nota` is set, then a user can vote with
 [nota](https://en.wikipedia.org/wiki/None_of_the_above): `{"value":"nota"}`. This
@@ -264,8 +270,10 @@ means, that they disapprove all options.
 A result can look like this:
 `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3}`
 
+The keys of the json-object are option_ids as string.
+
 This means, that users with a combined vote-weight of 40 have voted for the
-option with the key "1", 23 for the option "2", 6 with the string `nota`, 7 with
+option 1, 23 for the option 2, 6 with the string `nota`, 7 with
 an empty list and 3 with an invalid vote.
 
 
@@ -275,11 +283,19 @@ A `rating-score` poll is similar to a `selection` poll, but the users can give
 a numeric value to each option. For example give each candidate 3 votes.
 
 
-#### poll/config
+#### config
 
-`options` (required), `max_options_amount` and `min_options_amount`: Are the
-same as from a selection-poll. For example:
-`{"options":{"1":"Max","2":"Hubert","3":"Hans"},"max_options_amount":2,"min_options_amount":1}`
+`option_type` (required), `options` (required), `max_options_amount` and
+`min_options_amount`: Are the same as from a selection-poll. For example:
+
+```json
+{
+  "option_type": "meeting_user",
+  "options": [23,42,77],
+  "max_options_amount": 2,
+  "min_options_amount":1
+}
+```
 
 `max_votes_per_option`: The maximal number for each option. The default is no
 limit.
@@ -291,17 +307,17 @@ options. The default is no limit.
 options. The default is no limit.
 
 
-#### vote/value
+#### ballot/value
 
-A Vote is an object/dictionary from the option-key to the numeric score. For
-example: `{"value":{"1":3, "2":1}}`.
+A ballot is an object/dictionary from the `option_id` as string to the numeric
+score. For example: `{"value":{"1":3, "2":1}}`.
 
 An empty object means abstain: `{"value":{}}`
 
 
 #### poll/result
 
-A result can look like simular to a `selection`-result:
+A result can looks simular to a `selection`-result:
 `{"1":"40","2":"23",abstain":"7","invalid":3}`
 
 
@@ -311,17 +327,17 @@ A result can look like simular to a `selection`-result:
 can give a value like `"Yes"`, `"No"` or `"Abstain"`.
 
 
-#### poll/config
+#### config
 
-`options` (required), `max_options_amount` and `min_options_amount`: The same as
-for `selection` or `rating-score`.
+`option_type` (required), `options` (required), `max_options_amount` and
+`min_options_amount`: The same as for `selection` or `rating-score`.
 
 `allow_abstain`: The same as for `approval`.
 
 
-#### vote/value
+#### ballot/value
 
-A vote value looks like a combination between `rating-score` and `approval`:
+A ballot value looks like a combination between `rating-score` and `approval`:
 `{"value":{"1":"yes","2":"abstain"}}`.
 
 
@@ -330,11 +346,11 @@ A vote value looks like a combination between `rating-score` and `approval`:
 A `rating-approval` result looks like:
 `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
 
-This means, that for the option with the key `"1"`, there where 5 votes with
-`Yes`, one vote with `No` and no `abstain`. For the option with the key `"2"`,
-there where one `Yes`, 6 `Abstain` and no `No`. There where one invalid vote.
+This means, that for the option with id `1`, there where 5 ballots with `Yes`,
+one ballot with `No` and no `abstain`. For the option with id `2`, there where
+one `Yes`, 6 `Abstain` and no `No`. There where one invalid ballots.
 
-A vote is invalid, if one of its values is invalid. For example a vote like
+A ballot is invalid, if one of its values is invalid. For example a ballot like
 `{"value":{"1":"yes","2":"INVALID-VALUE"}}` is counted as invalid for both
 candidates.
 
@@ -354,61 +370,67 @@ represented_user keeps the permission to vote for himself.
 
 ## Vote Weight
 
-Every vote has a weight. It is a decimal number. The default is `1.000000`. When
-`meeting/users_enable_vote_weight` is set to `true`, this value can be changed
-for each user. Each user has a default vote weight (`user/default_vote_weight`),
-that can be changed for each meeting (`meeting_user/vote_weight`).
+Every ballot has a weight. It is a decimal number. The default is `1.000000`.
+When `meeting/users_enable_vote_weight` is set to `true`, this value can be
+changed for each user. Each user has a default vote weight
+(`user/default_vote_weight`), that can be changed for each meeting
+(`meeting_user/vote_weight`).
 
-This weight is saved vote (`vote/weight`) and taken into account when generating
+This weight is saved (`ballot/weight`) and taken into account when generating
 the result.
 
 The weight is not a floating number, but a decimal number. JSON can not
 represent decimal numbers, so they are represented as strings. This is also the
-reason, that the vote results are represented as strings.
+reason, that values in `poll/results` are represented as strings.
 
 This feature does not work on crypto votes, since the server does not know,
-which vote belongs to which user.
+which decrypted ballot belongs to which user.
 
 
 ## Vote Split
 
 When `poll/allow_vote_split` is set to true, the users are allowed to split
-there vote. They do so, by sending multiple votes with a weight value, where the
-sum of all weights has to be lower or equal then there allowed weight. Normally
-1.
+there vote. They do so, by sending multiple ballots with a weight value, where
+the sum of all weights has to be lower or equal then there allowed weight.
+Normally 1.
 
 A splitted vote looks like: `{"value":{"0.3":"yes","0.7":"no"},"split":true}`
 
-The attribute `split` says, that vote-split is activated for that vote, then,
-the `value` attribute is an object/dict, where the keys are decimals and the
-values the normal values.
+The attribute `split` says, that vote-split is activated for that ballot, then,
+the `value` attribute is an object/dictionary, where the keys are decimals and the
+values the normal ballot values.
 
-To be valid, each vote-part has to be valid. If one one part is invalid, the
-hole vote is treated as invalid.
+To be valid, each ballot-part has to be valid. If one part is invalid, the hole
+ballot is treated as invalid.
 
-vote split is not possible for secret polls.
+Vote split is not possible for secret polls.
 
 
 ## Invalid Votes
 
 Normally, the service validates the vote requests from the users. So invalid
-votes in the database and therefore in the `poll/result` should not be possible.
+ballots in the database and therefore in the `poll/result` should not be
+possible.
 
 When the field `poll/allow_invalid` is set to true, then the service skips the
-validation and saves the vote exactly, how the user has provided it. An invalid
-vote can have any (invalid) value.
+validation and saves the ballot exactly, how the user has provided it. In this
+case, a user, that wants to create a invalid ballot can use any (invalid) value
+for it.
 
-On crypto votes, the server can not read the value and has to accept it. Invalid
-votes also occur, when the value can not be decrypted.
+On crypto votes, invalid ballots are allways allowed. The server can not read
+the value and has to accept it. Invalid ballots also occur, when the value can
+not be decrypted.
 
 When a poll has invalid votes, the amount gets written in the poll result. for
 example:
 
 `{"invalid":1,"no":"1","yes":"2"}`
 
-The value is an integer and not a decimal value decoded as string.
+The value is an integer and not a decimal value decoded as string. It counts the
+amount of invalid ballots and not the vote-weight.
 
 
 ## Configuration of the service
 
-The service is configured with environment variables. See [all environment variables](environment.md).
+The service is configured with environment variables. See [all environment
+variables](environment.md).
