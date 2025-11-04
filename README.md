@@ -209,6 +209,17 @@ the usual method to vote on a motion.
 `allow_abstain`: if set to `true`, users are allowed to vote with `abstain`. The
 default is `true`.
 
+An approval poll can be used to vote on many options at once. For example to
+approve a list of candidates. For polls like this, the optional arguments
+`option_type` and `options` can be used.
+
+`option_type`: The type of the options. Can be `text` or
+`meeting_user`.
+
+`options`: list of options. If option_type is `text`, the list-values have to be
+from type string. If `option_type` is `meeting_user`, the values have to be
+existing meeting_user_ids.
+
 
 #### ballot/value
 

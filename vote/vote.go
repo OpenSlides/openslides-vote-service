@@ -160,6 +160,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 	}
 
 	var configObjectID string
+	optionsRequired := false
 	switch method {
 	case "approval":
 		var cfg methodApprovalConfig
@@ -179,6 +180,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_approval/%d", configID)
+		optionsRequired = false
 
 	case "selection":
 		var cfg struct {
@@ -200,10 +202,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_selection/%d", configID)
-
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
-		}
+		optionsRequired = true
 
 	case "rating_score":
 		var cfg struct {
@@ -236,10 +235,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_score/%d", configID)
-
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
-		}
+		optionsRequired = true
 
 	case "rating_approval":
 		var cfg struct {
@@ -273,10 +269,11 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_approval/%d", configID)
+		optionsRequired = true
+	}
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
-		}
+	if err := insertOption(ctx, tx, config, configObjectID, optionsRequired); err != nil {
+		return fmt.Errorf("insert options: %w", err)
 	}
 
 	sql := `UPDATE poll SET config_id = $2 WHERE id = $1`
@@ -287,7 +284,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 	return nil
 }
 
-func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string) error {
+func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string, required bool) error {
 	var cfg struct {
 		Type    string `json:"option_type"`
 		Options []any  `json:"options"`
@@ -297,6 +294,9 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 	}
 
 	if len(cfg.Options) == 0 {
+		if !required {
+			return nil
+		}
 		return MessageError(ErrInvalid, "Need at least value in options")
 	}
 
