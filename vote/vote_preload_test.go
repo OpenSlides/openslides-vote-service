@@ -375,16 +375,19 @@ func TestPreload(t *testing.T) {
 					meeting_id: 1
 					group_ids: 40
 
-			meeting_user:
-				500:
-					user_id: 50
-					meeting_id: 5
-					group_ids: [7]
-				510:
-					user_id: 51
-					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
 			5,
 		},
@@ -437,16 +440,19 @@ func TestPreload(t *testing.T) {
 					meeting_id: 1
 					group_ids: 41
 
-			meeting_user:
-				500:
-					user_id: 50
-					meeting_id: 5
-					group_ids: [7]
-				510:
-					user_id: 51
-					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
 			5,
 		},
@@ -503,21 +509,30 @@ func TestPreload(t *testing.T) {
 					user_id: 50
 					vote_delegated_to_id: 520
 					meeting_id: 5
-					group_ids: [7]
 				510:
 					user_id: 51
 					vote_delegated_to_id: 530
 					meeting_id: 5
-					group_ids: [7]
 				520:
 					user_id: 52
 					meeting_id: 5
-					group_ids: [7]
 				530:
 					user_id: 53
 					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
 			6,
 		},
