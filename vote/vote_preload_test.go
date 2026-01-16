@@ -110,9 +110,12 @@ func TestPreload(t *testing.T) {
 				500:
 					user_id: 50
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			3,
 		},
@@ -147,9 +150,12 @@ func TestPreload(t *testing.T) {
 				500:
 					user_id: 50
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			3,
 		},
@@ -191,16 +197,21 @@ func TestPreload(t *testing.T) {
 					user_id: 50
 					vote_delegated_to_id: 520
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					vote_delegated_to_id: 530
 					meeting_id: 5
+					group_ids: [7]
 				520:
 					user_id: 52
 					meeting_id: 5
+					group_ids: [7]
 				530:
 					user_id: 53
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			4,
 		},
