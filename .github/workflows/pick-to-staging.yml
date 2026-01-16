@@ -5,8 +5,7 @@ on:
     types:
       - closed
     branches:
-      - 'main'
-
+      - "main"
 
 jobs:
   create-pr-for-staging:
@@ -39,20 +38,20 @@ jobs:
           fi
 
       - name: Fetch and checkout latest staging branch
-        if: env.skip_pick != 'true'  # Conditional execution
+        if: env.skip_pick != 'true' # Conditional execution
         run: |
           branch=$(git ls-remote --heads origin '${{ matrix.label }}/*' | awk 'gsub(".*refs/heads/","")' | sort -V | tail -1)
           git fetch origin $branch
           git checkout $branch
 
       - name: Set git credentials
-        if: env.skip_pick != 'true'  # Conditional execution
+        if: env.skip_pick != 'true' # Conditional execution
         run: |
           git config --global user.name openslides-automation
           git config --global user.email openslides-automation@users.noreply.github.com
 
       - name: Cherry-pick new commit
-        if: env.skip_pick != 'true'  # Conditional execution
+        if: env.skip_pick != 'true' # Conditional execution
         id: cherry-pick
         run: |
           git fetch origin
@@ -64,7 +63,7 @@ jobs:
           }
 
       - name: Generate access token
-        if: env.skip_pick != 'true'  # Conditional execution
+        if: env.skip_pick != 'true' # Conditional execution
         uses: tibdex/github-app-token@v2
         id: generate-token
         with:
@@ -72,8 +71,8 @@ jobs:
           private_key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
 
       - name: Create or update PR
-        if: env.skip_pick != 'true'  # Conditional execution
-        uses: peter-evans/create-pull-request@v7
+        if: env.skip_pick != 'true' # Conditional execution
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.generate-token.outputs.token }}
           branch: apply/commit-${{ github.sha }}
