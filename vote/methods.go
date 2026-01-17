@@ -161,7 +161,7 @@ type methodRatingScoreConfig struct {
 type methodRatingScore struct{}
 
 func (m methodRatingScore) Name() string {
-	return "rating-score"
+	return "rating_score"
 }
 
 func (m methodRatingScore) ValidateVote(config string, vote json.RawMessage) error {
@@ -243,7 +243,7 @@ type methodRatingApprovalConfig struct {
 type methodRatingApproval struct{}
 
 func (m methodRatingApproval) Name() string {
-	return "rating-approval"
+	return "rating_approval"
 }
 
 func (m methodRatingApproval) ValidateVote(config string, vote json.RawMessage) error {

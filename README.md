@@ -277,9 +277,9 @@ option 1, 23 for the option 2, 6 with the string `nota`, 7 with
 an empty list and 3 with an invalid vote.
 
 
-### rating-score
+### rating_score
 
-A `rating-score` poll is similar to a `selection` poll, but the users can give
+A `rating_score` poll is similar to a `selection` poll, but the users can give
 a numeric value to each option. For example give each candidate 3 votes.
 
 
@@ -321,29 +321,29 @@ A result can looks simular to a `selection`-result:
 `{"1":"40","2":"23",abstain":"7","invalid":3}`
 
 
-### rating-approval
+### rating_approval
 
-`rating-approval` is similar to `rating-score`, but for each option, the user
+`rating_approval` is similar to `rating_score`, but for each option, the user
 can give a value like `"Yes"`, `"No"` or `"Abstain"`.
 
 
 #### config
 
 `option_type` (required), `options` (required), `max_options_amount` and
-`min_options_amount`: The same as for `selection` or `rating-score`.
+`min_options_amount`: The same as for `selection` or `rating_score`.
 
 `allow_abstain`: The same as for `approval`.
 
 
 #### ballot/value
 
-A ballot value looks like a combination between `rating-score` and `approval`:
+A ballot value looks like a combination between `rating_score` and `approval`:
 `{"value":{"1":"yes","2":"abstain"}}`.
 
 
 #### poll/result
 
-A `rating-approval` result looks like:
+A `rating_approval` result looks like:
 `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
 
 This means, that for the option with id `1`, there where 5 ballots with `Yes`,
