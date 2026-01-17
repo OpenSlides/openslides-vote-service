@@ -15,7 +15,7 @@ import (
 )
 
 func waitForServer(addr string) error {
-	for _ = range 100 {
+	for range 100 {
 		conn, err := net.Dial("tcp", addr)
 		if err == nil {
 			conn.Close()
