@@ -152,6 +152,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		`DELETE FROM poll_config_selection WHERE poll_id = $1`,
 		`DELETE FROM poll_config_rating_score WHERE poll_id = $1`,
 		`DELETE FROM poll_config_rating_approval WHERE poll_id = $1`,
+		`DELETE FROM poll_config_stv_scottish WHERE poll_id = $1`,
 	}
 	for _, sql := range deleteStatements {
 		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
@@ -196,7 +197,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		VALUES ($1, $2, $3, $4)
 		RETURNING id;`
 		if err := tx.QueryRow(ctx, sql, pollID, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+			return fmt.Errorf("save selection config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_selection/%d", configID)
@@ -232,7 +233,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			cfg.MaxVoteSum,
 			cfg.MinVoteSum,
 		).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+			return fmt.Errorf("save rating score config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_score/%d", configID)
@@ -269,10 +270,31 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			cfg.MinOptionsAmount,
 			allowAbstain,
 		).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+			return fmt.Errorf("save rating approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_approval/%d", configID)
+
+		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+			return fmt.Errorf("insert options: %w", err)
+		}
+
+	case "stv_scottish":
+		var cfg methodSTVScottishConfig
+		if err := json.Unmarshal(config, &cfg); err != nil {
+			return fmt.Errorf("parsing stv scottish config: %w", err)
+		}
+
+		if cfg.Posts <= 0 {
+			return MessageErrorf(ErrInvalid, "stv scottish config: posts is  %d, but must be greater than 0", cfg.Posts)
+		}
+		var configID int
+		sql := `INSERT INTO poll_config_stv_scottish (poll_id, posts) VALUES ($1, $2) RETURNING id;`
+		if err := tx.QueryRow(ctx, sql, pollID, cfg.Posts).Scan(&configID); err != nil {
+			return fmt.Errorf("save stv scottish config: %w", err)
+		}
+
+		configObjectID = fmt.Sprintf("poll_config_stv_scottish/%d", configID)
 
 		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
 			return fmt.Errorf("insert options: %w", err)
@@ -630,6 +652,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		`DELETE FROM poll_config_selection WHERE poll_id = $1`,
 		`DELETE FROM poll_config_rating_score WHERE poll_id = $1`,
 		`DELETE FROM poll_config_rating_approval WHERE poll_id = $1`,
+		`DELETE FROM poll_config_stv_scottish WHERE poll_id = $1`,
 	}
 	for _, sql := range deleteStatements {
 		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
@@ -1042,6 +1065,16 @@ func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 			AllowAbstain:     dsfetch.MaybeValue(configDB.AllowAbstain),
 		}
 
+	case "poll_config_stv_scottish":
+		configDB, err := dsm.PollConfigStvScottish(configID).First(ctx)
+		if err != nil {
+			return "", fmt.Errorf("fetching poll_config_stv_scottish: %w", err)
+		}
+
+		config = methodSTVScottishConfig{
+			Posts: configDB.Posts,
+		}
+
 	default:
 		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID))
 	}
@@ -1069,6 +1102,8 @@ func pollMethod(poll dsmodels.Poll) string {
 		return "rating_score"
 	case "poll_config_rating_approval":
 		return "rating_approval"
+	case "poll_config_stv_scottish":
+		return "stv_scottish"
 	default:
 		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID))
 	}
@@ -1205,6 +1240,8 @@ func ValidateBallot(method string, config string, vote json.RawMessage) error {
 		return methodRatingScore{}.ValidateVote(config, vote)
 	case methodRatingApproval{}.Name():
 		return methodRatingApproval{}.ValidateVote(config, vote)
+	case methodSTVScottish{}.Name():
+		return methodSTVScottish{}.ValidateVote(config, vote)
 	default:
 		return fmt.Errorf("unknown poll method: %s", method)
 	}
@@ -1225,6 +1262,8 @@ func CreateResult(method string, config string, allowVoteSplit bool, ballots []d
 		return methodRatingScore{}.Result(config, ballots)
 	case methodRatingApproval{}.Name():
 		return methodRatingApproval{}.Result(config, ballots)
+	case methodSTVScottish{}.Name():
+		return methodSTVScottish{}.Result(config, ballots)
 	default:
 		return "", fmt.Errorf("unknown poll method: %s", method)
 	}
@@ -1420,6 +1459,13 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 		if err != nil {
 			return fmt.Errorf("fetch poll config rating approval: %w", err)
 		}
+
+	case "poll_config_stv_scottish":
+		_, err := ds.PollConfigStvScottish(configID).First(ctx)
+		if err != nil {
+			return fmt.Errorf("fetch poll config stv scottish: %w", err)
+		}
+		return fmt.Errorf("poll_config_stv_scottish is not implemented yet")
 
 	default:
 		return fmt.Errorf("invalid config collection. Unknown method: %s", configCollection)
