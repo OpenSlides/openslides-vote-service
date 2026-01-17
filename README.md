@@ -1,142 +1,436 @@
 # OpenSlides Vote Service
 
-The Vote Service is part of the OpenSlides environments. It handles the votes
-for an electonic poll.
+The Vote Service is part of the OpenSlides environments. It is responsible for
+the `poll`, `poll_config_X`, `poll_config_option` and `ballot` collections. It
+handles the electronic voting.
+
+The service has no internal state but uses the normal postgres database to save
+the polls.
 
 
-## Install and Start
+## Handlers
 
-The docker build uses the redis messaging service, the auth token and postgres.
-Make sure the service inside the docker container can connect to this services.
- The auth-secrets have to given as a file.
+All requests to the vote-service have to be POST-requests.
 
-```
-docker build . --tag openslides-vote
-printf "my_token_key" > auth_token_key 
-printf "my_cookie_key" > auth_cookie_key
-docker run --network host -v $PWD/auth_token_key:/run/secrets/auth_token_key -v $PWD/auth_cookie_key:/run/secrets/auth_cookie_key openslides-vote
-```
+With the exception of the vote request, all requests can only be sent by a
+manager. The permission depends on the field `content_object_id` of the
+corresponding poll.
 
-It uses the host network to connect to redis.
+- motions: `motion.can_manage`
+- assignments: `assignment.can_manage`
+- topic: `poll.can_manage`
 
-
-## Example Request with CURL
-
-### Start a Poll
-
-To start a poll a POST request has to be send to the start-url.
-
-To send the same request twice is ok.
-
-```
-curl -X POST localhost:9013/internal/vote/start?id=1 
-```
+With the exception of the create request, all requests need an HTTP GET argument
+in the url, to specify the poll-id. For example `/system/vote/update?id=23`
 
 
-### Send a Vote
+### Create a poll
+
+`/system/vote/create`
+
+The permissions for the create requests are a bit different, since the poll does
+not exist in the database, when the request is sent. Therefore the permission
+check depends on the field `content_object_id` in the request body.
+
+The request expects a body with the fields to create the poll:
+
+- `title` (required)
+- `content_object_id` (required)
+- `meeting_id` (required)
+- `method` (required)
+- `config` (required, depends on the [method](##Poll methods))
+- `visibility` (required)
+- `entitled_group_ids` (only if visibility != manually)
+- `live_voting_enabled` (only if visibility != manually)
+- `result` (only if visibility == manually)
+- `allow_vote_split` (default: false)
+
+
+### Update a poll
+
+`/system/vote/update?id=XX`
+
+The fields `content_object_id` and `meeting_id` can not be changed. You have to
+create a new poll to "update" them.
+
+The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
+changed, before the poll has started. You can reset a poll to change this
+values.
+
+The config can only be changed at a whole. If it is set in an update request, it
+overwrites all config values.
+
+### Delete a poll
+
+`/system/vote/delete?id=XX`
+
+The delete request removes the poll and all its ballots in any state. Be careful.
+
+
+### Start a poll
+
+`/system/vote/start?id=XX`
+
+To start a poll means that the users can send their ballots.
+
+
+### Finalize a poll
+
+`/system/vote/finalize?id=XX`
+
+To finalize a poll means that users can not send their ballots anymore. It
+creates the `poll/result` field.
+
+The request has two optional attributes: `publish` and `anonymize`. `publish`
+sets the field `poll/state` to `published`. `anonymize` removes all user ids
+from the corresponding `ballot` objects.
+
+The request can be send many times. It only creates the result the first time.
+`publish` and `anonymize` can be used on a later request.
+
+To stop a poll and publish and anonymize it at the same time, the following
+request can be used:
+
+`/system/vote/finalize?id=42&publish&anonymize`
+
+
+### Reset a poll
+
+`/system/vote/reset?id=XX`
+
+Reset sets the state back to `created` and removes all `ballot` objects.
+
+
+### Send a ballot
 
 A vote-request is a post request with the ballot as body. Only logged in users
-can vote. The body has to be valid json. For example for the value 'Y' you have
-to send `{"value":"Y"}`.
+can vote. The body has to be valid json.
 
-This handler is not idempotent. If the same user sends the same data twice, it
-is an error.
+The service distinguishes between two users on each vote-request. The acting
+user is the request user, that sends the vote-request. The represented user is
+the user, for whom the ballot is sent. Both users can be the same.
 
-```
-curl localhost:9013/system/vote?id=1 -d '{"value":"Y"}'
-```
+The acting user has to be present in the meeting and needs the permission to
+vote for the represented user. The represented user has to be in one of the
+group of the field `poll/entitled_group_ids`.
 
+The request body has to be in the form:
 
-### Stop the Poll
-
-With the stop request a poll is stopped and the vote values are returned. The
-stop request is a POST request without a body.
-
-A stop request can be send many times and will return the same data again.
-
-```
-curl -X POST localhost:9013/internal/vote/stop?id=1
-```
-
-
-### Clear the poll
-
-After a vote was stopped and the data is successfully stored in the datastore, a
-clear request should be used to remove the data from the vote service. This is
-especially important on fast votes to remove the mapping between the user id and
-the vote. The clear requet is idempotent.
-
-```
-curl -X POST localhost:9013/internal/vote/clear?id=1 
-```
-
-
-### Clear all polls
-
-Only for development and debugging there is an internal route to clear all polls
-at once. It there are many polls, this url could take a long time fully blocking
-redis. Use this carfully.
-
-```
-curl -X POST localhost:9013/internal/vote/clear_all
-```
-
-
-### Have I Voted
-
-A user can find out if he has voted for a list of polls.
-
-```
-curl localhost:9013/system/vote/voted?ids=1,2,3
-```
-
-The responce is a json-object in the form like this:
-
-```
+```json
 {
-  "1":[42],
-  "2":[42],
-  "3":[42]
+  "meeting_user_id": 23,
+  "value": "Yes",
+  "split": false
 }
 ```
 
-`42` is the user ID of the user. If a delegated user has also voted, the user id
-of that users will also be in the response.
+In this example, the request user would send the Vote `Yes` for the user with
+the meeting_user_id 23. If the acting user and the represented user are the
+same, then field `meeting_user_id` is not needed. `split` activates
+[vote_split](#vote split)
+
+Valid values for the vote depend on the poll method.
 
 
-### Vote Count
+### Read the poll
 
-The vote count handler tells how many users have voted. It is an open connection
-that first returns the data for every poll known by the vote service and then
-sends updates when the data changes.
-
-The vote service knows about all started and stopped votes until they are
-cleared. When a poll get cleared, the hander sends `0` as an update.
-
-The data is streamed in the json-line-format. That means, that every update is
-returned with a newline at the end and does not contain any other newline.
-
-Each line is a map from the poll-id (as string) to the number of votes.
+The service only handles write requests. All Reads have to be done via the
+autoupdate-service.
 
 
-Example:
+## poll/visibility
 
+The field `poll/visibility` can be one of `manually`, `named`, `open` and
+`secret`.
+
+
+### manually
+
+Manually polls are polls without electronic voting. The result is calculated
+from individual vote-requests from the users, but the manager sets the result
+manually.
+
+Manual polls behave differently. When created, the field `poll/state` is set to
+`finished`. The poll result can be set either with the create request or with an
+update request. The server does not validate the field `poll/result`, but
+accepts any string.
+
+vote-requests are not possible. A finalize-request is possible, but only to set
+the `poll/published` field. A reset-request sets/leaves the state at `finished`.
+
+
+### named and open
+
+At the moment, the visibilities `named` and `open` behave nearly the same. They
+have two different meanings. In future versions, there will probably be
+different features for this two modes.
+
+The value `named` means that the mapping between votes and users is not deleted
+at the end. In a political context, a 'named' poll also means that eligible
+voters are called individually, publicly, and one after another, and asked for
+their vote. In the future, a feature could be considered where, for
+`named`-polls, users cannot vote themselves, but instead the manager is guided
+through a form in which they can enter the votes for all eligible voters one
+after another. A `named`-poll can not be anonymized.
+
+The value `open` is likely the normal case for a vote. The mapping between votes
+and users CAN be deleted afterwards with the `anonymize` flag of the finalize
+handler.
+
+
+### secret
+
+At the moment, a `secret`-poll is identical to an `open`- or `named`-poll. But
+is handled differently in the autoupdate-service. The field
+`ballot/acting_user_id` and `ballot/represented_user_id` get restricted for
+everybody.
+
+In the future, these values will be used for crypto votes. See the entry in the
+[wiki](https://github.com/OpenSlides/OpenSlides/wiki/DE%3AKonzept-geheime-Wahlen-mit-OpenSlides)
+
+
+## Poll methods
+
+The values of `config`in the poll-create-request, `ballot/value` and
+`poll/result` depend on the field poll method.
+
+The method of a poll can be calculated by looking at the collection-part of the
+generic-relation-field `poll.config_id`.
+
+
+### approval
+
+On an approval poll, the users can vote with `yes`, `no` or `abstain`. This is
+the usual method to vote on a motion.
+
+
+#### config
+
+`allow_abstain`: if set to `true`, users are allowed to vote with `abstain`. The
+default is `true`.
+
+
+#### ballot/value
+
+Valid ballots look like: `{"value":"yes"}`, `{"value":"no"}` or
+`{"value":"abstain"}`.
+
+
+#### poll/result
+
+The poll result looks like:
+
+`{"yes": "32", "no": "20", "abstain": "10", "invalid": 2}`
+
+Attributes with a zero get discarded.
+
+The values are decimal values decoded as string. See [Vote
+Weight](#vote-weight).
+
+
+### selection
+
+On a selection poll, the users select one or many options from a list of
+options. For example one candidate in a assignment-poll.
+
+
+#### config
+
+`option_type` (required): The type of the options. Can be `text` or
+`meeting_user`.
+
+`options` (required): list of options. If option_type is `text`, the list-values
+have to be from type string. If `option_type` is `meeting_user`, the values have
+to be existing meeting_user_ids.
+
+`max_options_amount`: The maximal amount of options a user can vote on. For
+example, with a value of `1`, a user is only allowed to vote for one candidate.
+The default is no limit.
+
+`min_options_amount`: The minimum amount of options, a user has to vote on. The
+default is no limit.
+
+`allow_nota`: Allow `nota` votes, where the user can disapprove of all options.
+The default is `false`.
+
+
+#### ballot/value
+
+A ballot is a list of option ids. For example: `{"value":[1]}`.
+
+To abstain from a poll, an empty list can be delivered: `{"value":[]}`
+
+If `allow_nota` is set, then a user can vote with
+[nota](https://en.wikipedia.org/wiki/None_of_the_above): `{"value":"nota"}`. This
+means, that they disapprove all options.
+
+
+#### poll/result
+
+A result can look like this:
+`{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3}`
+
+The keys of the json-object are option_ids as string.
+
+This means, that users with a combined vote-weight of 40 have voted for the
+option 1, 23 for the option 2, 6 with the string `nota`, 7 with
+an empty list and 3 with an invalid vote.
+
+
+### rating_score
+
+A `rating_score` poll is similar to a `selection` poll, but the users can give
+a numeric value to each option. For example give each candidate 3 votes.
+
+
+#### config
+
+`option_type` (required), `options` (required), `max_options_amount` and
+`min_options_amount`: Are the same as from a selection-poll. For example:
+
+```json
+{
+  "option_type": "meeting_user",
+  "options": [23,42,77],
+  "max_options_amount": 2,
+  "min_options_amount":1
+}
 ```
-curl localhost:9013/internal/vote/vote_count
-```
 
-Response:
+`max_votes_per_option`: The maximal number for each option. The default is no
+limit.
 
-```
-{"5": 1004,"7": 203}
-{"5:0}
-{"7":204}
-{"9:"1}
-```
+`max_vote_sum`: The maximal number of points, that can be shared between the
+options. The default is no limit.
+
+`min_vote_sum`: The minimum number of points, that have to be shared between the
+options. The default is no limit.
 
 
-## Configuration
+#### ballot/value
 
-The service is configurated with environment variables. See [all environment varialbes](environment.md).
+A ballot is an object/dictionary from the `option_id` as string to the numeric
+score. For example: `{"value":{"1":3, "2":1}}`.
 
-If VOTE_SINGLE_INSTANCE it uses the memory to save fast votes. If not, it uses redis.
+An empty object means abstain: `{"value":{}}`
+
+
+#### poll/result
+
+A result can looks simular to a `selection`-result:
+`{"1":"40","2":"23",abstain":"7","invalid":3}`
+
+
+### rating_approval
+
+`rating_approval` is similar to `rating_score`, but for each option, the user
+can give a value like `"Yes"`, `"No"` or `"Abstain"`.
+
+
+#### config
+
+`option_type` (required), `options` (required), `max_options_amount` and
+`min_options_amount`: The same as for `selection` or `rating_score`.
+
+`allow_abstain`: The same as for `approval`.
+
+
+#### ballot/value
+
+A ballot value looks like a combination between `rating_score` and `approval`:
+`{"value":{"1":"yes","2":"abstain"}}`.
+
+
+#### poll/result
+
+A `rating_approval` result looks like:
+`{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
+
+This means, that for the option with id `1`, there where 5 ballots with `Yes`,
+one ballot with `No` and no `abstain`. For the option with id `2`, there where
+one `Yes`, 6 `Abstain` and no `No`. There where one invalid ballots.
+
+A ballot is invalid, if one of its values is invalid. For example a ballot like
+`{"value":{"1":"yes","2":"INVALID-VALUE"}}` is counted as invalid for both
+candidates.
+
+
+## Delegation
+
+A user can delegate his voice to another user. This is only possible in a
+meeting, where `meeting/users_enable_vote_delegation` is set to true.
+
+The term `acting_user` means the user, that sends the request. The term
+`represented_user` is the user, for whom the acting user sends the vote.
+
+If `meeting/users_forbid_delegator_to_vote` is set to true, then only the user,
+where the voice was delegated can vote. If set to `false`, then the
+represented_user keeps the permission to vote for himself.
+
+
+## Vote Weight
+
+Every ballot has a weight. It is a decimal number. The default is `1.000000`.
+When `meeting/users_enable_vote_weight` is set to `true`, this value can be
+changed for each user. Each user has a default vote weight
+(`user/default_vote_weight`), that can be changed for each meeting
+(`meeting_user/vote_weight`).
+
+This weight is saved (`ballot/weight`) and taken into account when generating
+the result.
+
+The weight is not a floating number, but a decimal number. JSON can not
+represent decimal numbers, so they are represented as strings. This is also the
+reason, that values in `poll/results` are represented as strings.
+
+This feature does not work on crypto votes, since the server does not know,
+which decrypted ballot belongs to which user.
+
+
+## Vote Split
+
+When `poll/allow_vote_split` is set to true, the users are allowed to split
+there vote. They do so, by sending multiple ballots with a weight value, where
+the sum of all weights has to be lower or equal then there allowed weight.
+Normally 1.
+
+A splitted vote looks like: `{"value":{"0.3":"yes","0.7":"no"},"split":true}`
+
+The attribute `split` says, that vote-split is activated for that ballot, then,
+the `value` attribute is an object/dictionary, where the keys are decimals and the
+values the normal ballot values.
+
+To be valid, each ballot-part has to be valid. If one part is invalid, the hole
+ballot is treated as invalid.
+
+Vote split is not possible for secret polls.
+
+
+## Invalid Votes
+
+Normally, the service validates the vote requests from the users. So invalid
+ballots in the database and therefore in the `poll/result` should not be
+possible.
+
+When the field `poll/allow_invalid` is set to true, then the service skips the
+validation and saves the ballot exactly, how the user has provided it. In this
+case, a user, that wants to create a invalid ballot can use any (invalid) value
+for it.
+
+On crypto votes, invalid ballots are allways allowed. The server can not read
+the value and has to accept it. Invalid ballots also occur, when the value can
+not be decrypted.
+
+When a poll has invalid votes, the amount gets written in the poll result. for
+example:
+
+`{"invalid":1,"no":"1","yes":"2"}`
+
+The value is an integer and not a decimal value decoded as string. It counts the
+amount of invalid ballots and not the vote-weight.
+
+
+## Configuration of the service
+
+The service is configured with environment variables. See [all environment
+variables](environment.md).
