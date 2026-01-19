@@ -1036,7 +1036,7 @@ func TestVoteVote(t *testing.T) {
 				}
 			})
 
-			t.Run("User has voted", func(t *testing.T) {
+			t.Run("User has already voted", func(t *testing.T) {
 				err := service.Vote(ctx, 5, 30, strings.NewReader(`{"value":"Yes"}`))
 				if err == nil {
 					t.Fatalf("Vote returned no error")
@@ -1387,6 +1387,170 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestVoteSTVScottish(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	organization/1/enable_electronic_voting: true
+
+	assignment/5:
+		meeting_id: 1
+		title: my assignment
+
+	list_of_speakers/7:
+		content_object_id: assignment/5
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30]
+
+	user:
+		30:
+			username: tom
+		5:
+			username: admin
+			organization_management_level: superadmin
+		101:
+			username: mr_101
+		102:
+			username: mrs_102
+		103:
+			username: ms_103
+		104:
+			username: my_friend_104
+		105:
+			username: nice_person_105
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	meeting_user/301:
+		group_ids: [40]
+		user_id: 101
+		meeting_id: 1
+
+	meeting_user/302:
+		group_ids: [40]
+		user_id: 102
+		meeting_id: 1
+
+	meeting_user/303:
+		group_ids: [40]
+		user_id: 103
+		meeting_id: 1
+
+	meeting_user/304:
+		group_ids: [40]
+		user_id: 104
+		meeting_id: 1
+
+	meeting_user/305:
+		group_ids: [40]
+		user_id: 105
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Create poll", func(t *testing.T) {
+				body := `{
+					"title": "my stv poll",
+					"content_object_id": "assignment/5",
+					"method": "stv_scottish",
+					"config": {"posts": 2, "option_type": "meeting_user", "options": [301, 302, 303, 304, 305]},
+					"visibility": "open",
+					"meeting_id": 1,
+					"entitled_group_ids": [40]
+				}`
+
+				id, err := service.Create(ctx, 5, strings.NewReader(body))
+				if err != nil {
+					t.Fatalf("Error creating poll: %v", err)
+				}
+
+				if id != 1 {
+					t.Errorf("Expected id 1, got %d", id)
+				}
+				f := dsmodels.New(flow)
+				poll, err := f.Poll(1).First(ctx)
+				if err != nil {
+					t.Errorf("Error fetching poll from database")
+				}
+				if poll.Title != "my stv poll" {
+					t.Errorf("Expected title 'my stv poll', got %s", poll.Title)
+				}
+
+				options, err := f.PollConfigOption(1, 2, 3, 4, 5).Get(ctx)
+				if err != nil {
+					t.Errorf("Error fetching poll options from database")
+				}
+				for i, opt := range options {
+					v, ok := opt.MeetingUserID.Value()
+					if !ok {
+						t.Errorf("Meeting user id in poll option is not given")
+					}
+					if 301+i != v {
+						t.Errorf("Wrong meeting user id, expected %d, got %d", 301+i, v)
+					}
+				}
+			})
+
+			t.Run("Vote with valid data", func(t *testing.T) {
+				err := service.Vote(ctx, 5, 30, strings.NewReader(`[1, 2, 3, 4, 5]`))
+				if err != nil {
+					t.Fatalf("Vote returned unexpected error: %v", err)
+				}
+			})
+			t.Run("Stop vote and calc result", func(t *testing.T) {
+				if err := service.Finalize(ctx, 1, 5, false, false); err != nil {
+					t.Fatalf("Error stopping poll: %v", err)
+				}
+
+				keyState := dskey.MustKey("poll/5/state")
+				keyResult := dskey.MustKey("poll/5/result")
+				values, err := flow.Get(ctx, keyState, keyResult)
+				if err != nil {
+					t.Fatalf("Error getting state from poll: %v", err)
+				}
+
+				if string(values[keyState]) != `"finished"` {
+					t.Errorf("Expected state to be finished, got %s", values[keyState])
+				}
+
+				expectedResult := `{"invalid": 42, "quota": 1987, "elected": [401, 404], "rounds": [
+					[{"option_id": 401, "votes": 42, "status": "elected"}, {"option_id": 402, "votes": 42, "status": "continuing"}, {"option_id": 403, "votes": 42}, {"option_id": 404, "votes": 42}, {"option_id": 405, "votes": 42}],
+					[{"option_id": 401, "votes": 42, "status": "elected"}, {"option_id": 402, "votes": 42, "status": "excluded"}, {"option_id": 403, "votes": 42}, {"option_id": 404, "votes": 42}, {"option_id": 405, "votes": 42}],
+					[{"option_id": 401, "votes": 42, "status": "elected"}, {"option_id": 402, "votes": 42}, {"option_id": 403, "votes": 42}, {"option_id": 404, "votes": 42, "status": "elected"}, {"option_id": 405, "votes": 42}],
+				]}`
+				result := string(values[keyResult])
+				if result != expectedResult {
+					t.Errorf("Expected result %q, got %q", expectedResult, result)
+				}
+			})
+		})
 }
 
 func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
