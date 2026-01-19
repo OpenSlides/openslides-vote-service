@@ -133,7 +133,7 @@ func TestCreateResultScottischSTV(t *testing.T) {
 		expectedResult resultSTVScottish
 	}{
 		{
-			name:   "STV Scottish",
+			name:   "STV Scottish, small example",
 			method: "stv_scottish",
 			config: `{"posts": 2, "options": [1, 2, 3]}`,
 			votes: []dsmodels.Ballot{
@@ -174,6 +174,89 @@ func TestCreateResultScottischSTV(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "STV Scottish, bigger example",
+			method: "stv_scottish",
+			config: `{"posts": 2, "options": [1, 2, 3, 4, 5, 6, 7, 8]}`,
+			votes:  biggerExampleBallots(t),
+			expectedResult: resultSTVScottish{
+				Invalid: 0,
+				Quota:   decimal.NewFromInt(214),
+				Elected: []int{2, 4},
+				Stages: []stage{
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(57), Status: "continuing"},
+						2: optionResult{Votes: decimal.NewFromInt(94), Status: "continuing"},
+						3: optionResult{Votes: decimal.NewFromInt(76), Status: "continuing"},
+						4: optionResult{Votes: decimal.NewFromInt(165), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "continuing"},
+						6: optionResult{Votes: decimal.NewFromInt(80), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(38), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(41), Status: "continuing"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(57), Status: "continuing"},
+						2: optionResult{Votes: decimal.NewFromInt(94), Status: "continuing"},
+						3: optionResult{Votes: decimal.NewFromInt(76), Status: "continuing"},
+						4: optionResult{Votes: decimal.NewFromInt(165), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "continuing"},
+						6: optionResult{Votes: decimal.NewFromInt(118), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(41), Status: "excluded"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(57), Status: "excluded"},
+						2: optionResult{Votes: decimal.NewFromInt(94), Status: "continuing"},
+						3: optionResult{Votes: decimal.NewFromInt(76), Status: "continuing"},
+						4: optionResult{Votes: decimal.NewFromInt(206), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "continuing"},
+						6: optionResult{Votes: decimal.NewFromInt(118), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						2: optionResult{Votes: decimal.NewFromInt(151), Status: "continuing"},
+						3: optionResult{Votes: decimal.NewFromInt(76), Status: "excluded"},
+						4: optionResult{Votes: decimal.NewFromInt(206), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "continuing"},
+						6: optionResult{Votes: decimal.NewFromInt(118), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						2: optionResult{Votes: decimal.NewFromInt(227), Status: "elected"},
+						3: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						4: optionResult{Votes: decimal.NewFromInt(206), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "continuing"},
+						6: optionResult{Votes: decimal.NewFromInt(118), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						2: optionResult{Votes: decimal.NewFromInt(214), Status: "elected"},
+						3: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						4: optionResult{Votes: decimal.NewFromFloat(209.26382), Status: "continuing"},
+						5: optionResult{Votes: decimal.NewFromInt(88), Status: "excluded"},
+						6: optionResult{Votes: decimal.NewFromFloat(127.7342), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+					},
+					stage{
+						1: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						2: optionResult{Votes: decimal.NewFromInt(214), Status: "elected"},
+						3: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						4: optionResult{Votes: decimal.NewFromFloat(297.26382), Status: "elected"},
+						5: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						6: optionResult{Votes: decimal.NewFromFloat(127.7342), Status: "continuing"},
+						7: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+						8: optionResult{Votes: decimal.NewFromInt(0), Status: "excluded"},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vote.CreateResult(tt.method, tt.config, false, tt.votes)
@@ -206,4 +289,27 @@ func TestCreateResultScottischSTV(t *testing.T) {
 			}
 		})
 	}
+}
+
+func biggerExampleBallots(t *testing.T) []dsmodels.Ballot {
+	t.Helper()
+	var votes []dsmodels.Ballot
+	data := []struct {
+		count int
+		vote  dsmodels.Ballot
+	}{
+		{count: 57, vote: dsmodels.Ballot{Value: `[1, 2, 3, 4, 5, 6, 7, 8]`}},
+		{count: 76, vote: dsmodels.Ballot{Value: `[4, 3, 6, 8, 1, 5, 7, 2]`}},
+		{count: 76, vote: dsmodels.Ballot{Value: `[3, 2, 6, 7, 8, 5, 1, 4]`}},
+		{count: 94, vote: dsmodels.Ballot{Value: `[2, 8, 7, 6, 1, 4, 3, 5]`}},
+		{count: 88, vote: dsmodels.Ballot{Value: `[5, 7, 1, 3, 4, 8, 2, 6]`}},
+		{count: 38, vote: dsmodels.Ballot{Value: `[7, 6, 4, 8, 1, 3, 5, 2]`}},
+		{count: 41, vote: dsmodels.Ballot{Value: `[8, 4, 6, 2, 5, 1, 3, 7]`}},
+		{count: 80, vote: dsmodels.Ballot{Value: `[6, 8, 7, 4, 5, 2, 3, 1]`}},
+		{count: 89, vote: dsmodels.Ballot{Value: `[4, 5, 3, 1, 7, 8, 6, 2]`}},
+	}
+	for _, elem := range data {
+		votes = slices.Concat(votes, slices.Repeat([]dsmodels.Ballot{elem.vote}, elem.count))
+	}
+	return votes
 }

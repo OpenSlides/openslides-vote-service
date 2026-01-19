@@ -134,15 +134,10 @@ func (m methodSTVScottish) Result(config string, votes []dsmodels.Ballot) (strin
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal result: %w", err)
 	}
-	fmt.Println(string(finalResult))
 	return string(finalResult), nil
 }
 
 func resultHelper(result resultSTVScottish, vacancies int, cont []int, validVotes []validVote, currentStage stage) resultSTVScottish {
-
-	fmt.Println(result, vacancies, cont, validVotes)
-	fmt.Println("--------------")
-
 	// If there are no vacancies we are done.
 	if vacancies == 0 {
 		return result
@@ -151,7 +146,6 @@ func resultHelper(result resultSTVScottish, vacancies int, cont []int, validVote
 	// Check if the number of continuing candidates is equal to the number of vacancies remaining unfilled.
 	// If yes, the continuing candidates are deemed to be elected. No further transfer shall be made.
 	if len(cont) == vacancies {
-		fmt.Println("+++++++++++++++", cont)
 		for _, opt := range cont {
 			v := result.Stages[len(result.Stages)-1][opt].Votes
 			currentStage[opt] = optionResult{Votes: v, Status: elected}
@@ -177,7 +171,7 @@ func resultHelper(result resultSTVScottish, vacancies int, cont []int, validVote
 	// sorting the continuing slice in every stage but keep the order from the
 	// beginning in case of a tie.
 	slices.SortStableFunc(cont, func(a int, b int) int {
-		return int(currentStage[b].Votes.Sub(currentStage[a].Votes).IntPart())
+		return currentStage[b].Votes.Cmp(currentStage[a].Votes)
 	})
 
 	bestOption := cont[0]
