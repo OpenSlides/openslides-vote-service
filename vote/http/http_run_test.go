@@ -42,7 +42,7 @@ func TestRun(t *testing.T) {
 	ctx := t.Context()
 
 	ds := dsmock.NewFlow(nil)
-	service, _, _ := vote.New(ctx, ds, nil)
+	service, _, _ := vote.New(environment.ForTests{}, ds, nil)
 	testLogger := func(fmt string, a ...any) (int, error) { return 0, nil }
 	httpServer := votehttp.New(environment.ForTests(map[string]string{"VOTE_PORT": "0"}), testLogger)
 

@@ -10,6 +10,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/pgtest"
+	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
@@ -176,7 +177,7 @@ func TestVoteNoRequests(t *testing.T) {
 			}
 			defer conn.Close(ctx)
 
-			service, _, err := vote.New(ctx, cache, conn)
+			service, _, err := vote.New(environment.ForTests{}, cache, conn)
 			if err != nil {
 				t.Fatalf("Error creating vote: %v", err)
 			}

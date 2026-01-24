@@ -14,6 +14,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dskey"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
+	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-go/perm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -29,7 +30,7 @@ type Vote struct {
 }
 
 // New creates an initializes vote service.
-func New(ctx context.Context, flow flow.Flow, querier DBQuerier) (*Vote, func(context.Context, func(error)), error) {
+func New(lookup environment.Environmenter, flow flow.Flow, querier DBQuerier) (*Vote, func(context.Context, func(error)), error) {
 	v := &Vote{
 		flow:    flow,
 		querier: querier,

@@ -104,13 +104,13 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	}
 	backgroundTasks = append(backgroundTasks, authBackground)
 
-	service := func(ctx context.Context) error {
-		voteService, voteBackground, err := vote.New(ctx, database, dbPool)
-		if err != nil {
-			return fmt.Errorf("starting service: %w", err)
-		}
-		backgroundTasks = append(backgroundTasks, voteBackground)
+	voteService, voteBackground, err := vote.New(lookup, database, dbPool)
+	if err != nil {
+		return nil, fmt.Errorf("init service: %w", err)
+	}
+	backgroundTasks = append(backgroundTasks, voteBackground)
 
+	service := func(ctx context.Context) error {
 		for _, bg := range backgroundTasks {
 			go bg(ctx, handleError)
 		}

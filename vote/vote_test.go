@@ -12,6 +12,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/datastore/pgtest"
+	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
@@ -1410,7 +1411,7 @@ func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(servic
 	}
 	defer conn.Close(ctx)
 
-	service, _, err := vote.New(ctx, flow, conn)
+	service, _, err := vote.New(environment.ForTests{}, flow, conn)
 	if err != nil {
 		t.Fatalf("Error creating vote: %v", err)
 	}
