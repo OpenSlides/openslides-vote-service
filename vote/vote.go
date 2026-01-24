@@ -130,7 +130,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		// Temporaty value to make postgres happy. Will be set later. This
 		// workaound can be removed, once this is fixed:
 		// https://github.com/OpenSlides/openslides-meta/issues/339
-		"poll_config_approval/1",
+		"poll_config_approval/0",
 		ci.Visibility,
 		state,
 		ci.ContentObjectID,
@@ -191,7 +191,10 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 	case "approval":
 		var cfg methodApprovalConfig
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return fmt.Errorf("parsing approval config: %w", err)
+			return errors.Join(
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+				fmt.Errorf("parsing approval config: %w", err),
+			)
 		}
 
 		allowAbstain, set := cfg.AllowAbstain.Value()
@@ -214,7 +217,10 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			AllowNota        bool `json:"allow_nota"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return fmt.Errorf("parsing selection config: %w", err)
+			return errors.Join(
+				fmt.Errorf("parsing selection config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
 		}
 
 		var configID int
@@ -241,7 +247,10 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			MinVoteSum        int `json:"min_vote_sum"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return fmt.Errorf("parsing rating score config: %w", err)
+			return errors.Join(
+				fmt.Errorf("parsing rating score config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
 		}
 
 		var configID int
@@ -275,7 +284,10 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return fmt.Errorf("parsing rating approval config: %w", err)
+			return errors.Join(
+				fmt.Errorf("parsing rating approval config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
 		}
 
 		allowAbstain, set := cfg.AllowAbstain.Value()
@@ -387,31 +399,31 @@ type createInput struct {
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
 	var ci createInput
 	if err := json.NewDecoder(r).Decode(&ci); err != nil {
-		return createInput{}, fmt.Errorf("reading json: %w", err)
+		return createInput{}, MessageError(ErrInvalid, "Invalid request body.")
 	}
 
 	if ci.Title == "" {
-		return createInput{}, MessageError(ErrInvalid, "Title can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'title' can not be empty")
 	}
 
 	if ci.ContentObjectID == "" {
-		return createInput{}, MessageError(ErrInvalid, "Content Object ID can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'content_object_id' can not be empty")
 	}
 
 	if ci.MeetingID == 0 {
-		return createInput{}, MessageError(ErrInvalid, "Meeting ID can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'meeting_id' can not be empty")
 	}
 
 	if ci.Method == "" {
-		return createInput{}, MessageError(ErrInvalid, "Method can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'method' can not be empty")
 	}
 
 	if ci.Config == nil {
-		return createInput{}, MessageError(ErrInvalid, "Config can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'config' can not be empty")
 	}
 
 	if ci.Visibility == "" {
-		return createInput{}, MessageError(ErrInvalid, "Visibility can not be empty")
+		return createInput{}, MessageError(ErrInvalid, "Field 'visibility' can not be empty")
 	}
 
 	if ci.Visibility == "secret" && ci.AllowVoteSplit {
