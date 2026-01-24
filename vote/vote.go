@@ -2,11 +2,17 @@ package vote
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,19 +27,39 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var envVoteSecretKeyFile = environment.NewVariable("VOTE_SECRET_KEY_FILE", "/run/secrets/vote_secret_key", "Path to the secret key for secret polls.")
+
 // Vote holds the state of the service.
 //
 // Vote has to be initializes with vote.New().
 type Vote struct {
-	flow    flow.Flow
-	querier DBQuerier
+	flow              flow.Flow
+	querier           DBQuerier
+	gcmForSecretPolls cipher.AEAD
 }
 
 // New creates an initializes vote service.
 func New(lookup environment.Environmenter, flow flow.Flow, querier DBQuerier) (*Vote, func(context.Context, func(error)), error) {
+	key, err := environment.ReadSecret(lookup, envVoteSecretKeyFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read secret key: %w", err)
+	}
+
+	hashedKey := sha256.Sum256([]byte(key))
+	block, err := aes.NewCipher(hashedKey[:])
+	if err != nil {
+		return nil, nil, fmt.Errorf("create cipher for secret polls: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create GCM for secret polls: %w", err)
+	}
+
 	v := &Vote{
-		flow:    flow,
-		querier: querier,
+		flow:              flow,
+		querier:           querier,
+		gcmForSecretPolls: gcm,
 	}
 
 	bg := func(ctx context.Context, errorHandler func(error)) {
@@ -716,6 +742,43 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
 		}
 
+		if poll.Visibility == "secret" {
+			for i := range ballots {
+				ballots[i].Value, err = v.decryptBallot(ballots[i].Value)
+				if err != nil {
+					return fmt.Errorf("decrypting ballot: %w", err)
+				}
+			}
+
+			// Change the order of the ballots so the new values can not be guessed.
+			sort.Slice(ballots, func(i, j int) bool {
+				return ballots[i].Value < ballots[j].Value
+			})
+
+			// Delete and reinsert old ballots.
+			_, err = tx.Exec(ctx, "DELETE FROM ballot_t WHERE poll_id = $1", poll.ID)
+			if err != nil {
+				return fmt.Errorf("deleting old ballots: %w", err)
+			}
+
+			_, err = tx.CopyFrom(
+				ctx,
+				pgx.Identifier{"ballot_t"},
+				[]string{"weight", "split", "value", "poll_id"},
+				pgx.CopyFromSlice(len(ballots), func(i int) ([]any, error) {
+					return []any{
+						ballots[i].Weight,
+						ballots[i].Split,
+						ballots[i].Value,
+						poll.ID,
+					}, nil
+				}),
+			)
+			if err != nil {
+				return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
+			}
+		}
+
 		config, err := v.EncodeConfig(ctx, poll)
 		if err != nil {
 			return fmt.Errorf("encode config: %w", err)
@@ -885,6 +948,13 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	}
 
 	ballotValue := string(body.Value)
+	if poll.Visibility == "secret" {
+		ballotValue, err = v.encryptBallot(ballotValue)
+		if err != nil {
+			return fmt.Errorf("encrypting ballot value: %w", err)
+		}
+	}
+
 	weight, err := CalcVoteWeight(ctx, fetch, representedMeetingUserID)
 	if err != nil {
 		return fmt.Errorf("calc vote weight: %w", err)
@@ -974,6 +1044,40 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 	default:
 		return fmt.Errorf("unknown vote sql status %s", status)
 	}
+}
+
+// encryptBallot encrypts the given value with AES using the key for secret polls.
+func (v *Vote) encryptBallot(ballotValue string) (string, error) {
+	nonce := make([]byte, v.gcmForSecretPolls.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("create nonce: %w", err)
+	}
+
+	encryptedValue := v.gcmForSecretPolls.Seal(nonce, nonce, []byte(ballotValue), nil)
+
+	return base64.StdEncoding.EncodeToString(encryptedValue), nil
+}
+
+// decryptBallot decrypt the given value with AES using the key for secret polls.
+func (v *Vote) decryptBallot(encryptedBallot string) (string, error) {
+	encryptedValue, err := base64.StdEncoding.DecodeString(encryptedBallot)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode encrypted ballot: %w", err)
+	}
+
+	nonceSize := v.gcmForSecretPolls.NonceSize()
+	if len(encryptedValue) < nonceSize {
+		return "", fmt.Errorf("encrypted ballot too short")
+	}
+
+	nonce, ciphertext := encryptedValue[:nonceSize], encryptedValue[nonceSize:]
+
+	plaintext, err := v.gcmForSecretPolls.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt ciphertext: %w", err)
+	}
+
+	return string(plaintext), nil
 }
 
 // EncodeConfig encodes the configuration of a poll into a string.

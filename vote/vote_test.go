@@ -931,6 +931,151 @@ func TestVoteFinalize(t *testing.T) {
 	)
 }
 
+func TestSecretPoll(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30,31]
+
+	user:
+		30:
+			username: tom
+		31:
+			username: hans
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	meeting_user/310:
+		group_ids: [40]
+		user_id: 31
+		meeting_id: 1
+
+	meeting_user/500:
+		group_ids: [40]
+		user_id: 5
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: poll with votes
+		config_id: poll_config_approval/77
+		visibility: secret
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
+
+	poll_config_approval/77:
+		poll_id: 5
+		allow_abstain: true
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Vote1", func(t *testing.T) {
+				body := `{"value":"Yes"}`
+				if err := service.Vote(ctx, 5, 30, strings.NewReader(body)); err != nil {
+					t.Fatalf("Error voting for poll: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				ballot, err := ds.Ballot(1).First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting ballot: %v", err)
+				}
+
+				if ballot.Value == `"Yes"` {
+					t.Errorf("ballot value was not encrypted")
+				}
+			})
+
+			t.Run("Vote2", func(t *testing.T) {
+				body := `{"value":"Yes"}`
+				if err := service.Vote(ctx, 5, 31, strings.NewReader(body)); err != nil {
+					t.Fatalf("Error voting for poll: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				ballotList, err := ds.Ballot(1, 2).Get(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting ballot: %v", err)
+				}
+
+				if len(ballotList) != 2 {
+					t.Fatalf("Got %d ballots, expted 2", len(ballotList))
+				}
+
+				if ballotList[0].Value == ballotList[1].Value {
+					t.Errorf("Two ballots with the same value where identical in db")
+				}
+			})
+
+			t.Run("Finalize", func(t *testing.T) {
+				err := service.Finalize(ctx, 5, 5, false, false)
+				if err != nil {
+					t.Fatalf("Error finalizing poll: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				q := ds.Poll(5)
+				q = q.Preload(q.BallotList())
+				poll, err := q.First(ctx)
+				if err != nil {
+					t.Fatalf("Error: Getting poll: %v", err)
+				}
+
+				expectResult := `{"yes":"2"}`
+				if poll.Result != expectResult {
+					t.Errorf("Got result %s, expected %s", poll.Result, expectResult)
+				}
+
+				for _, ballot := range poll.BallotList {
+					if ballot.Value != `"Yes"` {
+						t.Errorf("value of ballot %d was not decrypted", ballot.ID)
+					}
+				}
+			})
+		},
+	)
+}
+
 func TestVoteVote(t *testing.T) {
 	t.Parallel()
 
