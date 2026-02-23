@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.25.0
 
 require (
-	github.com/OpenSlides/openslides-go v0.0.0-20260221062854-55e883c537e0
+	github.com/OpenSlides/openslides-go v0.0.0-20260223160758-8648bbe58f65
 	github.com/alecthomas/kong v1.14.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/shopspring/decimal v1.4.0

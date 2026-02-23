@@ -118,8 +118,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	sql := `INSERT INTO poll
-		(title, config_id, visibility, state, content_object_id, meeting_id, result, published, allow_vote_split)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		(title, visibility, state, content_object_id, meeting_id, result, published, allow_vote_split)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id;`
 
 	var newID int
@@ -127,10 +127,6 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ctx,
 		sql,
 		ci.Title,
-		// Temporaty value to make postgres happy. Will be set later. This
-		// workaound can be removed, once this is fixed:
-		// https://github.com/OpenSlides/openslides-meta/issues/339
-		"poll_config_approval/0",
 		ci.Visibility,
 		state,
 		ci.ContentObjectID,
@@ -1094,14 +1090,19 @@ func (v *Vote) decryptBallot(encryptedBallot string) (string, error) {
 
 // EncodeConfig encodes the configuration of a poll into a string.
 func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, error) {
-	configCollection, configIDStr, found := strings.Cut(poll.ConfigID, "/")
+	pollConfigID, hasPollConfig := poll.ConfigID.Value()
+	if !hasPollConfig {
+		return "", fmt.Errorf("poll %d has no config_id", poll.ID)
+	}
+
+	configCollection, configIDStr, found := strings.Cut(pollConfigID, "/")
 	if !found {
-		return "", fmt.Errorf("poll %d has an invalid config_id: %s", poll.ID, poll.ConfigID)
+		return "", fmt.Errorf("poll %d has an invalid config_id: %s", poll.ID, pollConfigID)
 	}
 
 	configID, err := strconv.Atoi(configIDStr)
 	if err != nil {
-		return "", fmt.Errorf("poll %d ha san invalid config_id. Second part is not a number: %s", poll.ID, poll.ConfigID)
+		return "", fmt.Errorf("poll %d ha san invalid config_id. Second part is not a number: %s", poll.ID, pollConfigID)
 	}
 
 	dsm := dsmodels.New(v.flow)
@@ -1160,7 +1161,7 @@ func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 		}
 
 	default:
-		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID))
+		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, pollConfigID))
 	}
 
 	encoded, err := json.Marshal(config)
@@ -1172,9 +1173,14 @@ func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, er
 }
 
 func pollMethod(poll dsmodels.Poll) string {
-	configCollection, _, found := strings.Cut(poll.ConfigID, "/")
+	pollConfigID, hasPollConfig := poll.ConfigID.Value()
+	if !hasPollConfig {
+		panic(fmt.Sprintf("poll %d has no config_id", poll.ID))
+	}
+
+	configCollection, _, found := strings.Cut(pollConfigID, "/")
 	if !found {
-		panic(fmt.Sprintf("poll %d has an invalid config_id: %s", poll.ID, poll.ConfigID))
+		panic(fmt.Sprintf("poll %d has an invalid config_id: %s", poll.ID, pollConfigID))
 	}
 
 	switch configCollection {
@@ -1187,7 +1193,7 @@ func pollMethod(poll dsmodels.Poll) string {
 	case "poll_config_rating_approval":
 		return "rating_approval"
 	default:
-		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID))
+		panic(fmt.Sprintf("poll %d has an unknown poll config: %s", poll.ID, pollConfigID))
 	}
 }
 
@@ -1503,14 +1509,19 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 		return fmt.Errorf("fetch preload data: %w", err)
 	}
 
-	configCollection, configIDStr, found := strings.Cut(poll.ConfigID, "/")
+	pollConfigID, hasPollConfig := poll.ConfigID.Value()
+	if !hasPollConfig {
+		return fmt.Errorf("poll %d has no config_id", poll.ID)
+	}
+
+	configCollection, configIDStr, found := strings.Cut(pollConfigID, "/")
 	if !found {
-		return fmt.Errorf("invalid value in configID: %s", poll.ConfigID)
+		return fmt.Errorf("invalid value in configID: %s", pollConfigID)
 	}
 
 	configID, err := strconv.Atoi(configIDStr)
 	if err != nil {
-		return fmt.Errorf("invalid value in configID. Second part has to be an int: %s", poll.ConfigID)
+		return fmt.Errorf("invalid value in configID. Second part has to be an int: %s", pollConfigID)
 	}
 
 	switch configCollection {
