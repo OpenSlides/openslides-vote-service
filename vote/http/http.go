@@ -95,17 +95,18 @@ type authenticater interface {
 }
 
 func registerHandlers(service voteService, auth authenticater, logger logger) *http.ServeMux {
-	const base = "/system/vote/poll"
+	const base = "/system/vote"
+	const basePoll = base + "/poll"
 
 	resolveError := getResolveError(logger)
 	mux := http.NewServeMux()
-	mux.Handle("POST "+base+"/", resolveError(handleCreate(service, auth)))
-	mux.Handle("POST "+base+"/{poll_id}", resolveError(handleUpdate(service, auth)))
-	mux.Handle("DELETE "+base+"/{poll_id}", resolveError(handleDelete(service, auth)))
-	mux.Handle("POST "+base+"/{poll_id}/start", resolveError(handleStart(service, auth)))
-	mux.Handle("POST "+base+"/{poll_id}/finalize", resolveError(handleFinalize(service, auth)))
-	mux.Handle("POST "+base+"/{poll_id}/reset", resolveError(handleReset(service, auth)))
-	mux.Handle("POST "+base+"/{poll_id}/vote", resolveError(handleVote(service, auth)))
+	mux.Handle("POST "+basePoll+"/", resolveError(handleCreate(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}", resolveError(handleUpdate(service, auth)))
+	mux.Handle("DELETE "+basePoll+"/{poll_id}", resolveError(handleDelete(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/start", resolveError(handleStart(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/finalize", resolveError(handleFinalize(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/reset", resolveError(handleReset(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/vote", resolveError(handleVote(service, auth)))
 	mux.Handle("GET "+base+"/health", resolveError(handleHealth()))
 	return mux
 }

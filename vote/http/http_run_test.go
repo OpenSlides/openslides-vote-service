@@ -68,7 +68,7 @@ func TestRun(t *testing.T) {
 			"/system/vote/poll/1/finalize",
 			"/system/vote/poll/1/reset",
 			"/system/vote/poll/1/vote",
-			"/system/vote/poll/health",
+			"/system/vote/health",
 		} {
 			resp, err := http.Get(fmt.Sprintf("http://%s%s", httpServer.Addr, url))
 			if err != nil {

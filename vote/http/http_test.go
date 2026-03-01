@@ -758,9 +758,9 @@ func TestHandleVote(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	url := "/system/vote/poll/health"
+	url := "/system/vote/health"
 	mux := http.NewServeMux()
-	mux.Handle("GET /system/vote/poll/health", testresolveError(handleHealth()))
+	mux.Handle("GET /system/vote/health", testresolveError(handleHealth()))
 
 	resp := httptest.NewRecorder()
 	mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
