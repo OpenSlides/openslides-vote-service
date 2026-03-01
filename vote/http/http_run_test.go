@@ -62,20 +62,18 @@ func TestRun(t *testing.T) {
 
 	t.Run("URLs", func(t *testing.T) {
 		for _, url := range []string{
-			"/system/vote/create",
-			"/system/vote/update",
-			"/system/vote/delete",
-			"/system/vote/start",
-			"/system/vote/finalize",
-			"/system/vote/reset",
-			"/system/vote",
+			"/system/vote/poll/",
+			"/system/vote/poll/1",
+			"/system/vote/poll/1/start",
+			"/system/vote/poll/1/finalize",
+			"/system/vote/poll/1/reset",
+			"/system/vote/poll/1/vote",
 			"/system/vote/health",
 		} {
 			resp, err := http.Get(fmt.Sprintf("http://%s%s", httpServer.Addr, url))
 			if err != nil {
 				t.Fatalf("sending request: %v", err)
 			}
-
 			if resp.StatusCode == 404 {
 				t.Errorf("url %s does not exist", url)
 			}
