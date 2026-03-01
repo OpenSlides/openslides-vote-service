@@ -36,8 +36,10 @@ func TestHandleCreate(t *testing.T) {
 	creater := &createrStub{pollID: 42}
 	auth := &AutherStub{userID: 1}
 
-	url := "/system/vote/create"
-	mux := testresolveError(handleCreate(creater, auth))
+	url := "/system/vote/poll/"
+	handler := testresolveError(handleCreate(creater, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/", handler)
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
@@ -144,30 +146,13 @@ func TestHandleUpdate(t *testing.T) {
 	updater := &updaterStub{}
 	auth := &AutherStub{userID: 1}
 
-	url := "/system/vote/update"
-	mux := testresolveError(handleUpdate(updater, auth))
-
-	t.Run("No id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
-
-	t.Run("Invalid id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
+	handler := testresolveError(handleUpdate(updater, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}", handler)
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("update data")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("update data")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -186,11 +171,20 @@ func TestHandleUpdate(t *testing.T) {
 		}
 	})
 
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
+		}
+	})
+
 	t.Run("Error not exist", func(t *testing.T) {
 		updater.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("data")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("data")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -213,7 +207,7 @@ func TestHandleUpdate(t *testing.T) {
 		updater.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("data")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("data")))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)
@@ -254,30 +248,13 @@ func TestHandleDelete(t *testing.T) {
 	deleter := &deleterStub{}
 	auth := &AutherStub{userID: 1}
 
-	url := "/system/vote/delete"
-	mux := testresolveError(handleDelete(deleter, auth))
-
-	t.Run("No id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
-
-	t.Run("Invalid id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
+	handler := testresolveError(handleDelete(deleter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("DELETE /system/vote/poll/{poll_id}", handler)
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -292,11 +269,20 @@ func TestHandleDelete(t *testing.T) {
 		}
 	})
 
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/notanumber", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
+		}
+	})
+
 	t.Run("Error not exist", func(t *testing.T) {
 		deleter.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -319,7 +305,7 @@ func TestHandleDelete(t *testing.T) {
 		deleter.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)
@@ -358,21 +344,13 @@ func TestHandleStart(t *testing.T) {
 	starter := &starterStub{}
 	auth := &AutherStub{userID: 1}
 
-	url := "/vote/start"
-	mux := testresolveError(handleStart(starter, auth))
-
-	t.Run("No id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
+	handler := testresolveError(handleStart(starter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/start", handler)
 
 	t.Run("Invalid id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/start", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -381,7 +359,7 @@ func TestHandleStart(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -396,7 +374,7 @@ func TestHandleStart(t *testing.T) {
 		starter.expectErr = vote.ErrInvalid
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -419,7 +397,7 @@ func TestHandleStart(t *testing.T) {
 		starter.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)
@@ -467,12 +445,13 @@ func TestHandleFinalize(t *testing.T) {
 	finalizer := &finalizerStub{}
 	auth := &AutherStub{userID: 1}
 
-	url := "/vote/finalize"
-	mux := testresolveError(handleFinalize(finalizer, auth))
+	handler := testresolveError(handleFinalize(finalizer, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/finalize", handler)
 
-	t.Run("No id", func(t *testing.T) {
+	t.Run("Invalid id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/finalize", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -481,7 +460,7 @@ func TestHandleFinalize(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -496,7 +475,7 @@ func TestHandleFinalize(t *testing.T) {
 		finalizer.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -519,7 +498,7 @@ func TestHandleFinalize(t *testing.T) {
 		finalizer.expectErr = nil
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1&publish", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize?publish", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK.\nBody: %s", resp.Result().Status, resp.Body.String())
@@ -534,7 +513,7 @@ func TestHandleFinalize(t *testing.T) {
 		finalizer.expectErr = nil
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1&anonymize", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize?anonymize", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK.\nBody: %s", resp.Result().Status, resp.Body.String())
@@ -562,21 +541,13 @@ func TestHandleReset(t *testing.T) {
 	reseter := &reseterStub{}
 	auth := &AutherStub{userID: 1}
 
-	url := "/system/vote/reset"
-	mux := testresolveError(handleReset(reseter, auth))
-
-	t.Run("No id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
+	handler := testresolveError(handleReset(reseter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/reset", handler)
 
 	t.Run("Invalid id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/reset", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -585,7 +556,7 @@ func TestHandleReset(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -604,7 +575,7 @@ func TestHandleReset(t *testing.T) {
 		reseter.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -627,7 +598,7 @@ func TestHandleReset(t *testing.T) {
 		reseter.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)
@@ -675,14 +646,15 @@ func TestHandleVote(t *testing.T) {
 	voter := &voterStub{}
 	auther := &AutherStub{}
 
-	url := "/system/vote"
-	mux := testresolveError(handleVote(voter, auther))
+	handler := testresolveError(handleVote(voter, auther))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/vote", handler)
 
-	t.Run("No id", func(t *testing.T) {
+	t.Run("Invalid id", func(t *testing.T) {
 		auther.userID = 5
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -693,7 +665,7 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = vote.ErrDoubleVote
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -716,7 +688,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = true
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -740,7 +712,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = false
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 401 {
 			t.Errorf("Got status %s, expected 401", resp.Result().Status)
@@ -765,7 +737,7 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = nil
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -786,8 +758,9 @@ func TestHandleVote(t *testing.T) {
 }
 
 func TestHandleHealth(t *testing.T) {
-	url := "/system/vote/health"
-	mux := handleHealth()
+	url := "/system/vote/poll/health"
+	mux := http.NewServeMux()
+	mux.Handle("GET /system/vote/poll/health", testresolveError(handleHealth()))
 
 	resp := httptest.NewRecorder()
 	mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))

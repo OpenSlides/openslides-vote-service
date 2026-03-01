@@ -95,21 +95,18 @@ type authenticater interface {
 }
 
 func registerHandlers(service voteService, auth authenticater, logger logger) *http.ServeMux {
-	const base = "/system/vote"
+	const base = "/system/vote/poll"
 
 	resolveError := getResolveError(logger)
-
 	mux := http.NewServeMux()
-
-	mux.Handle(base+"/create", resolveError(handleCreate(service, auth)))
-	mux.Handle(base+"/update", resolveError(handleUpdate(service, auth)))
-	mux.Handle(base+"/delete", resolveError(handleDelete(service, auth)))
-	mux.Handle(base+"/start", resolveError(handleStart(service, auth)))
-	mux.Handle(base+"/finalize", resolveError(handleFinalize(service, auth)))
-	mux.Handle(base+"/reset", resolveError(handleReset(service, auth)))
-	mux.Handle(base, resolveError(handleVote(service, auth)))
-	mux.Handle(base+"/health", resolveError(handleHealth()))
-
+	mux.Handle("POST "+base+"/", resolveError(handleCreate(service, auth)))
+	mux.Handle("POST "+base+"/{poll_id}", resolveError(handleUpdate(service, auth)))
+	mux.Handle("DELETE "+base+"/{poll_id}", resolveError(handleDelete(service, auth)))
+	mux.Handle("POST "+base+"/{poll_id}/start", resolveError(handleStart(service, auth)))
+	mux.Handle("POST "+base+"/{poll_id}/finalize", resolveError(handleFinalize(service, auth)))
+	mux.Handle("POST "+base+"/{poll_id}/reset", resolveError(handleReset(service, auth)))
+	mux.Handle("POST "+base+"/{poll_id}/vote", resolveError(handleVote(service, auth)))
+	mux.Handle("GET "+base+"/health", resolveError(handleHealth()))
 	return mux
 }
 
@@ -333,10 +330,7 @@ func HealthClient(ctx context.Context, useHTTPS bool, host, port string, insecur
 }
 
 func pollID(r *http.Request) (int, error) {
-	rawID := r.URL.Query().Get("id")
-	if rawID == "" {
-		return 0, fmt.Errorf("no id argument provided")
-	}
+	rawID := r.PathValue("poll_id")
 
 	id, err := strconv.Atoi(rawID)
 	if err != nil {
@@ -365,10 +359,6 @@ func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 // - returns the authenticated ctx and the request user id
 func prepareRequest(w http.ResponseWriter, r *http.Request, auth authenticater) (context.Context, int, error) {
 	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		return nil, 0, vote.MessageError(vote.ErrInvalid, "Only POST method is allowed")
-	}
 
 	ctx, err := auth.Authenticate(w, r)
 	if err != nil {
