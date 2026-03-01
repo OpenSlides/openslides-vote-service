@@ -112,6 +112,11 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
+	configID, err := saveConfig(ctx, tx, ci.Method, ci.Config)
+	if err != nil {
+		return 0, fmt.Errorf("save poll config: %w", err)
+	}
+
 	state := "created"
 	if ci.Visibility == "manually" {
 		state = "finished"
@@ -127,10 +132,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ctx,
 		sql,
 		ci.Title,
-		// Temporaty value to make postgres happy. Will be set later. This
-		// workaound can be removed, once this is fixed:
-		// https://github.com/OpenSlides/openslides-meta/issues/339
-		"poll_config_approval/0",
+		configID,
 		ci.Visibility,
 		state,
 		ci.ContentObjectID,
@@ -140,10 +142,6 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.AllowVoteSplit,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
-	}
-
-	if err := saveConfig(ctx, tx, newID, ci.Method, ci.Config); err != nil {
-		return 0, fmt.Errorf("save poll config: %w", err)
 	}
 
 	if len(ci.EntitledGroupIDs) > 0 {
@@ -173,25 +171,26 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	return newID, nil
 }
 
-func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, config json.RawMessage) error {
-	deleteStatements := []string{
-		`DELETE FROM poll_config_approval WHERE poll_id = $1`,
-		`DELETE FROM poll_config_selection WHERE poll_id = $1`,
-		`DELETE FROM poll_config_rating_score WHERE poll_id = $1`,
-		`DELETE FROM poll_config_rating_approval WHERE poll_id = $1`,
-	}
-	for _, sql := range deleteStatements {
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-			return fmt.Errorf("remove old config entries for poll %d: %w", pollID, err)
-		}
-	}
+// TODO: Move this function into the methods interface.
+func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+	// deleteStatements := []string{
+	// 	`DELETE FROM poll_config_approval WHERE poll_id = $1`,
+	// 	`DELETE FROM poll_config_selection WHERE poll_id = $1`,
+	// 	`DELETE FROM poll_config_rating_score WHERE poll_id = $1`,
+	// 	`DELETE FROM poll_config_rating_approval WHERE poll_id = $1`,
+	// }
+	// for _, sql := range deleteStatements {
+	// 	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+	// 		return fmt.Errorf("remove old config entries for poll %d: %w", pollID, err)
+	// 	}
+	// }
 
 	var configObjectID string
 	switch method {
 	case "approval":
 		var cfg methodApprovalConfig
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return errors.Join(
+			return "", errors.Join(
 				MessageError(ErrInvalid, "Invalid value for field 'config'"),
 				fmt.Errorf("parsing approval config: %w", err),
 			)
@@ -203,9 +202,9 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 		}
 
 		var configID int
-		sql := `INSERT INTO poll_config_approval (poll_id, allow_abstain) VALUES ($1, $2) RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, pollID, allowAbstain).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+		sql := `INSERT INTO poll_config_approval (allow_abstain) VALUES ($1) RETURNING id;`
+		if err := tx.QueryRow(ctx, sql, allowAbstain).Scan(&configID); err != nil {
+			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_approval/%d", configID)
@@ -217,7 +216,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			AllowNota        bool `json:"allow_nota"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return errors.Join(
+			return "", errors.Join(
 				fmt.Errorf("parsing selection config: %w", err),
 				MessageError(ErrInvalid, "Invalid value for field 'config'"),
 			)
@@ -225,17 +224,17 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 
 		var configID int
 		sql := `INSERT INTO poll_config_selection
-		(poll_id, max_options_amount, min_options_amount, allow_nota)
-		VALUES ($1, $2, $3, $4)
+		(max_options_amount, min_options_amount, allow_nota)
+		VALUES ($1, $2, $3)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, pollID, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
+			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_selection/%d", configID)
 
 		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
+			return "", fmt.Errorf("insert options: %w", err)
 		}
 
 	case "rating_score":
@@ -247,7 +246,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			MinVoteSum        int `json:"min_vote_sum"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return errors.Join(
+			return "", errors.Join(
 				fmt.Errorf("parsing rating score config: %w", err),
 				MessageError(ErrInvalid, "Invalid value for field 'config'"),
 			)
@@ -255,26 +254,25 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 
 		var configID int
 		sql := `INSERT INTO poll_config_rating_score
-		(poll_id, max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
 			sql,
-			pollID,
 			cfg.MaxOptionsAmount,
 			cfg.MinOptionsAmount,
 			cfg.MaxVotesPerOption,
 			cfg.MaxVoteSum,
 			cfg.MinVoteSum,
 		).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_score/%d", configID)
 
 		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
+			return "", fmt.Errorf("insert options: %w", err)
 		}
 
 	case "rating_approval":
@@ -284,7 +282,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 			AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
 		}
 		if err := json.Unmarshal(config, &cfg); err != nil {
-			return errors.Join(
+			return "", errors.Join(
 				fmt.Errorf("parsing rating approval config: %w", err),
 				MessageError(ErrInvalid, "Invalid value for field 'config'"),
 			)
@@ -297,33 +295,32 @@ func saveConfig(ctx context.Context, tx pgx.Tx, pollID int, method string, confi
 
 		var configID int
 		sql := `INSERT INTO poll_config_rating_approval
-		(poll_id, max_options_amount, min_options_amount, allow_abstain)
-		VALUES ($1, $2, $3, $4)
+		(max_options_amount, min_options_amount, allow_abstain)
+		VALUES ($1, $2, $3)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
 			sql,
-			pollID,
 			cfg.MaxOptionsAmount,
 			cfg.MinOptionsAmount,
 			allowAbstain,
 		).Scan(&configID); err != nil {
-			return fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_approval/%d", configID)
 
 		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-			return fmt.Errorf("insert options: %w", err)
+			return "", fmt.Errorf("insert options: %w", err)
 		}
 	}
 
-	sql := `UPDATE poll SET config_id = $2 WHERE id = $1`
-	if _, err := tx.Exec(ctx, sql, pollID, configObjectID); err != nil {
-		return fmt.Errorf("update config value of poll: %w", err)
-	}
+	// sql := `UPDATE poll SET config_id = $2 WHERE id = $1`
+	// if _, err := tx.Exec(ctx, sql, pollID, configObjectID); err != nil {
+	// 	return fmt.Errorf("update config value of poll: %w", err)
+	// }
 
-	return nil
+	return configObjectID, nil
 }
 
 func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string) error {
@@ -489,9 +486,14 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 			method = ui.Method
 		}
 
-		if err := saveConfig(ctx, tx, pollID, method, ui.Config); err != nil {
+		// TODO: Remove old config
+		newConfigID, err := saveConfig(ctx, tx, method, ui.Config)
+		if err != nil {
 			return fmt.Errorf("save poll config: %w", err)
 		}
+
+		// TODO: Update poll with new config id
+		_ = newConfigID
 	}
 
 	if len(ui.EntitledGroupIDs) > 0 {

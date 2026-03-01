@@ -80,7 +80,6 @@ func TestVoteNoRequests(t *testing.T) {
 		entitled_group_ids: [40]
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 	`
 

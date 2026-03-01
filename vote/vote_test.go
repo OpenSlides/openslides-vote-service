@@ -483,7 +483,6 @@ func TestVote(t *testing.T) {
 		meeting_id: 1
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 
 	poll/5:
@@ -548,7 +547,6 @@ func TestVoteWeight(t *testing.T) {
 				title: myPoll
 
 			poll_config_approval/77:
-				poll_id: 5
 				allow_abstain: true
 
 			meeting/1/id: 1
@@ -576,7 +574,6 @@ func TestVoteWeight(t *testing.T) {
 				title: myPoll
 
 			poll_config_approval/77:
-				poll_id: 5
 				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
@@ -604,7 +601,6 @@ func TestVoteWeight(t *testing.T) {
 				title: myPoll
 
 			poll_config_approval/77:
-				poll_id: 5
 				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
@@ -633,7 +629,6 @@ func TestVoteWeight(t *testing.T) {
 				title: myPoll
 
 			poll_config_approval/77:
-				poll_id: 5
 				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
@@ -663,7 +658,6 @@ func TestVoteWeight(t *testing.T) {
 				title: myPoll
 
 			poll_config_approval/77:
-				poll_id: 5
 				allow_abstain: true
 
 			meeting/1/users_enable_vote_weight: true
@@ -757,7 +751,6 @@ func TestVoteStart(t *testing.T) {
 
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 	`
 
@@ -865,7 +858,6 @@ func TestVoteFinalize(t *testing.T) {
 		entitled_group_ids: [40]
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 
 	ballot/1:
@@ -1000,7 +992,6 @@ func TestSecretPoll(t *testing.T) {
 		entitled_group_ids: [40]
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 	`
 
@@ -1133,7 +1124,6 @@ func TestVoteVote(t *testing.T) {
 		entitled_group_ids: [40]
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 	`
 
@@ -1254,6 +1244,10 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		name: delegates
 		meeting_id: 1
 
+	group/41:
+		name: some_group
+		meeting_id: 1
+
 	user:
 		5:
 			username: admin
@@ -1268,13 +1262,14 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		31:
 			user_id: 30
 			meeting_id: 1
+			group_ids: [41]
 
 		41:
 			user_id: 40
 			meeting_id: 1
+			group_ids: [41]
 
 	poll_config_approval/77:
-		poll_id: 5
 		allow_abstain: true
 
 	poll/5:
@@ -1286,7 +1281,6 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		meeting_id: 1
 		state: started
 		entitled_group_ids: [40]
-
 	`
 
 	for _, tt := range []struct {
