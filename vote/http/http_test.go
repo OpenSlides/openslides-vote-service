@@ -7,66 +7,74 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-type starterStub struct {
-	id        int
-	expectErr error
+type createrStub struct {
+	requestUserID int
+	body          string
+	pollID        int
+	expectErr     error
 }
 
-func (c *starterStub) Start(ctx context.Context, pollID int) error {
-	c.id = pollID
-	return c.expectErr
+func (c *createrStub) Create(ctx context.Context, requestUserID int, r io.Reader) (int, error) {
+	c.requestUserID = requestUserID
+
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return 0, err
+	}
+	c.body = string(body)
+
+	return c.pollID, c.expectErr
 }
 
-func TestHandleStart(t *testing.T) {
-	starter := &starterStub{}
+func TestHandleCreate(t *testing.T) {
+	creater := &createrStub{pollID: 42}
+	auth := &AutherStub{userID: 1}
 
-	url := "/vote/start"
-	mux := handleInternal(handleStart(starter))
-
-	t.Run("No id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
-
-	t.Run("Invalid id", func(t *testing.T) {
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=value", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
-		}
-	})
+	url := "/system/vote/poll/"
+	handler := testresolveError(handleCreate(creater, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/", handler)
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, strings.NewReader("create data")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if starter.id != 1 {
-			t.Errorf("Start was called with id %d, expected 1", starter.id)
+		if creater.requestUserID != 1 {
+			t.Errorf("Create was called with userID %d, expected 1", creater.requestUserID)
+		}
+
+		if creater.body != "create data" {
+			t.Errorf("Create was called with body `%s`, expected `create data`", creater.body)
+		}
+
+		var body struct {
+			PollID int `json:"poll_id"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.PollID != 42 {
+			t.Errorf("Got poll_id %d, expected 42", body.PollID)
 		}
 	})
 
-	t.Run("Exist error", func(t *testing.T) {
-		starter.expectErr = vote.ErrExists
+	t.Run("Error invalid", func(t *testing.T) {
+		creater.expectErr = vote.ErrInvalid
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, strings.NewReader("invalid data")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -80,16 +88,16 @@ func TestHandleStart(t *testing.T) {
 			t.Fatalf("decoding resp body: %v", err)
 		}
 
-		if body.Error != "exist" {
-			t.Errorf("Got error `%s`, expected `exist`", body.Error)
+		if body.Error != "invalid" {
+			t.Errorf("Got error `%s`, expected `invalid`", body.Error)
 		}
 	})
 
 	t.Run("Internal error", func(t *testing.T) {
-		starter.expectErr = errors.New("TEST_Error")
+		creater.expectErr = errors.New("test internal error")
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, strings.NewReader("data")))
 
 		if resp.Result().StatusCode != 500 {
 			t.Errorf("Got status %s, expected 500", resp.Result().Status)
@@ -108,73 +116,75 @@ func TestHandleStart(t *testing.T) {
 			t.Errorf("Got error `%s`, expected `internal`", body.Error)
 		}
 
-		if body.MSG != "TEST_Error" {
-			t.Errorf("Got error message `%s`, expected `TEST_Error`", body.MSG)
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
 		}
 	})
 }
 
-type stopperStub struct {
-	id        int
-	expectErr error
-
-	expectedVotes   [][]byte
-	expectedUserIDs []int
+type updaterStub struct {
+	pollID        int
+	requestUserID int
+	body          string
+	expectErr     error
 }
 
-func (s *stopperStub) Stop(ctx context.Context, pollID int) (vote.StopResult, error) {
-	s.id = pollID
+func (u *updaterStub) Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error {
+	u.pollID = pollID
+	u.requestUserID = requestUserID
 
-	if s.expectErr != nil {
-		return vote.StopResult{}, s.expectErr
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return err
 	}
+	u.body = string(body)
 
-	return vote.StopResult{
-		Votes:   s.expectedVotes,
-		UserIDs: s.expectedUserIDs,
-	}, nil
+	return u.expectErr
 }
 
-func TestHandleStop(t *testing.T) {
-	stopper := &stopperStub{}
+func TestHandleUpdate(t *testing.T) {
+	updater := &updaterStub{}
+	auth := &AutherStub{userID: 1}
 
-	url := "/vote/stop"
-	mux := handleInternal(handleStop(stopper))
+	handler := testresolveError(handleUpdate(updater, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}", handler)
 
-	t.Run("No id", func(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("update data")))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+
+		if updater.pollID != 1 {
+			t.Errorf("Update was called with pollID %d, expected 1", updater.pollID)
+		}
+
+		if updater.requestUserID != 1 {
+			t.Errorf("Update was called with userID %d, expected 1", updater.requestUserID)
+		}
+
+		if updater.body != "update data" {
+			t.Errorf("Update was called with body `%s`, expected `update data`", updater.body)
+		}
+	})
+
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
 		}
 	})
 
-	t.Run("Valid", func(t *testing.T) {
-		stopper.expectedVotes = [][]byte{[]byte(`"some values"`)}
+	t.Run("Error not exist", func(t *testing.T) {
+		updater.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
-
-		if resp.Result().StatusCode != 200 {
-			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
-		}
-
-		if stopper.id != 1 {
-			t.Errorf("Stopper was called with id %d, expected 1", stopper.id)
-		}
-
-		expect := `{"votes":["some values"],"user_ids":[]}`
-		if trimed := strings.TrimSpace(resp.Body.String()); trimed != expect {
-			t.Errorf("Got body:\n`%s`, expected:\n`%s`", trimed, expect)
-		}
-	})
-
-	t.Run("Not Exist error", func(t *testing.T) {
-		stopper.expectErr = vote.ErrNotExists
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("data")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -192,27 +202,155 @@ func TestHandleStop(t *testing.T) {
 			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
 		}
 	})
+
+	t.Run("Internal error", func(t *testing.T) {
+		updater.expectErr = errors.New("test internal error")
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1", strings.NewReader("data")))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+			MSG   string `json:"message"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "internal" {
+			t.Errorf("Got error `%s`, expected `internal`", body.Error)
+		}
+
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
+		}
+	})
 }
 
-type clearerStub struct {
+type deleterStub struct {
+	pollID        int
+	requestUserID int
+	expectErr     error
+}
+
+func (d *deleterStub) Delete(ctx context.Context, pollID int, requestUserID int) error {
+	d.pollID = pollID
+	d.requestUserID = requestUserID
+	return d.expectErr
+}
+
+func TestHandleDelete(t *testing.T) {
+	deleter := &deleterStub{}
+	auth := &AutherStub{userID: 1}
+
+	handler := testresolveError(handleDelete(deleter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("DELETE /system/vote/poll/{poll_id}", handler)
+
+	t.Run("Valid", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+
+		if deleter.pollID != 1 {
+			t.Errorf("Delete was called with pollID %d, expected 1", deleter.pollID)
+		}
+
+		if deleter.requestUserID != 1 {
+			t.Errorf("Delete was called with userID %d, expected 1", deleter.requestUserID)
+		}
+	})
+
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/notanumber", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
+		}
+	})
+
+	t.Run("Error not exist", func(t *testing.T) {
+		deleter.expectErr = vote.ErrNotExists
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-exist" {
+			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		}
+	})
+
+	t.Run("Internal error", func(t *testing.T) {
+		deleter.expectErr = errors.New("test internal error")
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/system/vote/poll/1", nil))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+			MSG   string `json:"message"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "internal" {
+			t.Errorf("Got error `%s`, expected `internal`", body.Error)
+		}
+
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
+		}
+	})
+}
+
+type starterStub struct {
 	id        int
 	expectErr error
 }
 
-func (c *clearerStub) Clear(ctx context.Context, pollID int) error {
+func (c *starterStub) Start(ctx context.Context, pollID int, requestUserID int) error {
 	c.id = pollID
 	return c.expectErr
 }
 
-func TestHandleClear(t *testing.T) {
-	clearer := &clearerStub{}
+func TestHandleStart(t *testing.T) {
+	starter := &starterStub{}
+	auth := &AutherStub{userID: 1}
 
-	url := "/vote/clear"
-	mux := handleInternal(handleClear(clearer))
+	handler := testresolveError(handleStart(starter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/start", handler)
 
-	t.Run("No id", func(t *testing.T) {
+	t.Run("Invalid id", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/start", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -221,22 +359,22 @@ func TestHandleClear(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
 
-		if clearer.id != 1 {
-			t.Errorf("Clearer was called with id %d, expected 1", clearer.id)
+		if starter.id != 1 {
+			t.Errorf("Start was called with id %d, expected 1", starter.id)
 		}
 	})
 
-	t.Run("Not Exist error", func(t *testing.T) {
-		clearer.expectErr = vote.ErrNotExists
+	t.Run("Error invalid", func(t *testing.T) {
+		starter.expectErr = vote.ErrInvalid
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -250,40 +388,94 @@ func TestHandleClear(t *testing.T) {
 			t.Fatalf("decoding resp body: %v", err)
 		}
 
-		if body.Error != "not-exist" {
-			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		if body.Error != "invalid" {
+			t.Errorf("Got error `%s`, expected `invalid`", body.Error)
+		}
+	})
+
+	t.Run("Internal error", func(t *testing.T) {
+		starter.expectErr = errors.New("test internal error")
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/start", strings.NewReader("request body")))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+			MSG   string `json:"message"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "internal" {
+			t.Errorf("Got error `%s`, expected `internal`", body.Error)
+		}
+
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
 		}
 	})
 }
 
-type clearAllerStub struct {
+type finalizerStub struct {
+	id        int
+	publish   bool
+	anonymize bool
 	expectErr error
 }
 
-func (c *clearAllerStub) ClearAll(ctx context.Context) error {
-	return c.expectErr
+func (s *finalizerStub) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
+	s.id = pollID
+	s.publish = publish
+	s.anonymize = anonymize
+
+	if s.expectErr != nil {
+		return s.expectErr
+	}
+
+	return nil
 }
 
-func TestHandleClearAll(t *testing.T) {
-	clearAller := &clearAllerStub{}
+func TestHandleFinalize(t *testing.T) {
+	finalizer := &finalizerStub{}
+	auth := &AutherStub{userID: 1}
 
-	url := "/vote/clear_all"
-	mux := handleInternal(handleClearAll(clearAller))
+	handler := testresolveError(handleFinalize(finalizer, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/finalize", handler)
+
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/finalize", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
+		}
+	})
 
 	t.Run("Valid", func(t *testing.T) {
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize", nil))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
 		}
+
+		if finalizer.id != 1 {
+			t.Errorf("Finanlizer was called with id %d, expected 1", finalizer.id)
+		}
 	})
 
 	t.Run("Not Exist error", func(t *testing.T) {
-		clearAller.expectErr = vote.ErrNotExists
+		finalizer.expectErr = vote.ErrNotExists
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -299,6 +491,134 @@ func TestHandleClearAll(t *testing.T) {
 
 		if body.Error != "not-exist" {
 			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		}
+	})
+
+	t.Run("Publish", func(t *testing.T) {
+		finalizer.expectErr = nil
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize?publish", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK.\nBody: %s", resp.Result().Status, resp.Body.String())
+		}
+
+		if !finalizer.publish {
+			t.Errorf("Finanlizer was not called with publish")
+		}
+	})
+
+	t.Run("Anonymize", func(t *testing.T) {
+		finalizer.expectErr = nil
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/finalize?anonymize", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK.\nBody: %s", resp.Result().Status, resp.Body.String())
+		}
+
+		if !finalizer.anonymize {
+			t.Errorf("Finanlizer was not called with anonymize")
+		}
+	})
+}
+
+type reseterStub struct {
+	pollID        int
+	requestUserID int
+	expectErr     error
+}
+
+func (r *reseterStub) Reset(ctx context.Context, pollID int, requestUserID int) error {
+	r.pollID = pollID
+	r.requestUserID = requestUserID
+	return r.expectErr
+}
+
+func TestHandleReset(t *testing.T) {
+	reseter := &reseterStub{}
+	auth := &AutherStub{userID: 1}
+
+	handler := testresolveError(handleReset(reseter, auth))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/reset", handler)
+
+	t.Run("Invalid id", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/reset", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
+		}
+	})
+
+	t.Run("Valid", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
+
+		if resp.Result().StatusCode != 200 {
+			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
+		}
+
+		if reseter.pollID != 1 {
+			t.Errorf("Reset was called with pollID %d, expected 1", reseter.pollID)
+		}
+
+		if reseter.requestUserID != 1 {
+			t.Errorf("Reset was called with userID %d, expected 1", reseter.requestUserID)
+		}
+	})
+
+	t.Run("Error not exist", func(t *testing.T) {
+		reseter.expectErr = vote.ErrNotExists
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
+
+		if resp.Result().StatusCode != 400 {
+			t.Errorf("Got status %s, expected 400", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "not-exist" {
+			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
+		}
+	})
+
+	t.Run("Internal error", func(t *testing.T) {
+		reseter.expectErr = errors.New("test internal error")
+
+		resp := httptest.NewRecorder()
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/reset", nil))
+
+		if resp.Result().StatusCode != 500 {
+			t.Errorf("Got status %s, expected 500", resp.Result().Status)
+		}
+
+		var body struct {
+			Error string `json:"error"`
+			MSG   string `json:"message"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding resp body: %v", err)
+		}
+
+		if body.Error != "internal" {
+			t.Errorf("Got error `%s`, expected `internal`", body.Error)
+		}
+
+		if body.MSG != "Ups, something went wrong!" {
+			t.Errorf("Got error message `%s`, expected `Ups, something went wrong!`", body.MSG)
 		}
 	})
 }
@@ -310,9 +630,9 @@ type voterStub struct {
 	expectErr error
 }
 
-func (v *voterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Reader) error {
+func (v *voterStub) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader) error {
 	v.id = pollID
-	v.user = requestUser
+	v.user = requestUserID
 
 	body, err := io.ReadAll(r)
 	if err != nil {
@@ -322,44 +642,19 @@ func (v *voterStub) Vote(ctx context.Context, pollID, requestUser int, r io.Read
 	return v.expectErr
 }
 
-type AuthError struct{}
-
-func (AuthError) Error() string {
-	return `{"error":"auth","message":"auth error"}`
-}
-
-func (AuthError) Type() string {
-	return "auth"
-}
-
-type autherStub struct {
-	userID  int
-	authErr bool
-}
-
-func (a *autherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
-	if a.authErr {
-		return nil, AuthError{}
-	}
-	return r.Context(), nil
-}
-
-func (a *autherStub) FromContext(context.Context) int {
-	return a.userID
-}
-
 func TestHandleVote(t *testing.T) {
 	voter := &voterStub{}
-	auther := &autherStub{}
+	auther := &AutherStub{}
 
-	url := "/system/vote"
-	mux := handleExternal(handleVote(voter, auther))
+	handler := testresolveError(handleVote(voter, auther))
+	mux := http.NewServeMux()
+	mux.Handle("POST /system/vote/poll/{poll_id}/vote", handler)
 
-	t.Run("No id", func(t *testing.T) {
+	t.Run("Invalid id", func(t *testing.T) {
 		auther.userID = 5
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url, nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/notanumber/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400 - Bad Request", resp.Result().Status)
@@ -370,7 +665,7 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = vote.ErrDoubleVote
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -393,7 +688,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = true
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 400 {
 			t.Errorf("Got status %s, expected 400", resp.Result().Status)
@@ -417,7 +712,7 @@ func TestHandleVote(t *testing.T) {
 		auther.authErr = false
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", nil))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", nil))
 
 		if resp.Result().StatusCode != 401 {
 			t.Errorf("Got status %s, expected 401", resp.Result().Status)
@@ -442,7 +737,7 @@ func TestHandleVote(t *testing.T) {
 		voter.expectErr = nil
 
 		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("POST", url+"?id=1", strings.NewReader("request body")))
+		mux.ServeHTTP(resp, httptest.NewRequest("POST", "/system/vote/poll/1/vote", strings.NewReader("request body")))
 
 		if resp.Result().StatusCode != 200 {
 			t.Errorf("Got status %s, expected 200 - OK", resp.Result().Status)
@@ -462,316 +757,10 @@ func TestHandleVote(t *testing.T) {
 	})
 }
 
-type votederStub struct {
-	pollIDs    []int
-	user       int
-	expectVote map[int][]int
-	expectErr  error
-}
-
-func (v *votederStub) Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error) {
-	v.pollIDs = pollIDs
-	v.user = requestUser
-
-	if v.expectErr != nil {
-		return nil, v.expectErr
-	}
-	return v.expectVote, nil
-}
-
-func TestHandleVoted(t *testing.T) {
-	voted := &votederStub{}
-	auther := &autherStub{}
-
-	url := "/system/vote/voted"
-	mux := handleExternal(handleVoted(voted, auther))
-
-	t.Run("No polls given", func(t *testing.T) {
-		auther.userID = 5
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400", resp.Result().Status)
-		}
-	})
-
-	t.Run("Wrong polls value", func(t *testing.T) {
-		auther.userID = 5
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=foo", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400", resp.Result().Status)
-		}
-	})
-
-	t.Run("Auth error", func(t *testing.T) {
-		auther.authErr = true
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400", resp.Result().Status)
-		}
-
-		var body struct {
-			Error string `json:"error"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decoding resp body: %v", err)
-		}
-
-		if body.Error != "auth" {
-			t.Errorf("Got error `%s`, expected `auth`", body.Error)
-		}
-	})
-
-	t.Run("Anonymous", func(t *testing.T) {
-		auther.authErr = false
-		auther.userID = 0
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1", nil))
-
-		if resp.Result().StatusCode != 401 {
-			t.Errorf("Got status %s, expected 401", resp.Result().Status)
-		}
-
-		var body struct {
-			Error string `json:"error"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decoding resp body: %v", err)
-		}
-
-		if body.Error != "not-allowed" {
-			t.Errorf("Got error `%s`, expected `not-allowed`", body.Error)
-		}
-	})
-
-	t.Run("Correct", func(t *testing.T) {
-		auther.userID = 5
-		auther.authErr = false
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1,2", nil))
-
-		if resp.Result().StatusCode != 200 {
-			t.Errorf("Got status %s, expected 200", resp.Result().Status)
-		}
-
-		if len(voted.pollIDs) != 2 || voted.pollIDs[0] != 1 || voted.pollIDs[1] != 2 {
-			t.Errorf("Voted was called with pollIDs %v, expected [1,2]", voted.pollIDs)
-		}
-	})
-
-	t.Run("Voted Error", func(t *testing.T) {
-		auther.userID = 5
-		auther.authErr = false
-		voted.expectErr = vote.ErrNotExists
-
-		resp := httptest.NewRecorder()
-		mux.ServeHTTP(resp, httptest.NewRequest("GET", url+"?ids=1,2", nil))
-
-		if resp.Result().StatusCode != 400 {
-			t.Errorf("Got status %s, expected 400", resp.Result().Status)
-		}
-
-		var body struct {
-			Error string `json:"error"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decoding resp body: %v", err)
-		}
-
-		if body.Error != "not-exist" {
-			t.Errorf("Got error `%s`, expected `not-exist`", body.Error)
-		}
-	})
-}
-
-type allLiveVotesStub struct {
-	expectCount map[int]map[int]*string
-}
-
-func (v *allLiveVotesStub) AllLiveVotes(ctx context.Context) map[int]map[int]*string {
-	return v.expectCount
-}
-
-func TestHandleAllVotedIDs_first_data(t *testing.T) {
-	voteCounter := &allLiveVotesStub{}
-
-	eventer := func() (<-chan time.Time, func()) {
-		return make(chan time.Time), func() {}
-	}
-
-	mux := handleAllVotedIDs(voteCounter, eventer)
-
-	ctx := t.Context()
-
-	url := "/vote/live_votes"
-	resp := httptest.NewRecorder()
-	voteStr := "vote"
-	voteCounter.expectCount = map[int]map[int]*string{1: {1: &voteStr, 2: nil, 3: nil}, 2: {4: nil, 5: nil, 6: nil}}
-
-	// TODO: find a better way then a timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
-
-	mux.ServeHTTP(resp, req)
-
-	if resp.Result().StatusCode != 200 {
-		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
-	}
-
-	var got map[int]map[int]*string
-	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-
-	if !reflect.DeepEqual(got, voteCounter.expectCount) {
-		t.Errorf("Got %v, expected %v", got, voteCounter.expectCount)
-	}
-}
-
-func TestHandleAllVotedIDs_first_data_empty(t *testing.T) {
-	voteCounter := &allLiveVotesStub{}
-
-	eventer := func() (<-chan time.Time, func()) {
-		return make(chan time.Time), func() {}
-	}
-
-	mux := handleAllVotedIDs(voteCounter, eventer)
-
-	ctx := t.Context()
-
-	url := "/vote/vote_count"
-	resp := httptest.NewRecorder()
-	voteCounter.expectCount = map[int]map[int]*string{}
-
-	// TODO: find a better way then a timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
-	mux.ServeHTTP(resp, req)
-
-	if resp.Result().StatusCode != 200 {
-		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
-	}
-
-	var got map[int]map[int]*string
-	if err := json.NewDecoder(resp.Result().Body).Decode(&got); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-
-	if !reflect.DeepEqual(got, voteCounter.expectCount) {
-		t.Errorf("Got %v, expected %v", got, voteCounter.expectCount)
-	}
-}
-
-func TestHandleAllVotedIDs_second_data(t *testing.T) {
-	voteCounter := &allLiveVotesStub{}
-
-	event := make(chan time.Time, 1)
-	eventer := func() (<-chan time.Time, func()) {
-		return event, func() {}
-	}
-
-	mux := handleAllVotedIDs(voteCounter, eventer)
-
-	ctx := context.Background()
-
-	vote1Str := "vote"
-	vote2Str := "vote2"
-
-	data := []map[int]map[int]*string{
-		{1: {1: nil, 2: nil}, 2: {20: &vote1Str}},
-		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // Change only 1
-		{1: {1: nil, 2: nil, 3: nil}, 2: {20: &vote1Str}}, // No Change
-		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 2
-		{1: {1: nil, 2: nil, 3: nil}, 3: {30: &vote2Str}}, // Add 3
-		{1: {1: nil, 2: nil, 3: nil}},                     // Remove 3 (that was not there at the beginning)
-	}
-
-	url := "/vote/vote_count"
-	resp := httptest.NewRecorder()
-
-	// TODO: find a better way then a timeout
-	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(reqCtx, "GET", url, nil)
-
-	voteCounter.expectCount = data[0]
-	i := 0
-	flushResp := onFlush{resp, func() {
-		i++
-		if i >= len(data) {
-			close(event)
-			return
-		}
-		voteCounter.expectCount = data[i]
-		event <- time.Now()
-	}}
-
-	mux.ServeHTTP(flushResp, req)
-
-	if resp.Result().StatusCode != 200 {
-		t.Fatalf("Got status %s, expected 200", resp.Result().Status)
-	}
-
-	expect := []map[int]map[int]string{
-		{1: {1: "", 2: ""}, 2: {20: "vote"}},
-		{1: {3: ""}},
-		{2: nil},
-		{3: {30: "vote2"}},
-		{3: nil},
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	for i := range expect {
-		var got map[int]map[int]*string
-		if err := decoder.Decode(&got); err != nil {
-			if err == io.EOF {
-				t.Errorf("Got %d packages, expected %d", i, len(expect))
-				break
-			}
-			t.Fatalf("decoding: %v", err)
-		}
-
-		if !reflect.DeepEqual(resolvePointers(got), expect[i]) {
-			t.Errorf("Data %d: Got %v, expected %v", i+1, got, expect[i])
-		}
-	}
-}
-
-func resolvePointers(in map[int]map[int]*string) map[int]map[int]string {
-	out := make(map[int]map[int]string)
-	for pollID, user2Vote := range in {
-		if user2Vote == nil {
-			out[pollID] = nil
-			continue
-		}
-		out[pollID] = make(map[int]string)
-		for userID, vote := range user2Vote {
-			if vote == nil {
-				out[pollID][userID] = ""
-				continue
-			}
-			out[pollID][userID] = *vote
-		}
-	}
-	return out
-}
-
 func TestHandleHealth(t *testing.T) {
 	url := "/system/vote/health"
-	mux := handleHealth()
+	mux := http.NewServeMux()
+	mux.Handle("GET /system/vote/health", testresolveError(handleHealth()))
 
 	resp := httptest.NewRecorder()
 	mux.ServeHTTP(resp, httptest.NewRequest("GET", url, nil))
@@ -786,14 +775,31 @@ func TestHandleHealth(t *testing.T) {
 	}
 }
 
-type onFlush struct {
-	http.ResponseWriter
-	f func()
+type AuthError struct{}
+
+func (AuthError) Error() string {
+	return `auth error`
 }
 
-func (f onFlush) Flush() {
-	f.f()
-	if flusher, ok := f.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
+func (AuthError) Type() string {
+	return "auth"
 }
+
+// AutherSub fakes auth
+type AutherStub struct {
+	userID  int
+	authErr bool
+}
+
+func (a *AutherStub) Authenticate(w http.ResponseWriter, r *http.Request) (context.Context, error) {
+	if a.authErr {
+		return nil, AuthError{}
+	}
+	return r.Context(), nil
+}
+
+func (a *AutherStub) FromContext(context.Context) int {
+	return a.userID
+}
+
+var testresolveError = getResolveError(func(fmt string, a ...any) (int, error) { return 0, nil })

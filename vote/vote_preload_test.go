@@ -1,20 +1,222 @@
-package vote
+package vote_test
 
 import (
-	"bytes"
-	"context"
-	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/OpenSlides/openslides-go/datastore/cache"
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmock"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
+	"github.com/OpenSlides/openslides-go/datastore/pgtest"
+	"github.com/OpenSlides/openslides-go/environment"
+	"github.com/OpenSlides/openslides-vote-service/vote"
 )
+
+func TestVoteNoRequests(t *testing.T) {
+	// This tests makes sure, that a request to vote does not do any reading
+	// from the database. All values have to be in the cache from pollpreload.
+
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	baseData := `
+	meeting/1/users_enable_vote_delegations: true
+
+	motion/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my motion
+		state_id: 1
+
+	list_of_speakers/7:
+		content_object_id: motion/5
+		sequential_number: 1
+		meeting_id: 1
+
+	group/40:
+		name: delegates
+		meeting_id: 1
+
+	user:
+		5:
+			username: admin
+			organization_management_level: superadmin
+		30:
+			username: tom
+
+		40:
+			username: georg
+
+	meeting_user:
+		31:
+			user_id: 30
+			meeting_id: 1
+
+		41:
+			user_id: 40
+			meeting_id: 1
+
+	poll/5:
+		title: normal poll
+		config_id: poll_config_approval/77
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/5
+		meeting_id: 1
+		state: created
+		entitled_group_ids: [40]
+
+	poll_config_approval/77:
+		allow_abstain: true
+	`
+
+	for _, tt := range []struct {
+		name                           string
+		data                           string
+		vote                           string
+		expectRepresentedMeetingUserID int
+	}{
+		{
+			"normal vote",
+			`---
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+
+			`,
+			`{"value":"Yes"}`,
+			31,
+		},
+		{
+			"delegation vote",
+			`---
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user:
+				41:
+					group_ids: [40]
+					vote_delegated_to_id: 31
+
+			`,
+			`{"meeting_user_id":41,"value":"Yes"}`,
+			41,
+		},
+		{
+			"vote weight enabled",
+			`---
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user/31:
+				group_ids: [40]
+
+			meeting/1:
+				users_enable_vote_weight: true
+			`,
+			`{"value":"Yes"}`,
+			31,
+		},
+		{
+			"vote weight enabled and delegated",
+			`---
+			meeting/1:
+				users_enable_vote_weight: true
+
+			user/30:
+				is_present_in_meeting_ids: [1]
+
+			meeting_user:
+				41:
+					group_ids: [40]
+					vote_delegated_to_id: 31
+			`,
+			`{"meeting_user_id":41,"value":"Yes"}`,
+			41,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pg.Cleanup(t)
+
+			if err := pg.AddData(ctx, baseData); err != nil {
+				t.Fatalf("Error: Insert base data: %v", err)
+			}
+
+			if err := pg.AddData(ctx, tt.data); err != nil {
+				t.Fatalf("Error: Inserting data: %v", err)
+			}
+
+			flow, err := pg.Flow()
+			if err != nil {
+				t.Fatalf("Error getting flow: %v", err)
+			}
+			defer flow.Close()
+
+			counter := dsmock.NewCounterFlow(flow)
+			cache := cache.New(counter)
+
+			conn, err := pg.Conn(ctx)
+			if err != nil {
+				t.Fatalf("Error getting connection: %v", err)
+			}
+			defer conn.Close(ctx)
+
+			service, _, err := vote.New(environment.ForTests{}, cache, conn)
+			if err != nil {
+				t.Fatalf("Error creating vote: %v", err)
+			}
+
+			if err := service.Start(ctx, 5, 5); err != nil {
+				t.Fatalf("Start poll: %v", err)
+			}
+			counter.Reset()
+
+			if err := service.Vote(ctx, 5, 30, strings.NewReader(tt.vote)); err != nil {
+				t.Fatalf("Vote returned unexpected error: %v", err)
+			}
+
+			if counter.Count() != 0 {
+				t.Errorf("Vote send %d requests to the datastore:\n%s", counter.Count(), counter.PrintRequests())
+			}
+
+			ds := dsmodels.New(counter) // Use the counter here to skip the cache
+			q := ds.Poll(5)
+			q = q.Preload(q.BallotList())
+			poll, err := q.First(ctx)
+			if err != nil {
+				t.Fatalf("Error: Getting votes from poll: %v", err)
+			}
+			found := slices.ContainsFunc(poll.BallotList, func(ballot dsmodels.Ballot) bool {
+				meetingUserID, _ := ballot.RepresentedMeetingUserID.Value()
+				return meetingUserID == tt.expectRepresentedMeetingUserID
+			})
+
+			if !found {
+				t.Errorf("user %d has not voted", tt.expectRepresentedMeetingUserID)
+			}
+		})
+	}
+}
 
 func TestPreload(t *testing.T) {
 	// Tests, that the preload function needs a specific number of requests to
 	// postgres.
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tt := range []struct {
 		name        string
@@ -24,172 +226,282 @@ func TestPreload(t *testing.T) {
 		{
 			"one user",
 			`---
-			meeting/5/id: 5
-			poll/1:
-				meeting_id: 5
-				entitled_group_ids: [30]
-				pollmethod: Y
-				global_yes: true
-				backend: fast
-				type: pseudoanonymous
-				content_object_id: some_field/1
+			meeting/1/users_enable_vote_delegations: true
+
+			motion/5:
+				meeting_id: 1
 				sequential_number: 1
-				onehundred_percent_base: base
-				title: myPoll
+				title: my motion
+				state_id: 1
 
-			group/30/meeting_user_ids: [500]
+			list_of_speakers/7:
+				content_object_id: motion/5
+				sequential_number: 1
+				meeting_id: 1
 
-			user/50:
-				is_present_in_meeting_ids: [5]
+			group/40:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [30]
 
-			meeting_user/500:
-				group_ids: [31]
-				user_id: 50
-				meeting_id: 5
+			user:
+				5:
+					username: admin
+					organization_management_level: superadmin
+				30:
+					organization_id: 1
+					username: tom
+
+			meeting_user:
+				30:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 40
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			3,
+			5,
 		},
 
 		{
 			"Many groups",
 			`---
-			meeting/5/id: 5
-			poll/1:
-				meeting_id: 5
-				entitled_group_ids: [30,31]
-				pollmethod: Y
-				global_yes: true
-				backend: fast
-				type: pseudoanonymous
-				content_object_id: some_field/1
-				sequential_number: 1
-				onehundred_percent_base: base
-				title: myPoll
+			meeting/1/users_enable_vote_delegations: true
 
-			group/30/meeting_user_ids: [500]
-			group/31/meeting_user_ids: [500]
+			motion/5:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			list_of_speakers/7:
+				content_object_id: motion/5
+				sequential_number: 1
+				meeting_id: 1
+
+			group/40:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [30]
+			group/41:
+				name: delegates2
+				meeting_id: 1
+				meeting_user_ids: [30]
 
 			user:
-				50:
-					is_present_in_meeting_ids: [5]
+				5:
+					username: admin
+					organization_management_level: superadmin
+					organization_id: 1
+				30:
+					username: tom
+					organization_id: 1
 
-			meeting_user/500:
-				user_id: 50
-				group_ids: [30]
-				meeting_id: 5
+			meeting_user:
+				30:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 40
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			3,
+			5,
 		},
 
 		{
 			"Many users",
 			`---
-			meeting/5/id: 5
-			poll/1:
-				meeting_id: 5
-				entitled_group_ids: [30]
-				pollmethod: Y
-				global_yes: true
-				backend: fast
-				type: pseudoanonymous
-				content_object_id: some_field/1
-				sequential_number: 1
-				onehundred_percent_base: base
-				title: myPoll
+			meeting/1/users_enable_vote_delegations: true
 
-			group/30/meeting_user_ids: [500,510]
+			motion/5:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			list_of_speakers/7:
+				content_object_id: motion/5
+				sequential_number: 1
+				meeting_id: 1
+
+			group/40:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [30,31]
 
 			user:
-				50:
-					is_present_in_meeting_ids: [5]
-
-				51:
-					is_present_in_meeting_ids: [5]
+				5:
+					username: admin
+					organization_management_level: superadmin
+					organization_id: 1
+				30:
+					username: tom
+					organization_id: 1
+				31:
+					username: gregor
+					organization_id: 1
 
 			meeting_user:
-				500:
-					user_id: 50
-					meeting_id: 5
-					group_ids: [7]
-				510:
-					user_id: 51
-					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+				30:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 40
+				31:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 40
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			3,
+			5,
 		},
 
 		{
 			"Many users in different groups",
 			`---
-			meeting/5/id: 5
-			poll/1:
-				meeting_id: 5
-				entitled_group_ids: [30, 31]
-				pollmethod: Y
-				global_yes: true
-				backend: fast
-				type: pseudoanonymous
-				content_object_id: some_field/1
-				sequential_number: 1
-				onehundred_percent_base: base
-				title: myPoll
+			meeting/1/users_enable_vote_delegations: true
 
-			group/30/meeting_user_ids: [500]
-			group/31/meeting_user_ids: [510]
+			motion/5:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			list_of_speakers/7:
+				content_object_id: motion/5
+				sequential_number: 1
+				meeting_id: 1
+
+			group/40:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [30]
+
+			group/41:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [31]
 
 			user:
-				50:
-					is_present_in_meeting_ids: [5]
-
-				51:
-					is_present_in_meeting_ids: [5]
+				5:
+					username: admin
+					organization_management_level: superadmin
+					organization_id: 1
+				30:
+					username: tom
+					organization_id: 1
+				31:
+					username: gregor
+					organization_id: 1
 
 			meeting_user:
-				500:
-					user_id: 50
-					meeting_id: 5
-					group_ids: [7]
-				510:
-					user_id: 51
-					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+				30:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 40
+				31:
+					user_id: 30
+					meeting_id: 1
+					group_ids: 41
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			3,
+			5,
 		},
 
 		{
 			"Many users in different groups with delegation",
 			`---
-			meeting/5/id: 5
-			poll/1:
-				meeting_id: 5
-				entitled_group_ids: [30, 31]
-				pollmethod: Y
-				global_yes: true
-				backend: fast
-				type: pseudoanonymous
-				content_object_id: some_field/1
-				sequential_number: 1
-				onehundred_percent_base: base
-				title: myPoll
+			meeting/1/users_enable_vote_delegations: true
 
-			group/30/meeting_user_ids: [500]
-			group/31/meeting_user_ids: [510]
+			motion/5:
+				meeting_id: 1
+				sequential_number: 1
+				title: my motion
+				state_id: 1
+
+			list_of_speakers/7:
+				content_object_id: motion/5
+				sequential_number: 1
+				meeting_id: 1
+
+			group/40:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [500]
+
+			group/41:
+				name: delegates
+				meeting_id: 1
+				meeting_user_ids: [510]
 
 			user:
 				50:
+					username: user50
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				51:
+					username: user51
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				52:
+					username: user52
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 				53:
+					username: user53
+					organization_id: 1
 					is_present_in_meeting_ids: [5]
 
 			meeting_user:
@@ -197,47 +509,44 @@ func TestPreload(t *testing.T) {
 					user_id: 50
 					vote_delegated_to_id: 520
 					meeting_id: 5
-					group_ids: [7]
 				510:
 					user_id: 51
 					vote_delegated_to_id: 530
 					meeting_id: 5
-					group_ids: [7]
 				520:
 					user_id: 52
 					meeting_id: 5
-					group_ids: [7]
 				530:
 					user_id: 53
 					meeting_id: 5
-					group_ids: [7]
-			group/7/id: 7
+
+			poll/5:
+				title: normal poll
+				config_id: poll_config_approval/77
+				visibility: open
+				sequential_number: 1
+				content_object_id: motion/5
+				meeting_id: 1
+				state: created
+				entitled_group_ids: [40,41]
+
+			poll_config_approval/77:
+				poll_id: 5
+				allow_abstain: true
 			`,
-			4,
+			6,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dsCount := dsmock.NewCounter(dsmock.Stub(dsmock.YAMLData(tt.data)))
 			ds := dsmock.NewCache(dsCount)
-			fetcher := dsmodels.New(ds)
 
-			poll, err := fetcher.Poll(1).First(ctx)
-			if err != nil {
-				t.Fatalf("loadPoll returned: %v", err)
-			}
-
-			dsCount.Reset()
-
-			if err := preload(ctx, dsfetch.New(ds), poll); err != nil {
+			if err := vote.Preload(ctx, dsfetch.New(ds), 5, 1); err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 
 			if got := dsCount.Count(); got != tt.expectCount {
-				buf := new(bytes.Buffer)
-				for _, req := range dsCount.Requests() {
-					fmt.Fprintln(buf, req)
-				}
-				t.Errorf("preload send %d requests, expected %d:\n%s", got, tt.expectCount, buf)
+				t.Errorf("preload send %d requests, expected %d:\n%s", got, tt.expectCount, dsCount.PrintRequests())
 			}
 		})
 	}
