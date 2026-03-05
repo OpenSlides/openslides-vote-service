@@ -184,15 +184,15 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 
 	var configObjectID string
 	switch cfg := config.(type) {
-	case methodApprovalConfig:
+	case approvalInputConfig:
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
 		}
 
 		var configID int
-		sql := `INSERT INTO poll_config_approval (allow_abstain) VALUES ($1) RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, allowAbstain).Scan(&configID); err != nil {
+		sql := `INSERT INTO poll_config_approval (allow_abstain, onehundred_percent_base) VALUES ($1, $2) RETURNING id;`
+		if err := tx.QueryRow(ctx, sql, allowAbstain, cfg.OnehundredPercentBase).Scan(&configID); err != nil {
 			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
@@ -201,10 +201,10 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 	case selectionInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_selection
-		(max_options_amount, min_options_amount, allow_nota)
-		VALUES ($1, $2, $3)
+		(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
+		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota, cfg.StrikeOut, cfg.OnehundredPercentBase).Scan(&configID); err != nil {
 			return "", fmt.Errorf("save selection config: %w", err)
 		}
 
@@ -217,8 +217,8 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 	case ratingScoreInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_rating_score
-		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
-		VALUES ($1, $2, $3, $4, $5)
+		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
@@ -228,6 +228,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 			cfg.MaxVotesPerOption,
 			cfg.MaxVoteSum,
 			cfg.MinVoteSum,
+			cfg.OnehundredPercentBase,
 		).Scan(&configID); err != nil {
 			return "", fmt.Errorf("save rating score config: %w", err)
 		}
@@ -246,8 +247,8 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 
 		var configID int
 		sql := `INSERT INTO poll_config_rating_approval
-		(max_options_amount, min_options_amount, allow_abstain)
-		VALUES ($1, $2, $3)
+		(max_options_amount, min_options_amount, allow_abstain, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
@@ -255,6 +256,7 @@ func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 			cfg.MaxOptionsAmount,
 			cfg.MinOptionsAmount,
 			allowAbstain,
+			cfg.OnehundredPercentBase,
 		).Scan(&configID); err != nil {
 			return "", fmt.Errorf("save rating approval config: %w", err)
 		}
@@ -323,30 +325,39 @@ func insertOption(ctx context.Context, tx pgx.Tx, optionType string, options []a
 	return nil
 }
 
+type approvalInputConfig struct {
+	AllowAbstain          dsfetch.Maybe[bool] `json:"allow_abstain"`
+	OnehundredPercentBase string              `json:"onehundred_percent_base"`
+}
+
 type selectionInputConfig struct {
-	MaxOptionsAmount int    `json:"max_options_amount"`
-	MinOptionsAmount int    `json:"min_options_amount"`
-	AllowNota        bool   `json:"allow_nota"`
-	OptionType       string `json:"option_type"`
-	Options          []any  `json:"options"`
+	MaxOptionsAmount      int    `json:"max_options_amount"`
+	MinOptionsAmount      int    `json:"min_options_amount"`
+	AllowNota             bool   `json:"allow_nota"`
+	StrikeOut             bool   `json:"strike_out"`
+	OnehundredPercentBase string `json:"onehundred_percent_base"`
+	OptionType            string `json:"option_type"`
+	Options               []any  `json:"options"`
 }
 
 type ratingScoreInputConfig struct {
-	MaxOptionsAmount  int    `json:"max_options_amount"`
-	MinOptionsAmount  int    `json:"min_options_amount"`
-	MaxVotesPerOption int    `json:"max_votes_per_option"`
-	MaxVoteSum        int    `json:"max_vote_sum"`
-	MinVoteSum        int    `json:"min_vote_sum"`
-	OptionType        string `json:"option_type"`
-	Options           []any  `json:"options"`
+	MaxOptionsAmount      int    `json:"max_options_amount"`
+	MinOptionsAmount      int    `json:"min_options_amount"`
+	MaxVotesPerOption     int    `json:"max_votes_per_option"`
+	MaxVoteSum            int    `json:"max_vote_sum"`
+	MinVoteSum            int    `json:"min_vote_sum"`
+	OnehundredPercentBase string `json:"onehundred_percent_base"`
+	OptionType            string `json:"option_type"`
+	Options               []any  `json:"options"`
 }
 
 type ratingApprovalInputConfig struct {
-	MaxOptionsAmount int                 `json:"max_options_amount"`
-	MinOptionsAmount int                 `json:"min_options_amount"`
-	AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
-	OptionType       string              `json:"option_type"`
-	Options          []any               `json:"options"`
+	MaxOptionsAmount      int                 `json:"max_options_amount"`
+	MinOptionsAmount      int                 `json:"min_options_amount"`
+	AllowAbstain          dsfetch.Maybe[bool] `json:"allow_abstain"`
+	OnehundredPercentBase string              `json:"onehundred_percent_base"`
+	OptionType            string              `json:"option_type"`
+	Options               []any               `json:"options"`
 }
 
 type createInput struct {
@@ -365,7 +376,7 @@ type createInput struct {
 func parseConfigJSON(method string, raw json.RawMessage) (any, error) {
 	switch method {
 	case "approval":
-		var cfg methodApprovalConfig
+		var cfg approvalInputConfig
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return nil, errors.Join(
 				fmt.Errorf("parsing approval config: %w", err),
