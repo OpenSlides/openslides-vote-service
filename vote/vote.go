@@ -109,7 +109,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	configID, err := saveConfig(ctx, tx, ci.Method, ci.Config)
+	configID, err := saveConfig(ctx, tx, ci.Config)
 	if err != nil {
 		return 0, fmt.Errorf("save poll config: %w", err)
 	}
@@ -169,7 +169,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 }
 
 // TODO: Move this function into the methods interface.
-func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 	// deleteStatements := []string{
 	// 	`DELETE FROM poll_config_approval WHERE poll_id = $1`,
 	// 	`DELETE FROM poll_config_selection WHERE poll_id = $1`,
@@ -183,16 +183,8 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 	// }
 
 	var configObjectID string
-	switch method {
-	case "approval":
-		var cfg methodApprovalConfig
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-				fmt.Errorf("parsing approval config: %w", err),
-			)
-		}
-
+	switch cfg := config.(type) {
+	case methodApprovalConfig:
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
@@ -206,49 +198,23 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 
 		configObjectID = fmt.Sprintf("poll_config_approval/%d", configID)
 
-	case "selection":
-		var cfg struct {
-			MaxOptionsAmount int  `json:"max_options_amount"`
-			MinOptionsAmount int  `json:"min_options_amount"`
-			AllowNota        bool `json:"allow_nota"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing selection config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case selectionInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_selection
 		(max_options_amount, min_options_amount, allow_nota)
 		VALUES ($1, $2, $3)
 		RETURNING id;`
 		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save selection config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_selection/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 
-	case "rating_score":
-		var cfg struct {
-			MaxOptionsAmount  int `json:"max_options_amount"`
-			MinOptionsAmount  int `json:"min_options_amount"`
-			MaxVotesPerOption int `json:"max_votes_per_option"`
-			MaxVoteSum        int `json:"max_vote_sum"`
-			MinVoteSum        int `json:"min_vote_sum"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing rating score config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case ratingScoreInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_rating_score
 		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
@@ -263,28 +229,16 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 			cfg.MaxVoteSum,
 			cfg.MinVoteSum,
 		).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save rating score config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_score/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 
-	case "rating_approval":
-		var cfg struct {
-			MaxOptionsAmount int                 `json:"max_options_amount"`
-			MinOptionsAmount int                 `json:"min_options_amount"`
-			AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing rating approval config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case ratingApprovalInputConfig:
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
@@ -302,12 +256,12 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 			cfg.MinOptionsAmount,
 			allowAbstain,
 		).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save rating approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_approval/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 	}
@@ -320,20 +274,12 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 	return configObjectID, nil
 }
 
-func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string) error {
-	var cfg struct {
-		Type    string `json:"option_type"`
-		Options []any  `json:"options"`
-	}
-	if err := json.Unmarshal(config, &cfg); err != nil {
-		return fmt.Errorf("unmarshal config: %w", err)
-	}
-
-	if len(cfg.Options) == 0 {
+func insertOption(ctx context.Context, tx pgx.Tx, optionType string, options []any, configObjectID string) error {
+	if len(options) == 0 {
 		return MessageError(ErrInvalid, "Need at least value in options")
 	}
 
-	for _, option := range cfg.Options {
+	for _, option := range options {
 		str, ok := option.(string)
 		if !ok {
 			continue
@@ -346,21 +292,21 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 	var sqlColumns string
 	var args []any
 
-	switch cfg.Type {
+	switch optionType {
 	case "text":
 		sqlColumns = `(poll_config_id, weight, text)`
 	case "meeting_user":
 		sqlColumns = `(poll_config_id, weight, meeting_user_id)`
 	default:
-		return MessageErrorf(ErrInvalid, "unknown option_type %q", cfg.Type)
+		return MessageErrorf(ErrInvalid, "unknown option_type %q", optionType)
 	}
 
-	for weight, opt := range cfg.Options {
+	for weight, opt := range options {
 		args = append(args, configObjectID, weight, opt)
 	}
 
-	valuePlaceholders := make([]string, len(cfg.Options))
-	for i := range cfg.Options {
+	valuePlaceholders := make([]string, len(options))
+	for i := range options {
 		valuePlaceholders[i] = fmt.Sprintf("($%d, $%d, $%d)", 3*i+1, 3*i+2, 3*i+3)
 	}
 
@@ -377,17 +323,112 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 	return nil
 }
 
+type selectionInputConfig struct {
+	MaxOptionsAmount int    `json:"max_options_amount"`
+	MinOptionsAmount int    `json:"min_options_amount"`
+	AllowNota        bool   `json:"allow_nota"`
+	OptionType       string `json:"option_type"`
+	Options          []any  `json:"options"`
+}
+
+type ratingScoreInputConfig struct {
+	MaxOptionsAmount  int    `json:"max_options_amount"`
+	MinOptionsAmount  int    `json:"min_options_amount"`
+	MaxVotesPerOption int    `json:"max_votes_per_option"`
+	MaxVoteSum        int    `json:"max_vote_sum"`
+	MinVoteSum        int    `json:"min_vote_sum"`
+	OptionType        string `json:"option_type"`
+	Options           []any  `json:"options"`
+}
+
+type ratingApprovalInputConfig struct {
+	MaxOptionsAmount int                 `json:"max_options_amount"`
+	MinOptionsAmount int                 `json:"min_options_amount"`
+	AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
+	OptionType       string              `json:"option_type"`
+	Options          []any               `json:"options"`
+}
+
 type createInput struct {
 	Title            string          `json:"title"`
 	ContentObjectID  string          `json:"content_object_id"`
 	MeetingID        int             `json:"meeting_id"`
 	Method           string          `json:"method"`
-	Config           json.RawMessage `json:"config"`
+	Config           any             `json:"config"`
 	Visibility       string          `json:"visibility"`
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 	Published        bool            `json:"published"`
 	Result           json.RawMessage `json:"result"`
 	AllowVoteSplit   bool            `json:"allow_vote_split"`
+}
+
+func parseConfigJSON(method string, raw json.RawMessage) (any, error) {
+	switch method {
+	case "approval":
+		var cfg methodApprovalConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing approval config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "selection":
+		var cfg selectionInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing selection config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "rating_score":
+		var cfg ratingScoreInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing rating score config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "rating_approval":
+		var cfg ratingApprovalInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing rating approval config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	default:
+		return raw, nil
+	}
+}
+
+func (ci *createInput) UnmarshalJSON(data []byte) error {
+	type CIAlias createInput
+	aux := &struct {
+		Config json.RawMessage `json:"config"`
+		*CIAlias
+	}{
+		CIAlias: (*CIAlias)(ci),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.Config == nil {
+		return nil
+	}
+	cfg, err := parseConfigJSON(ci.Method, aux.Config)
+	if err != nil {
+		return err
+	}
+	ci.Config = cfg
+	return nil
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
@@ -484,13 +525,19 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		}
 
 		// TODO: Remove old config
-		newConfigID, err := saveConfig(ctx, tx, method, ui.Config)
-		if err != nil {
-			return fmt.Errorf("save poll config: %w", err)
-		}
+		if ui.Config != nil {
+			parsedConfig, err := parseConfigJSON(method, ui.Config)
+			if err != nil {
+				return fmt.Errorf("parse config: %w", err)
+			}
+			newConfigID, err := saveConfig(ctx, tx, parsedConfig)
+			if err != nil {
+				return fmt.Errorf("save poll config: %w", err)
+			}
 
-		// TODO: Update poll with new config id
-		_ = newConfigID
+			// TODO: Update poll with new config id
+			_ = newConfigID
+		}
 	}
 
 	if len(ui.EntitledGroupIDs) > 0 {
