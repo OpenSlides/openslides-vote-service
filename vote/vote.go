@@ -942,11 +942,3 @@ func maybeZeroIsNull(n int) dsfetch.Maybe[int] {
 
 	return dsfetch.MaybeValue(n)
 }
-
-func valueOrZero(n dsfetch.Maybe[int]) int {
-	value, set := n.Value()
-	if set {
-		return value
-	}
-	return 0
-}
