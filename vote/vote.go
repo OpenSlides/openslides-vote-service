@@ -4,15 +4,12 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -112,7 +109,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	configID, err := saveConfig(ctx, tx, ci.Method, ci.Config)
+	configID, err := saveConfig(ctx, tx, ci.Config)
 	if err != nil {
 		return 0, fmt.Errorf("save poll config: %w", err)
 	}
@@ -172,7 +169,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 }
 
 // TODO: Move this function into the methods interface.
-func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+func saveConfig(ctx context.Context, tx pgx.Tx, config any) (string, error) {
 	// deleteStatements := []string{
 	// 	`DELETE FROM poll_config_approval WHERE poll_id = $1`,
 	// 	`DELETE FROM poll_config_selection WHERE poll_id = $1`,
@@ -186,76 +183,42 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 	// }
 
 	var configObjectID string
-	switch method {
-	case "approval":
-		var cfg methodApprovalConfig
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-				fmt.Errorf("parsing approval config: %w", err),
-			)
-		}
-
+	switch cfg := config.(type) {
+	case approvalInputConfig:
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
 		}
 
 		var configID int
-		sql := `INSERT INTO poll_config_approval (allow_abstain) VALUES ($1) RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, allowAbstain).Scan(&configID); err != nil {
+		sql := `INSERT INTO poll_config_approval (allow_abstain, onehundred_percent_base) VALUES ($1, $2) RETURNING id;`
+		if err := tx.QueryRow(ctx, sql, allowAbstain, cfg.OnehundredPercentBase).Scan(&configID); err != nil {
 			return "", fmt.Errorf("save approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_approval/%d", configID)
 
-	case "selection":
-		var cfg struct {
-			MaxOptionsAmount int  `json:"max_options_amount"`
-			MinOptionsAmount int  `json:"min_options_amount"`
-			AllowNota        bool `json:"allow_nota"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing selection config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case selectionInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_selection
-		(max_options_amount, min_options_amount, allow_nota)
-		VALUES ($1, $2, $3)
+		(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id;`
-		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+		if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.AllowNota, cfg.StrikeOut, cfg.OnehundredPercentBase).Scan(&configID); err != nil {
+			return "", fmt.Errorf("save selection config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_selection/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 
-	case "rating_score":
-		var cfg struct {
-			MaxOptionsAmount  int `json:"max_options_amount"`
-			MinOptionsAmount  int `json:"min_options_amount"`
-			MaxVotesPerOption int `json:"max_votes_per_option"`
-			MaxVoteSum        int `json:"max_vote_sum"`
-			MinVoteSum        int `json:"min_vote_sum"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing rating score config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case ratingScoreInputConfig:
 		var configID int
 		sql := `INSERT INTO poll_config_rating_score
-		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
-		VALUES ($1, $2, $3, $4, $5)
+		(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
@@ -265,29 +228,18 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 			cfg.MaxVotesPerOption,
 			cfg.MaxVoteSum,
 			cfg.MinVoteSum,
+			cfg.OnehundredPercentBase,
 		).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save rating score config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_score/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 
-	case "rating_approval":
-		var cfg struct {
-			MaxOptionsAmount int                 `json:"max_options_amount"`
-			MinOptionsAmount int                 `json:"min_options_amount"`
-			AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
-		}
-		if err := json.Unmarshal(config, &cfg); err != nil {
-			return "", errors.Join(
-				fmt.Errorf("parsing rating approval config: %w", err),
-				MessageError(ErrInvalid, "Invalid value for field 'config'"),
-			)
-		}
-
+	case ratingApprovalInputConfig:
 		allowAbstain, set := cfg.AllowAbstain.Value()
 		if !set {
 			allowAbstain = true
@@ -295,8 +247,8 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 
 		var configID int
 		sql := `INSERT INTO poll_config_rating_approval
-		(max_options_amount, min_options_amount, allow_abstain)
-		VALUES ($1, $2, $3)
+		(max_options_amount, min_options_amount, allow_abstain, onehundred_percent_base)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id;`
 		if err := tx.QueryRow(
 			ctx,
@@ -304,13 +256,14 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 			cfg.MaxOptionsAmount,
 			cfg.MinOptionsAmount,
 			allowAbstain,
+			cfg.OnehundredPercentBase,
 		).Scan(&configID); err != nil {
-			return "", fmt.Errorf("save approval config: %w", err)
+			return "", fmt.Errorf("save rating approval config: %w", err)
 		}
 
 		configObjectID = fmt.Sprintf("poll_config_rating_approval/%d", configID)
 
-		if err := insertOption(ctx, tx, config, configObjectID); err != nil {
+		if err := insertOption(ctx, tx, cfg.OptionType, cfg.Options, configObjectID); err != nil {
 			return "", fmt.Errorf("insert options: %w", err)
 		}
 	}
@@ -323,20 +276,12 @@ func saveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 	return configObjectID, nil
 }
 
-func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string) error {
-	var cfg struct {
-		Type    string `json:"option_type"`
-		Options []any  `json:"options"`
-	}
-	if err := json.Unmarshal(config, &cfg); err != nil {
-		return fmt.Errorf("unmarshal config: %w", err)
-	}
-
-	if len(cfg.Options) == 0 {
+func insertOption(ctx context.Context, tx pgx.Tx, optionType string, options []any, configObjectID string) error {
+	if len(options) == 0 {
 		return MessageError(ErrInvalid, "Need at least value in options")
 	}
 
-	for _, option := range cfg.Options {
+	for _, option := range options {
 		str, ok := option.(string)
 		if !ok {
 			continue
@@ -349,21 +294,21 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 	var sqlColumns string
 	var args []any
 
-	switch cfg.Type {
+	switch optionType {
 	case "text":
 		sqlColumns = `(poll_config_id, weight, text)`
 	case "meeting_user":
 		sqlColumns = `(poll_config_id, weight, meeting_user_id)`
 	default:
-		return MessageErrorf(ErrInvalid, "unknown option_type %q", cfg.Type)
+		return MessageErrorf(ErrInvalid, "unknown option_type %q", optionType)
 	}
 
-	for weight, opt := range cfg.Options {
+	for weight, opt := range options {
 		args = append(args, configObjectID, weight, opt)
 	}
 
-	valuePlaceholders := make([]string, len(cfg.Options))
-	for i := range cfg.Options {
+	valuePlaceholders := make([]string, len(options))
+	for i := range options {
 		valuePlaceholders[i] = fmt.Sprintf("($%d, $%d, $%d)", 3*i+1, 3*i+2, 3*i+3)
 	}
 
@@ -380,17 +325,121 @@ func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, config
 	return nil
 }
 
+type approvalInputConfig struct {
+	AllowAbstain          dsfetch.Maybe[bool] `json:"allow_abstain"`
+	OnehundredPercentBase string              `json:"onehundred_percent_base"`
+}
+
+type selectionInputConfig struct {
+	MaxOptionsAmount      int    `json:"max_options_amount"`
+	MinOptionsAmount      int    `json:"min_options_amount"`
+	AllowNota             bool   `json:"allow_nota"`
+	StrikeOut             bool   `json:"strike_out"`
+	OnehundredPercentBase string `json:"onehundred_percent_base"`
+	OptionType            string `json:"option_type"`
+	Options               []any  `json:"options"`
+}
+
+type ratingScoreInputConfig struct {
+	MaxOptionsAmount      int    `json:"max_options_amount"`
+	MinOptionsAmount      int    `json:"min_options_amount"`
+	MaxVotesPerOption     int    `json:"max_votes_per_option"`
+	MaxVoteSum            int    `json:"max_vote_sum"`
+	MinVoteSum            int    `json:"min_vote_sum"`
+	OnehundredPercentBase string `json:"onehundred_percent_base"`
+	OptionType            string `json:"option_type"`
+	Options               []any  `json:"options"`
+}
+
+type ratingApprovalInputConfig struct {
+	MaxOptionsAmount      int                 `json:"max_options_amount"`
+	MinOptionsAmount      int                 `json:"min_options_amount"`
+	AllowAbstain          dsfetch.Maybe[bool] `json:"allow_abstain"`
+	OnehundredPercentBase string              `json:"onehundred_percent_base"`
+	OptionType            string              `json:"option_type"`
+	Options               []any               `json:"options"`
+}
+
 type createInput struct {
 	Title            string          `json:"title"`
 	ContentObjectID  string          `json:"content_object_id"`
 	MeetingID        int             `json:"meeting_id"`
 	Method           string          `json:"method"`
-	Config           json.RawMessage `json:"config"`
+	Config           any             `json:"config"`
 	Visibility       string          `json:"visibility"`
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 	Published        bool            `json:"published"`
 	Result           json.RawMessage `json:"result"`
 	AllowVoteSplit   bool            `json:"allow_vote_split"`
+}
+
+func parseConfigJSON(method string, raw json.RawMessage) (any, error) {
+	switch method {
+	case "approval":
+		var cfg approvalInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing approval config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "selection":
+		var cfg selectionInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing selection config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "rating_score":
+		var cfg ratingScoreInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing rating score config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	case "rating_approval":
+		var cfg ratingApprovalInputConfig
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.Join(
+				fmt.Errorf("parsing rating approval config: %w", err),
+				MessageError(ErrInvalid, "Invalid value for field 'config'"),
+			)
+		}
+		return cfg, nil
+
+	default:
+		return raw, nil
+	}
+}
+
+func (ci *createInput) UnmarshalJSON(data []byte) error {
+	type CIAlias createInput
+	aux := &struct {
+		Config json.RawMessage `json:"config"`
+		*CIAlias
+	}{
+		CIAlias: (*CIAlias)(ci),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.Config == nil {
+		return nil
+	}
+	cfg, err := parseConfigJSON(ci.Method, aux.Config)
+	if err != nil {
+		return err
+	}
+	ci.Config = cfg
+	return nil
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
@@ -487,13 +536,19 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		}
 
 		// TODO: Remove old config
-		newConfigID, err := saveConfig(ctx, tx, method, ui.Config)
-		if err != nil {
-			return fmt.Errorf("save poll config: %w", err)
-		}
+		if ui.Config != nil {
+			parsedConfig, err := parseConfigJSON(method, ui.Config)
+			if err != nil {
+				return fmt.Errorf("parse config: %w", err)
+			}
+			newConfigID, err := saveConfig(ctx, tx, parsedConfig)
+			if err != nil {
+				return fmt.Errorf("save poll config: %w", err)
+			}
 
-		// TODO: Update poll with new config id
-		_ = newConfigID
+			// TODO: Update poll with new config id
+			_ = newConfigID
+		}
 	}
 
 	if len(ui.EntitledGroupIDs) > 0 {
@@ -690,410 +745,6 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	return nil
 }
 
-// Start validates a poll and set its state to started.
-func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
-	poll, err := fetchPoll(ctx, v.flow, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching poll: %w", err)
-	}
-
-	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
-		return fmt.Errorf("check permissions: %w", err)
-	}
-
-	if poll.State == "finished" {
-		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
-	}
-
-	if err := Preload(ctx, dsfetch.New(v.flow), poll.ID, poll.MeetingID); err != nil {
-		return fmt.Errorf("preloading poll: %w", err)
-	}
-
-	sql := `UPDATE poll SET state = 'started' WHERE id = $1 AND state != 'finished';`
-	commandTag, err := v.querier.Exec(ctx, sql, pollID)
-	if err != nil {
-		return fmt.Errorf("set poll %d to started: %w", pollID, err)
-	}
-
-	if commandTag.RowsAffected() != 1 {
-		return fmt.Errorf("poll %d not found or not in 'created' state", pollID)
-	}
-
-	return nil
-}
-
-// Finalize ends a poll.
-//
-// - If in the started state, it creates poll/result.
-// - Sets the state to `finished`.
-// - Sets the `published` flag.
-// - With the flag `anonymize`, clears all user_ids from the coresponding votes.
-func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
-	poll, err := fetchPoll(ctx, v.flow, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching poll: %w", err)
-	}
-
-	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
-		return fmt.Errorf("check permissions: %w", err)
-	}
-
-	if poll.State == "created" {
-		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
-	}
-
-	tx, err := v.querier.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	if poll.State == `started` {
-		ds := dsmodels.New(v.flow)
-
-		ballots, err := ds.Ballot(poll.BallotIDs...).Get(ctx)
-		if err != nil {
-			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
-		}
-
-		if poll.Visibility == "secret" {
-			for i := range ballots {
-				ballots[i].Value, err = v.decryptBallot(ballots[i].Value)
-				if err != nil {
-					return fmt.Errorf("decrypting ballot: %w", err)
-				}
-			}
-
-			// Change the order of the ballots so the new values can not be guessed.
-			sort.Slice(ballots, func(i, j int) bool {
-				return ballots[i].Value < ballots[j].Value
-			})
-
-			// Delete and reinsert old ballots.
-			_, err = tx.Exec(ctx, "DELETE FROM ballot_t WHERE poll_id = $1", poll.ID)
-			if err != nil {
-				return fmt.Errorf("deleting old ballots: %w", err)
-			}
-
-			_, err = tx.CopyFrom(
-				ctx,
-				pgx.Identifier{"ballot_t"},
-				[]string{"weight", "split", "value", "poll_id"},
-				pgx.CopyFromSlice(len(ballots), func(i int) ([]any, error) {
-					return []any{
-						ballots[i].Weight,
-						ballots[i].Split,
-						ballots[i].Value,
-						poll.ID,
-					}, nil
-				}),
-			)
-			if err != nil {
-				return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
-			}
-		}
-
-		config, err := v.EncodeConfig(ctx, poll)
-		if err != nil {
-			return fmt.Errorf("encode config: %w", err)
-		}
-
-		result, err := CreateResult(pollMethod(poll), config, poll.AllowVoteSplit, ballots)
-		if err != nil {
-			return fmt.Errorf("create poll result: %w", err)
-		}
-
-		votedMeetingUserIDs := make([]int, len(ballots))
-		for i, vote := range ballots {
-			meetingUserID, set := vote.RepresentedMeetingUserID.Value()
-			if !set {
-				return fmt.Errorf("vote %d has no representedMeetingUserID", vote.ID)
-			}
-			votedMeetingUserIDs[i] = meetingUserID
-		}
-
-		sql := `UPDATE poll SET result = $1 WHERE id = $2;`
-		if _, err := tx.Exec(ctx, sql, result, pollID); err != nil {
-			return fmt.Errorf("set result of poll %d: %w", pollID, err)
-		}
-
-		if len(votedMeetingUserIDs) > 0 {
-			placeholders := make([]string, len(votedMeetingUserIDs))
-			args := make([]any, len(votedMeetingUserIDs)*2)
-
-			for i, votedUserID := range votedMeetingUserIDs {
-				placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-				args[i*2] = votedUserID
-				args[i*2+1] = pollID
-			}
-
-			votedSQL := fmt.Sprintf(
-				"INSERT INTO nm_meeting_user_poll_voted_ids_poll_t (meeting_user_id, poll_id) VALUES %s",
-				strings.Join(placeholders, ", "),
-			)
-
-			if _, err := tx.Exec(ctx, votedSQL, args...); err != nil {
-				return fmt.Errorf("insert voted_user_ids to meeting_user relations: %w", err)
-			}
-		}
-	}
-
-	sql := `UPDATE poll SET state = 'finished', published = $1 WHERE id = $2;`
-	if _, err := tx.Exec(ctx, sql, publish, pollID); err != nil {
-		return fmt.Errorf("set poll %d to finished and publish to %v: %w", pollID, publish, err)
-	}
-
-	if anonymize {
-		if poll.Visibility == "named" {
-			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
-		}
-
-		sql := `UPDATE ballot
-				SET acting_meeting_user_id = NULL, represented_meeting_user_id = NULL
-				WHERE poll_id = $1`
-
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-			return fmt.Errorf("anonymize ballots: %w", err)
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return nil
-}
-
-// Reset removes all votes from a poll and sets its state to created.
-func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
-	poll, err := fetchPoll(ctx, v.flow, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching poll: %w", err)
-	}
-
-	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
-		return fmt.Errorf("check permissions: %w", err)
-	}
-
-	tx, err := v.querier.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	var exists bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM poll WHERE id = $1)`, pollID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("check poll existence: %w", err)
-	}
-
-	if !exists {
-		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
-	}
-
-	deleteVoteQuery := `DELETE FROM ballot WHERE poll_id = $1`
-	if _, err := tx.Exec(ctx, deleteVoteQuery, pollID); err != nil {
-		return fmt.Errorf("delete ballots: %w", err)
-	}
-
-	state := "created"
-	if poll.Visibility == "manually" {
-		state = "finished"
-	}
-
-	updateQuery := `UPDATE poll SET state = $1, published = false, result = '' WHERE id = $2`
-	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
-		return fmt.Errorf("reset poll state: %w", err)
-	}
-
-	deleteVotedQuery := `DELETE FROM nm_meeting_user_poll_voted_ids_poll_t WHERE poll_id = $1`
-	if _, err := tx.Exec(ctx, deleteVotedQuery, pollID); err != nil {
-		return fmt.Errorf("delete poll votes: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
-	}
-
-	return nil
-}
-
-// Vote validates and saves the vote.
-func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader) error {
-	if requestUserID == 0 {
-		return MessageErrorf(ErrInvalid, "Anonymous can not vote")
-	}
-
-	poll, err := fetchPoll(ctx, v.flow, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching poll: %w", err)
-	}
-
-	var body struct {
-		MeetingUserID dsfetch.Maybe[int] `json:"meeting_user_id"`
-		Value         json.RawMessage    `json:"value"`
-		Split         bool               `json:"split"`
-	}
-
-	if err := json.NewDecoder(r).Decode(&body); err != nil {
-		return MessageError(ErrInvalid, "Invalid body")
-	}
-
-	if body.Split && !poll.AllowVoteSplit {
-		return MessageErrorf(ErrInvalid, "Vote split is not allowed for poll %d", poll.ID)
-	}
-
-	fetch := dsfetch.New(v.flow)
-	actingMeetingUserID, found, err := getMeetingUser(ctx, fetch, requestUserID, poll.MeetingID)
-	if err != nil {
-		return fmt.Errorf("getting meeting user of request user: %w", err)
-	}
-	if !found {
-		return MessageErrorf(ErrInvalid, "You have to be in the meeting to vote")
-	}
-
-	representedMeetingUserID := actingMeetingUserID
-	if meetingUserID, set := body.MeetingUserID.Value(); set {
-		representedMeetingUserID = meetingUserID
-	}
-
-	if err := allowedToVote(ctx, fetch, poll, representedMeetingUserID, actingMeetingUserID); err != nil {
-		return fmt.Errorf("allowedToVote: %w", err)
-	}
-
-	ballotValue := string(body.Value)
-	if poll.Visibility == "secret" {
-		ballotValue, err = v.encryptBallot(ballotValue)
-		if err != nil {
-			return fmt.Errorf("encrypting ballot value: %w", err)
-		}
-	}
-
-	weight, err := CalcVoteWeight(ctx, fetch, representedMeetingUserID)
-	if err != nil {
-		return fmt.Errorf("calc vote weight: %w", err)
-	}
-
-	if !poll.AllowInvalid {
-		splitted := map[decimal.Decimal]json.RawMessage{decimal.Zero: body.Value}
-
-		if body.Split {
-			splitted, err = split(weight, body.Value)
-			if err != nil {
-				return fmt.Errorf("split vote: %w", err)
-			}
-		}
-
-		method := pollMethod(poll)
-		config, err := v.EncodeConfig(ctx, poll)
-		if err != nil {
-			return fmt.Errorf("encode config: %w", err)
-		}
-
-		for _, value := range splitted {
-			if err := ValidateBallot(method, config, value); err != nil {
-				return fmt.Errorf("validate ballot: %w", err)
-			}
-		}
-	}
-
-	sql := `WITH
-		poll_check AS (
-			SELECT
-				id,
-				state,
-				CASE
-					WHEN id IS NULL THEN 'POLL_NOT_FOUND'
-					WHEN state != 'started' THEN 'POLL_NOT_STARTED'
-					ELSE 'POLL_VALID'
-				END as poll_status
-			FROM poll
-			WHERE id = $1
-		),
-		ballot_check AS (
-			SELECT
-				COUNT(*) as existing_ballots,
-				CASE
-					WHEN COUNT(*) > 0 THEN 'USER_HAS_VOTED_BEFORE'
-					ELSE 'BALLOT_OK'
-				END as ballot_status
-			FROM ballot
-			WHERE poll_id = $1 AND represented_meeting_user_id = $5
-		),
-		inserted AS (
-			INSERT INTO ballot
-			(poll_id, value, weight, acting_meeting_user_id, represented_meeting_user_id)
-			SELECT $1, $2, $3, $4, $5
-			FROM poll_check p, ballot_check b
-			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
-			RETURNING id
-		)
-		SELECT
-			CASE
-				WHEN i.id IS NOT NULL THEN 'VALID'
-				WHEN p.poll_status != 'POLL_VALID' THEN p.poll_status
-				WHEN b.ballot_status != 'BALLOT_OK' THEN b.ballot_status
-				ELSE 'UNKNOWN_ERROR'
-			END as status
-		FROM poll_check p, ballot_check b
-		LEFT JOIN inserted i ON true;`
-
-	var status string
-	err = v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID).Scan(
-		&status,
-	)
-	if err != nil {
-		return fmt.Errorf("insert ballot: %w", err)
-	}
-
-	switch status {
-	case "VALID":
-		return nil
-	case "POLL_NOT_FOUND":
-		return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
-	case "POLL_NOT_STARTED":
-		return MessageErrorf(ErrNotStarted, "Poll %d is not started", pollID)
-	case "USER_HAS_VOTED_BEFORE":
-		return MessageErrorf(ErrDoubleVote, "You can not vote again on poll %d", pollID)
-	default:
-		return fmt.Errorf("unknown vote sql status %s", status)
-	}
-}
-
-// encryptBallot encrypts the given value with AES using the key for secret polls.
-func (v *Vote) encryptBallot(ballotValue string) (string, error) {
-	nonce := make([]byte, v.gcmForSecretPolls.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("create nonce: %w", err)
-	}
-
-	encryptedValue := v.gcmForSecretPolls.Seal(nonce, nonce, []byte(ballotValue), nil)
-
-	return base64.StdEncoding.EncodeToString(encryptedValue), nil
-}
-
-// decryptBallot decrypt the given value with AES using the key for secret polls.
-func (v *Vote) decryptBallot(encryptedBallot string) (string, error) {
-	encryptedValue, err := base64.StdEncoding.DecodeString(encryptedBallot)
-	if err != nil {
-		return "", fmt.Errorf("base64 decode encrypted ballot: %w", err)
-	}
-
-	nonceSize := v.gcmForSecretPolls.NonceSize()
-	if len(encryptedValue) < nonceSize {
-		return "", fmt.Errorf("encrypted ballot too short")
-	}
-
-	nonce, ciphertext := encryptedValue[:nonceSize], encryptedValue[nonceSize:]
-
-	plaintext, err := v.gcmForSecretPolls.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("decrypt ciphertext: %w", err)
-	}
-
-	return string(plaintext), nil
-}
-
 // EncodeConfig encodes the configuration of a poll into a string.
 func (v *Vote) EncodeConfig(ctx context.Context, poll dsmodels.Poll) (string, error) {
 	configCollection, configIDStr, found := strings.Cut(poll.ConfigID, "/")
@@ -1193,126 +844,6 @@ func pollMethod(poll dsmodels.Poll) string {
 	}
 }
 
-// split split sa vote and valides the weight
-func split(maxWeight decimal.Decimal, value json.RawMessage) (map[decimal.Decimal]json.RawMessage, error) {
-	var splitVotes map[decimal.Decimal]json.RawMessage
-	if err := json.Unmarshal(value, &splitVotes); err != nil {
-		return nil, errors.Join(MessageError(ErrInvalid, "Invalid split votes"), err)
-	}
-
-	var splitWeightSum decimal.Decimal
-	for splitWeight := range splitVotes {
-		splitWeightSum = splitWeightSum.Add(splitWeight)
-	}
-
-	if splitWeightSum.Cmp(maxWeight) == 1 {
-		return nil, MessageError(ErrInvalid, "Split weight exceeds your vote weight.")
-	}
-
-	return splitVotes, nil
-}
-
-// allowedToVote checks, that the represented user can vote and the acting user
-// can vote for him.
-func allowedToVote(
-	ctx context.Context,
-	ds *dsfetch.Fetch,
-	poll dsmodels.Poll,
-	representedMeetingUserID int,
-	actingMeetingUserID int,
-) error {
-	if representedMeetingUserID == 0 {
-		return MessageError(ErrNotAllowed, "You can not vote for anonymous.")
-	}
-
-	if err := ensurePresent(ctx, ds, actingMeetingUserID); err != nil {
-		return fmt.Errorf("ensure acting user %d is present: %w", actingMeetingUserID, err)
-	}
-
-	groupIDs, err := ds.MeetingUser_GroupIDs(representedMeetingUserID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching groups of meeting_user %d: %w", representedMeetingUserID, err)
-	}
-
-	if !hasCommon(groupIDs, poll.EntitledGroupIDs) {
-		return MessageErrorf(ErrNotAllowed, "Meeting User %d is not allowed to vote. He is not in an entitled group", representedMeetingUserID)
-	}
-
-	delegationActivated, err := ds.Meeting_UsersEnableVoteDelegations(poll.MeetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching meeting/user_enable_vote_delegations: %w", err)
-	}
-
-	forbitDelegateToVote, err := ds.Meeting_UsersForbidDelegatorToVote(poll.MeetingID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching meeting/users_forbid_delegator_to_vote: %w", err)
-	}
-
-	delegation, err := ds.MeetingUser_VoteDelegatedToID(representedMeetingUserID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching meeting_user/vote_delegated_to_id: %w", err)
-	}
-
-	if delegationActivated && forbitDelegateToVote && !delegation.Null() && representedMeetingUserID == actingMeetingUserID {
-		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
-	}
-
-	if representedMeetingUserID == actingMeetingUserID {
-		return nil
-	}
-
-	if !delegationActivated {
-		return MessageErrorf(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
-	}
-
-	if id, ok := delegation.Value(); !ok || id != actingMeetingUserID {
-		return MessageErrorf(ErrNotAllowed, "You can not vote for meeting user %d", representedMeetingUserID)
-	}
-
-	return nil
-}
-
-// CalcVoteWeight calculates the vote weight for a user in a meeting.
-//
-// voteweight is a DecimalField with 6 zeros.
-func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingUserID int) (decimal.Decimal, error) {
-	defaultVoteWeight, _ := decimal.NewFromString("1.000000")
-	userID, err := fetch.MeetingUser_UserID(meetingUserID).Value(ctx)
-	if err != nil {
-		return decimal.Decimal{}, fmt.Errorf("getting user ID from meeting user: %w", err)
-	}
-
-	meetingID, err := fetch.MeetingUser_MeetingID(meetingUserID).Value(ctx)
-	if err != nil {
-		return decimal.Decimal{}, fmt.Errorf("getting meeting ID from meeting user: %w", err)
-	}
-
-	var voteWeightEnabled bool
-	var meetingUserVoteWeight decimal.Decimal
-	var userDefaultVoteWeight decimal.Decimal
-	fetch.Meeting_UsersEnableVoteWeight(meetingID).Lazy(&voteWeightEnabled)
-	fetch.MeetingUser_VoteWeight(meetingUserID).Lazy(&meetingUserVoteWeight)
-	fetch.User_DefaultVoteWeight(userID).Lazy(&userDefaultVoteWeight)
-
-	if err := fetch.Execute(ctx); err != nil {
-		return decimal.Decimal{}, fmt.Errorf("getting vote weight values from db: %w", err)
-	}
-
-	if !voteWeightEnabled {
-		return defaultVoteWeight, nil
-	}
-
-	if !meetingUserVoteWeight.IsZero() {
-		return meetingUserVoteWeight, nil
-	}
-
-	if !userDefaultVoteWeight.IsZero() {
-		return userDefaultVoteWeight, nil
-	}
-
-	return defaultVoteWeight, nil
-}
-
 // ValidateBallot checks, if a vote is invalid.
 func ValidateBallot(method string, config string, vote json.RawMessage) error {
 	switch method {
@@ -1327,47 +858,6 @@ func ValidateBallot(method string, config string, vote json.RawMessage) error {
 	default:
 		return fmt.Errorf("unknown poll method: %s", method)
 	}
-}
-
-// CreateResult creates the result from a list of votes.
-func CreateResult(method string, config string, allowVoteSplit bool, ballots []dsmodels.Ballot) (string, error) {
-	if allowVoteSplit {
-		ballots = splitVote(method, config, ballots)
-	}
-
-	switch method {
-	case methodApproval{}.Name():
-		return methodApproval{}.Result(config, ballots)
-	case methodSelection{}.Name():
-		return methodSelection{}.Result(config, ballots)
-	case methodRatingScore{}.Name():
-		return methodRatingScore{}.Result(config, ballots)
-	case methodRatingApproval{}.Name():
-		return methodRatingApproval{}.Result(config, ballots)
-	default:
-		return "", fmt.Errorf("unknown poll method: %s", method)
-	}
-}
-
-func splitVote(method string, config string, ballots []dsmodels.Ballot) []dsmodels.Ballot {
-	var splittedBallots []dsmodels.Ballot
-	for _, ballot := range ballots {
-		if !ballot.Split {
-			splittedBallots = append(splittedBallots, ballot)
-			continue
-		}
-
-		splitted, err := split(ballot.Weight, json.RawMessage(ballot.Value))
-		if err != nil {
-			// If the ballot value can not be splitted, just use it as value.
-			// It will probably be counted as invalid.
-			splittedBallots = append(splittedBallots, ballot)
-			continue
-		}
-
-		splittedBallots = append(splittedBallots, ballotsFromSplitted(method, config, ballot, splitted)...)
-	}
-	return splittedBallots
 }
 
 func ballotsFromSplitted(method string, config string, ballot dsmodels.Ballot, splitted map[decimal.Decimal]json.RawMessage) []dsmodels.Ballot {
@@ -1403,29 +893,6 @@ func fetchPoll(ctx context.Context, getter flow.Getter, pollID int) (dsmodels.Po
 	return poll, nil
 }
 
-func getMeetingUser(ctx context.Context, fetch *dsfetch.Fetch, userID, meetingID int) (int, bool, error) {
-	meetingUserIDs, err := fetch.User_MeetingUserIDs(userID).Value(ctx)
-	if err != nil {
-		return 0, false, fmt.Errorf("getting all meeting_user ids: %w", err)
-	}
-
-	meetingIDs := make([]int, len(meetingUserIDs))
-	for i := range meetingUserIDs {
-		fetch.MeetingUser_MeetingID(meetingUserIDs[i]).Lazy(&meetingIDs[i])
-	}
-
-	if err := fetch.Execute(ctx); err != nil {
-		return 0, false, fmt.Errorf("get all meeting IDs: %w", err)
-	}
-
-	idx := slices.Index(meetingIDs, meetingID)
-	if idx == -1 {
-		return 0, false, nil
-	}
-
-	return meetingUserIDs[idx], true, nil
-}
-
 func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, contentObjectID string, userID int) error {
 	collection, _, found := strings.Cut(contentObjectID, "/")
 	if !found {
@@ -1457,35 +924,6 @@ func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, conte
 	}
 
 	return nil
-}
-
-func ensurePresent(ctx context.Context, ds *dsfetch.Fetch, meetingUser int) error {
-	meetingID, err := ds.MeetingUser_MeetingID(meetingUser).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching meeting ID: %w", err)
-	}
-
-	userID, err := ds.MeetingUser_UserID(meetingUser).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching user ID: %w", err)
-	}
-
-	presentMeetings, err := ds.User_IsPresentInMeetingIDs(userID).Value(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching is present in meetings: %w", err)
-	}
-
-	if !slices.Contains(presentMeetings, meetingID) {
-		return MessageErrorf(ErrNotAllowed, "You have to be present in meeting %d", meetingID)
-	}
-
-	return nil
-}
-
-func hasCommon(list1, list2 []int) bool {
-	return slices.ContainsFunc(list1, func(a int) bool {
-		return slices.Contains(list2, a)
-	})
 }
 
 // Preload loads all data in the cache, that is needed later for the vote
@@ -1561,12 +999,4 @@ func maybeZeroIsNull(n int) dsfetch.Maybe[int] {
 	}
 
 	return dsfetch.MaybeValue(n)
-}
-
-func valueOrZero(n dsfetch.Maybe[int]) int {
-	value, set := n.Value()
-	if set {
-		return value
-	}
-	return 0
 }
