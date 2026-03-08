@@ -50,6 +50,10 @@ func TestVoteNoRequests(t *testing.T) {
 		name: delegates
 		meeting_id: 1
 
+	group/41:
+		name: other
+		meeting_id: 1
+
 	user:
 		5:
 			username: admin
@@ -64,10 +68,12 @@ func TestVoteNoRequests(t *testing.T) {
 		31:
 			user_id: 30
 			meeting_id: 1
+			group_ids: [41]
 
 		41:
 			user_id: 40
 			meeting_id: 1
+			group_ids: [41]
 
 	poll/5:
 		title: normal poll
@@ -151,7 +157,11 @@ func TestVoteNoRequests(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			pg.Cleanup(t)
+			defer func() {
+				if err := pg.Reset(ctx); err != nil {
+					t.Logf("Cleanup database: %v", err)
+				}
+			}()
 
 			if err := pg.AddData(ctx, baseData); err != nil {
 				t.Fatalf("Error: Insert base data: %v", err)
@@ -483,6 +493,10 @@ func TestPreload(t *testing.T) {
 				meeting_id: 1
 				meeting_user_ids: [510]
 
+			group/42:
+				name: other
+				meeting_id: 1
+
 			user:
 				50:
 					username: user50
@@ -509,16 +523,20 @@ func TestPreload(t *testing.T) {
 					user_id: 50
 					vote_delegated_to_id: 520
 					meeting_id: 5
+					group_ids: [40]
 				510:
 					user_id: 51
 					vote_delegated_to_id: 530
 					meeting_id: 5
+					group_ids: [41]
 				520:
 					user_id: 52
 					meeting_id: 5
+					group_ids: [42]
 				530:
 					user_id: 53
 					meeting_id: 5
+					group_ids: [42]
 
 			poll/5:
 				title: normal poll
