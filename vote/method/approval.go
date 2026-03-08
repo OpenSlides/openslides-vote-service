@@ -53,9 +53,16 @@ func approvalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) 
 		return "", fmt.Errorf("load config: %w", err)
 	}
 
+	var cfg struct {
+		OneHundredPercentBase string `json:"onehundred_percent_base"`
+	}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "", fmt.Errorf("load additional config: %w", err)
+	}
+
 	var configID int
-	sql := `INSERT INTO poll_config_approval (allow_abstain) VALUES ($1) RETURNING id;`
-	if err := tx.QueryRow(ctx, sql, a.AllowAbstain).Scan(&configID); err != nil {
+	sql := `INSERT INTO poll_config_approval (allow_abstain, onehundred_percent_base) VALUES ($1, $2) RETURNING id;`
+	if err := tx.QueryRow(ctx, sql, a.AllowAbstain, cfg.OneHundredPercentBase).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
 

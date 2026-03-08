@@ -72,10 +72,17 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 		return "", fmt.Errorf("load config: %w", err)
 	}
 
+	var cfg struct {
+		OneHundredPercentBase string `json:"onehundred_percent_base"`
+	}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "", fmt.Errorf("load additional config: %w", err)
+	}
+
 	var configID int
 	sql := `INSERT INTO poll_config_rating_score
-	(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum)
-	VALUES ($1, $2, $3, $4, $5)
+	(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum, onehundred_percent_base)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id;`
 	if err := tx.QueryRow(
 		ctx,
@@ -85,6 +92,7 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 		rs.MaxVotesPerOption,
 		rs.MaxVoteSum,
 		rs.MinVoteSum,
+		cfg.OneHundredPercentBase,
 	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
