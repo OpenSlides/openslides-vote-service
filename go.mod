@@ -1,6 +1,6 @@
 module github.com/OpenSlides/openslides-vote-service
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/OpenSlides/openslides-go v0.0.0-20260221062854-55e883c537e0
