@@ -62,4 +62,4 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 )
 
-replace github.com/OpenSlides/openslides-go => github.com/kryptance/openslides-go v0.0.0-20260302114458-fb92ee282ee8
+replace github.com/OpenSlides/openslides-go => github.com/kryptance/openslides-go v0.0.0-20260309113256-6b339dd8c5c3
