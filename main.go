@@ -103,13 +103,13 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	messageBus := messageBusRedis.New(lookup)
 
 	// Datastore Service.
-	database, err := vote.Flow(lookup, messageBus)
+	database, dbPool, err := vote.Flow(lookup, messageBus)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
 
 	// Auth Service.
-	authService, authBackground, err := auth.New(lookup, messageBus)
+	authService, authBackground, err := auth.New(lookup, messageBus, dbPool)
 	if err != nil {
 		return nil, fmt.Errorf("init auth system: %w", err)
 	}
