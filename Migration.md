@@ -61,8 +61,9 @@ es eine motion, assignment oder topic poll ist.
 ```
 {
   id: kann automatisch erstellt werden,
-  poll_id: old.id
   allow_abstain: if old.method == "YNA" then "" else false,
+  onehundred_percent_base: old.onehundred_percent_base  (Die werte sind anders. Bitte mit Bastian besprechen, wie diese am besten gemappt werden)
+  
 }
 ```
 
@@ -148,6 +149,7 @@ poll_candidate_list), dann behandle es wie bei motion. Daher mit "method":
   max_options_amount: old.max_votes_amount,
   min_options_amount: old.min_votes_amount,
   allow_abstain: if old.method == "YNA" then "" else false,
+  onehundred_percent_base: old.onehundred_percent_base (siehe Werte bei Motion)
 }
 ```
 
@@ -275,7 +277,7 @@ verwendet, sondern option.text.
 * poll/pollmethod. Was removed, is now part of poll/config_id.
 * poll/state: The value `published` was removed. polls in this state have to be set to `finished` and the field `poll/published` has to be set to true.
 * poll/min_votes_amount, poll/max_votes_amount, poll/max_votes_per_option, poll/global_yes, poll/global_no, poll/global_abstain are removed. The new field poll/config has to be generated from them.
-* poll/onehundred_percent_base has be removed. TODO after the client is done.
+* poll/onehundred_percent_base moved to config_id
 * poll/votesvalid, poll/votesinvalid, poll/votescast where removed. They have to be used to generate the field `poll/result`.
 * poll/entitled_users_at_stop was removed. TODO after the client is done.
 * poll/live_voting_enabled was removed. No migration needed, since there are no ongoing polls at the same time as the migration.
