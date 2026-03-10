@@ -86,8 +86,8 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 	if err := tx.QueryRow(
 		ctx,
 		sql,
-		s.MaxOptionsAmount,
-		s.MinOptionsAmount,
+		maybeNullIsNil(s.MaxOptionsAmount),
+		maybeNullIsNil(s.MinOptionsAmount),
 		s.AllowNota,
 		cfg.StrikeOut,
 		cfg.OneHundredPercentBase,

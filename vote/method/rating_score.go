@@ -91,11 +91,11 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 	if err := tx.QueryRow(
 		ctx,
 		sql,
-		rs.MaxOptionsAmount,
-		rs.MinOptionsAmount,
-		rs.MaxVotesPerOption,
-		rs.MaxVoteSum,
-		rs.MinVoteSum,
+		maybeNullIsNil(rs.MaxOptionsAmount),
+		maybeNullIsNil(rs.MinOptionsAmount),
+		maybeNullIsNil(rs.MaxVotesPerOption),
+		maybeNullIsNil(rs.MaxVoteSum),
+		maybeNullIsNil(rs.MinVoteSum),
 		cfg.OneHundredPercentBase,
 	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save approval config: %w", err)

@@ -89,8 +89,8 @@ func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMes
 	if err := tx.QueryRow(
 		ctx,
 		sql,
-		maybeNullIsZero(ra.MaxOptionsAmount),
-		maybeNullIsZero(ra.MinOptionsAmount),
+		maybeNullIsNil(ra.MaxOptionsAmount),
+		maybeNullIsNil(ra.MinOptionsAmount),
 		ra.AllowAbstain,
 		cfg.OneHundredPercentBase,
 	).Scan(&configID); err != nil {
