@@ -60,6 +60,10 @@ func approvalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) 
 		return "", fmt.Errorf("load additional config: %w", err)
 	}
 
+	if cfg.OneHundredPercentBase == "" {
+		return "", invalidConfig("field onehundred_percent_base is required.")
+	}
+
 	var configID int
 	sql := `INSERT INTO poll_config_approval (allow_abstain, onehundred_percent_base) VALUES ($1, $2) RETURNING id;`
 	if err := tx.QueryRow(ctx, sql, a.AllowAbstain, cfg.OneHundredPercentBase).Scan(&configID); err != nil {

@@ -113,7 +113,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	configID, err := saveConfig(ctx, tx, ci.Method, ci.Config)
+	configID, err := saveConfig(ctx, tx, ci.Method, ci.MethodConfig)
 	if err != nil {
 		return 0, fmt.Errorf("save poll config: %w", err)
 	}
@@ -205,7 +205,7 @@ type createInput struct {
 	ContentObjectID  string          `json:"content_object_id"`
 	MeetingID        int             `json:"meeting_id"`
 	Method           string          `json:"method"`
-	Config           json.RawMessage `json:"config"`
+	MethodConfig     json.RawMessage `json:"method_config"`
 	Visibility       string          `json:"visibility"`
 	EntitledGroupIDs []int           `json:"entitled_group_ids"`
 	Published        bool            `json:"published"`
@@ -235,7 +235,7 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, e
 		return createInput{}, MessageError(ErrInvalid, "Field 'method' can not be empty")
 	}
 
-	if ci.Config == nil {
+	if ci.MethodConfig == nil {
 		return createInput{}, MessageError(ErrInvalid, "Field 'config' can not be empty")
 	}
 
@@ -300,14 +300,14 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		}
 	}
 
-	if ui.Method != "" || ui.Config != nil {
+	if ui.Method != "" || ui.MethodConfig != nil {
 		method := pollMethod(poll)
 		if ui.Method != "" {
 			method = ui.Method
 		}
 
 		// TODO: Remove old config
-		newConfigID, err := saveConfig(ctx, tx, method, ui.Config)
+		newConfigID, err := saveConfig(ctx, tx, method, ui.MethodConfig)
 		if err != nil {
 			return fmt.Errorf("save poll config: %w", err)
 		}
@@ -351,7 +351,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 type updateInput struct {
 	Title            string              `json:"title"`
 	Method           string              `json:"method"`
-	Config           json.RawMessage     `json:"config"`
+	MethodConfig     json.RawMessage     `json:"method_config"`
 	Visibility       string              `json:"visibility"`
 	EntitledGroupIDs []int               `json:"entitled_group_ids"`
 	Published        dsfetch.Maybe[bool] `json:"published"`
@@ -381,7 +381,7 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 			return updateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
 		}
 
-		if ui.Config != nil {
+		if ui.MethodConfig != nil {
 			return updateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
 		}
 
@@ -426,9 +426,9 @@ func (ui updateInput) query(pollID int) (string, []any) {
 		argIndex++
 	}
 
-	if ui.Config != nil {
+	if ui.MethodConfig != nil {
 		setParts = append(setParts, fmt.Sprintf("config = $%d", argIndex))
-		args = append(args, string(ui.Config))
+		args = append(args, string(ui.MethodConfig))
 		argIndex++
 	}
 

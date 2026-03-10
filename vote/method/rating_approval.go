@@ -77,6 +77,10 @@ func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMes
 		return "", fmt.Errorf("load additional config: %w", err)
 	}
 
+	if cfg.OneHundredPercentBase == "" {
+		return "", invalidConfig("field onehundred_percent_base is required.")
+	}
+
 	var configID int
 	sql := `INSERT INTO poll_config_rating_approval
 	(max_options_amount, min_options_amount, allow_abstain, onehundred_percent_base)

@@ -87,6 +87,7 @@ func TestVoteNoRequests(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 	`
 
 	for _, tt := range []struct {
@@ -281,6 +282,7 @@ func TestPreload(t *testing.T) {
 			poll_config_approval/77:
 				poll_id: 5
 				allow_abstain: true
+				onehundred_percent_base: valid
 			`,
 			5,
 		},
@@ -338,6 +340,7 @@ func TestPreload(t *testing.T) {
 			poll_config_approval/77:
 				poll_id: 5
 				allow_abstain: true
+				onehundred_percent_base: valid
 			`,
 			5,
 		},
@@ -398,6 +401,7 @@ func TestPreload(t *testing.T) {
 			poll_config_approval/77:
 				poll_id: 5
 				allow_abstain: true
+				onehundred_percent_base: valid
 			`,
 			5,
 		},
@@ -463,6 +467,7 @@ func TestPreload(t *testing.T) {
 			poll_config_approval/77:
 				poll_id: 5
 				allow_abstain: true
+				onehundred_percent_base: valid
 			`,
 			5,
 		},
@@ -551,6 +556,7 @@ func TestPreload(t *testing.T) {
 			poll_config_approval/77:
 				poll_id: 5
 				allow_abstain: true
+				onehundred_percent_base: valid
 			`,
 			6,
 		},

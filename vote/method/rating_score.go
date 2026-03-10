@@ -79,6 +79,10 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 		return "", fmt.Errorf("load additional config: %w", err)
 	}
 
+	if cfg.OneHundredPercentBase == "" {
+		return "", invalidConfig("field onehundred_percent_base is required.")
+	}
+
 	var configID int
 	sql := `INSERT INTO poll_config_rating_score
 	(max_options_amount, min_options_amount, max_votes_per_option, max_vote_sum, min_vote_sum, onehundred_percent_base)
