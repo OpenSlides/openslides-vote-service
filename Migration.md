@@ -277,7 +277,7 @@ verwendet, sondern option.text.
 * poll/pollmethod. Was removed, is now part of poll/config_id.
 * poll/state: The value `published` was removed. polls in this state have to be set to `finished` and the field `poll/published` has to be set to true.
 * poll/min_votes_amount, poll/max_votes_amount, poll/max_votes_per_option, poll/global_yes, poll/global_no, poll/global_abstain are removed. The new field poll/config has to be generated from them.
-* poll/onehundred_percent_base moved to config_id
+* poll/onehundred_percent_base moved to config_id and some options were removed or renamed. YNA -> valid, YN -> yes_no.
 * poll/votesvalid, poll/votesinvalid, poll/votescast where removed. They have to be used to generate the field `poll/result`.
 * poll/entitled_users_at_stop was removed. TODO after the client is done.
 * poll/live_voting_enabled was removed. No migration needed, since there are no ongoing polls at the same time as the migration.
