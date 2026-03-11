@@ -78,7 +78,9 @@ func TestAll(t *testing.T) {
 					"title": "my pol",
 					"content_object_id": "motion/5",
 					"method": "approval",
-					"config": {},
+					"method_config": {
+						"onehundred_percent_base": "valid"
+					},
 					"visibility": "open",
 					"meeting_id": 1,
 					"entitled_group_ids": [41]
@@ -291,7 +293,9 @@ func TestManually(t *testing.T) {
 				"title": "my poll",
 				"content_object_id": "motion/5",
 				"method": "approval",
-				"config": {},
+				"method_config": {
+					"onehundred_percent_base": "valid"
+				},
 				"visibility": "manually",
 				"meeting_id": 1,
 				"result": {"no":"23","yes":"42"}
@@ -381,6 +385,7 @@ func TestVote(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 
 	poll/5:
 		title: my poll
@@ -445,6 +450,7 @@ func TestVoteWeight(t *testing.T) {
 
 			poll_config_approval/77:
 				allow_abstain: true
+				onehundred_percent_base: valid
 
 			meeting/1/id: 1
 
@@ -472,6 +478,7 @@ func TestVoteWeight(t *testing.T) {
 
 			poll_config_approval/77:
 				allow_abstain: true
+				onehundred_percent_base: valid
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -499,6 +506,7 @@ func TestVoteWeight(t *testing.T) {
 
 			poll_config_approval/77:
 				allow_abstain: true
+				onehundred_percent_base: valid
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -527,6 +535,7 @@ func TestVoteWeight(t *testing.T) {
 
 			poll_config_approval/77:
 				allow_abstain: true
+				onehundred_percent_base: valid
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -556,6 +565,7 @@ func TestVoteWeight(t *testing.T) {
 
 			poll_config_approval/77:
 				allow_abstain: true
+				onehundred_percent_base: valid
 
 			meeting/1/users_enable_vote_weight: true
 
@@ -649,6 +659,7 @@ func TestVoteStart(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 	`
 
 	withData(
@@ -756,6 +767,7 @@ func TestVoteFinalize(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 
 	ballot/1:
 		poll_id: 5
@@ -890,6 +902,7 @@ func TestSecretPoll(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 	`
 
 	withData(
@@ -1022,6 +1035,7 @@ func TestVoteVote(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 	`
 
 	withData(
@@ -1163,6 +1177,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 	poll_config_approval/77:
 		allow_abstain: true
+		onehundred_percent_base: valid
 
 	poll/5:
 		title: normal poll

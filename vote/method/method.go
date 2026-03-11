@@ -174,10 +174,12 @@ func maybeZeroIsNull(n int) dsfetch.Maybe[int] {
 	return dsfetch.MaybeValue(n)
 }
 
-func maybeNullIsZero(n dsfetch.Maybe[int]) int {
+// TODO: Maybe find a way to directly implement this in the maybe type, so pgx
+// can understand it.
+func maybeNullIsNil(n dsfetch.Maybe[int]) any {
 	v, isNull := n.Value()
 	if isNull {
-		return 0
+		return nil
 	}
 	return v
 }

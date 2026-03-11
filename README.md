@@ -38,7 +38,7 @@ The request expects a body with the fields to create the poll:
 - `content_object_id` (required)
 - `meeting_id` (required)
 - `method` (required)
-- `config` (required, depends on the [method](##Poll methods))
+- `method_config` (required, depends on the [method](##Poll methods))
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
@@ -53,12 +53,12 @@ The request expects a body with the fields to create the poll:
 The fields `content_object_id` and `meeting_id` can not be changed. You have to
 create a new poll to "update" them.
 
-The fields `method`, `config`, `visibility` and `entitled_group_ids` can only be
-changed, before the poll has started. You can reset a poll to change this
-values.
+The fields `method`, `method_config`, `visibility` and `entitled_group_ids` can
+only be changed, before the poll has started. You can reset a poll to change
+this values.
 
-The config can only be changed at a whole. If it is set in an update request, it
-overwrites all config values.
+The method_config can only be changed at a whole. If it is set in an update
+request, it overwrites all config values.
 
 ### Delete a poll
 
@@ -191,7 +191,7 @@ In the future, these values will be used for crypto votes. See the entry in the
 
 ## Poll methods
 
-The values of `config`in the poll-create-request, `ballot/value` and
+The values of `method_config`in the poll-create-request, `ballot/value` and
 `poll/result` depend on the field poll method.
 
 The method of a poll can be calculated by looking at the collection-part of the
@@ -208,6 +208,10 @@ the usual method to vote on a motion.
 
 `allow_abstain`: if set to `true`, users are allowed to vote with `abstain`. The
 default is `true`.
+
+`onehundred_percent_base`: Value, that explains, how the 100 % of the poll
+result should be calculated. This value is not needed to calculate the absolue
+result, but only to present the relative result in percent.
 
 
 #### ballot/value
@@ -252,6 +256,13 @@ default is no limit.
 
 `allow_nota`: Allow `nota` votes, where the user can disapprove of all options.
 The default is `false`.
+
+`onehundred_percent_base`: Value, that explains, how the 100 % of the poll
+result should be calculated. This value is not needed to calculate the absolue
+result, but only to present the relative result in percent.
+
+`strike_out`: boolean value. If set, the selected options are interpreted
+negativly and the result is presented accordingly.
 
 
 #### ballot/value
@@ -306,6 +317,10 @@ options. The default is no limit.
 `min_vote_sum`: The minimum number of points, that have to be shared between the
 options. The default is no limit.
 
+`onehundred_percent_base`: Value, that explains, how the 100 % of the poll
+result should be calculated. This value is not needed to calculate the absolue
+result, but only to present the relative result in percent.
+
 
 #### ballot/value
 
@@ -333,6 +348,10 @@ can give a value like `"Yes"`, `"No"` or `"Abstain"`.
 `min_options_amount`: The same as for `selection` or `rating_score`.
 
 `allow_abstain`: The same as for `approval`.
+
+`onehundred_percent_base`: Value, that explains, how the 100 % of the poll
+result should be calculated. This value is not needed to calculate the absolue
+result, but only to present the relative result in percent.
 
 
 #### ballot/value

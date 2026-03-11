@@ -66,12 +66,32 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 		return "", fmt.Errorf("load config: %w", err)
 	}
 
+	var cfg struct {
+		StrikeOut             bool   `json:"strike_out"`
+		OneHundredPercentBase string `json:"onehundred_percent_base"`
+	}
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return "", fmt.Errorf("load additional config: %w", err)
+	}
+
+	if cfg.OneHundredPercentBase == "" {
+		return "", invalidConfig("field onehundred_percent_base is required.")
+	}
+
 	var configID int
 	sql := `INSERT INTO poll_config_selection
-	(max_options_amount, min_options_amount, allow_nota)
-	VALUES ($1, $2, $3)
+	(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base)
+	VALUES ($1, $2, $3, $4, $5)
 	RETURNING id;`
-	if err := tx.QueryRow(ctx, sql, s.MaxOptionsAmount, s.MinOptionsAmount, s.AllowNota).Scan(&configID); err != nil {
+	if err := tx.QueryRow(
+		ctx,
+		sql,
+		maybeNullIsNil(s.MaxOptionsAmount),
+		maybeNullIsNil(s.MinOptionsAmount),
+		s.AllowNota,
+		cfg.StrikeOut,
+		cfg.OneHundredPercentBase,
+	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
 
