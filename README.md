@@ -39,11 +39,18 @@ The request expects a body with the fields to create the poll:
 - `meeting_id` (required)
 - `method` (required)
 - `method_config` (required, depends on the [method](##Poll methods))
+- `option_type` (required if `options` is present)
+- `options` (required for some poll methods)
 - `visibility` (required)
 - `entitled_group_ids` (only if visibility != manually)
 - `live_voting_enabled` (only if visibility != manually)
 - `result` (only if visibility == manually)
 - `allow_vote_split` (default: false)
+
+`option_type` can either be `text` or `meeting_user`.
+
+The type of `options` depends on `option_type`. It is either a list of string (`text`) or a list of numbers (`meeting_user`)
+
 
 
 ### Update a poll
@@ -239,14 +246,6 @@ options. For example one candidate in a assignment-poll.
 
 
 #### config
-
-`option_type` (required): The type of the options. Can be `text` or
-`meeting_user`.
-
-`options` (required): list of options. If option_type is `text`, the list-values
-have to be from type string. If `option_type` is `meeting_user`, the values have
-to be existing meeting_user_ids.
-
 `max_options_amount`: The maximal amount of options a user can vote on. For
 example, with a value of `1`, a user is only allowed to vote for one candidate.
 The default is no limit.
@@ -296,8 +295,8 @@ a numeric value to each option. For example give each candidate 3 votes.
 
 #### config
 
-`option_type` (required), `options` (required), `max_options_amount` and
-`min_options_amount`: Are the same as from a selection-poll. For example:
+`max_options_amount` and `min_options_amount`: Are the same as from a
+selection-poll. For example:
 
 ```json
 {
@@ -344,8 +343,8 @@ can give a value like `"Yes"`, `"No"` or `"Abstain"`.
 
 #### config
 
-`option_type` (required), `options` (required), `max_options_amount` and
-`min_options_amount`: The same as for `selection` or `rating_score`.
+`max_options_amount` and `min_options_amount`: The same as for `selection` or
+`rating_score`.
 
 `allow_abstain`: The same as for `approval`.
 

@@ -15,27 +15,31 @@ func TestRatingApprovalValidateVote(t *testing.T) {
 		name        string
 		method      string
 		config      string
+		options     []int
 		vote        string
 		expectValid bool
 	}{
 		{
 			name:        "Rating Approval",
 			method:      "rating_approval",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `{"1":"Yes", "2":"No"}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Approval invalid key",
 			method:      "rating_approval",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `{"0":"Yes", "2":"No"}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Approval disallow abstain",
 			method:      "rating_approval",
-			config:      `{"options":[1,2],"allow_abstain":false}`,
+			config:      `{"allow_abstain":false}`,
+			options:     []int{1, 2},
 			vote:        `{"1":"Yes", "2":"Abstain"}`,
 			expectValid: false,
 		},
@@ -45,6 +49,8 @@ func TestRatingApprovalValidateVote(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+
+			a.Options = tt.options
 
 			err = a.ValidateBallot(json.RawMessage(tt.vote))
 
@@ -73,13 +79,15 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 		name         string
 		method       string
 		config       string
+		options      []int
 		ballots      []dsmodels.Ballot
 		expectResult string
 	}{
 		{
-			name:   "Rating Approval",
-			method: "rating_approval",
-			config: `{"options":[1,2,3]}`,
+			name:    "Rating Approval",
+			method:  "rating_approval",
+			config:  `{}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `{"1":"yes","2":"no"}`},
 				{Value: `{"2":"yes","3":"no"}`},
@@ -88,9 +96,10 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			expectResult: `{"1":{"yes":"1"},"2":{"no":"1","yes":"1"},"3":{"no":"1","yes":"5"}}`,
 		},
 		{
-			name:   "Rating Approval with out abstain but with invalid",
-			method: "rating_approval",
-			config: `{"options":[1,2,3],"allow_abstain":false}`,
+			name:    "Rating Approval with out abstain but with invalid",
+			method:  "rating_approval",
+			config:  `{"allow_abstain":false}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `{"1":"yes","2":"abstain"}`},
 				{Value: `{"1":"yes","2":"no"}`},
@@ -103,6 +112,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+			a.Options = tt.options
 
 			result, err := a.Result(tt.ballots)
 			if err != nil {

@@ -21,9 +21,9 @@ type RatingApproval struct {
 	AllowAbstain     bool               `json:"allow_abstain"`
 }
 
-func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval) *RatingApproval {
+func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval, optionIDs []int) *RatingApproval {
 	return &RatingApproval{
-		Options:          configDB.OptionIDs,
+		Options:          optionIDs,
 		MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
 		MinOptionsAmount: maybeZeroIsNull(configDB.MinOptionsAmount),
 		AllowAbstain:     configDB.AllowAbstain,
@@ -32,7 +32,6 @@ func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval) *RatingApp
 
 func RatingApprovalFromRequest(config json.RawMessage) (*RatingApproval, error) {
 	var cfg struct {
-		Options          []any               `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
 		AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
@@ -46,14 +45,7 @@ func RatingApprovalFromRequest(config json.RawMessage) (*RatingApproval, error) 
 		allowAbstain = true
 	}
 
-	// This is only needed for easier testing. In production, the id from the db is used.
-	options := make([]int, len(cfg.Options))
-	for i := range cfg.Options {
-		options[i] = i + 1
-	}
-
 	return &RatingApproval{
-		Options:          options,
 		MaxOptionsAmount: cfg.MaxOptionsAmount,
 		MinOptionsAmount: cfg.MinOptionsAmount,
 		AllowAbstain:     allowAbstain,
@@ -97,13 +89,7 @@ func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMes
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
 
-	configObjectID := fmt.Sprintf("poll_config_rating_approval/%d", configID)
-
-	if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-		return "", fmt.Errorf("insert options: %w", err)
-	}
-
-	return configObjectID, nil
+	return fmt.Sprintf("poll_config_rating_approval/%d", configID), nil
 }
 
 func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {

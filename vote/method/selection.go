@@ -22,9 +22,9 @@ type Selection struct {
 	AllowNota        bool               `json:"allow_nota"`
 }
 
-func SelectionFromDB(configDB dsmodels.PollConfigSelection) Selection {
+func SelectionFromDB(configDB dsmodels.PollConfigSelection, optionIDs []int) Selection {
 	return Selection{
-		Options:          configDB.OptionIDs,
+		Options:          optionIDs,
 		MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
 		MinOptionsAmount: maybeZeroIsNull(configDB.MinOptionsAmount),
 		AllowNota:        configDB.AllowNota,
@@ -33,7 +33,6 @@ func SelectionFromDB(configDB dsmodels.PollConfigSelection) Selection {
 
 func SelectionFromRequest(config json.RawMessage) (*Selection, error) {
 	var cfg struct {
-		Options          []any              `json:"options"`
 		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
 		AllowNota        bool               `json:"allow_nota"`
@@ -42,14 +41,7 @@ func SelectionFromRequest(config json.RawMessage) (*Selection, error) {
 		return nil, invalidConfigError{}
 	}
 
-	// This is only needed for easier testing. In production, the id from the db is used.
-	options := make([]int, len(cfg.Options))
-	for i := range cfg.Options {
-		options[i] = i + 1
-	}
-
 	return &Selection{
-		Options:          options,
 		MaxOptionsAmount: cfg.MaxOptionsAmount,
 		MinOptionsAmount: cfg.MinOptionsAmount,
 		AllowNota:        cfg.AllowNota,
@@ -95,13 +87,7 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
 
-	configObjectID := fmt.Sprintf("poll_config_selection/%d", configID)
-
-	if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-		return "", fmt.Errorf("insert options: %w", err)
-	}
-
-	return configObjectID, nil
+	return fmt.Sprintf("poll_config_selection/%d", configID), nil
 }
 
 func (s Selection) ValidateBallot(vote json.RawMessage) error {

@@ -145,6 +145,12 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
 
+	if len(ci.Options) > 0 {
+		if err := saveOptions(ctx, tx, newID, ci.OptionType, ci.Options); err != nil {
+			return 0, fmt.Errorf("save options: %w", err)
+		}
+	}
+
 	if len(ci.EntitledGroupIDs) > 0 {
 		placeholders := make([]string, len(ci.EntitledGroupIDs))
 		args := make([]any, len(ci.EntitledGroupIDs)*2)
@@ -200,17 +206,57 @@ func saveConfig(ctx context.Context, tx pgx.Tx, methodStr string, config json.Ra
 	return configObjectID, nil
 }
 
+func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optionList []json.RawMessage) error {
+	// TODO: Update options on update. Would it be ok to delete and recreate
+	// this? This would create new ids.
+	for i, option := range optionList {
+		switch oType {
+		case "text":
+			var textOption string
+			if err := json.Unmarshal(option, &textOption); err != nil {
+				return errors.Join(fmt.Errorf("decode text option: %w", err), MessageError(ErrInvalid, "Invalid option"))
+			}
+
+			sql := `INSERT INTO poll_option
+				(poll_id, weight, text)
+				VALUES ($1, $2, $3);`
+
+			if _, err := tx.Exec(ctx, sql, pollID, i+1, textOption); err != nil {
+				return fmt.Errorf("insert options: %w", err)
+			}
+		case "meeting_user":
+			var meetingUserOption int
+			if err := json.Unmarshal(option, &meetingUserOption); err != nil {
+				return errors.Join(fmt.Errorf("decode meeting_user option: %w", err), MessageError(ErrInvalid, "Invalid option"))
+			}
+
+			sql := `INSERT INTO poll_option
+			(poll_id, weight, meeting_user_id)
+			VALUES ($1, $2, $3);`
+
+			if _, err := tx.Exec(ctx, sql, pollID, i+1, meetingUserOption); err != nil {
+				return fmt.Errorf("insert options: %w", err)
+			}
+		default:
+			return MessageErrorf(ErrInvalid, "Invalid option_type %s", oType)
+		}
+	}
+	return nil
+}
+
 type createInput struct {
-	Title            string          `json:"title"`
-	ContentObjectID  string          `json:"content_object_id"`
-	MeetingID        int             `json:"meeting_id"`
-	Method           string          `json:"method"`
-	MethodConfig     json.RawMessage `json:"method_config"`
-	Visibility       string          `json:"visibility"`
-	EntitledGroupIDs []int           `json:"entitled_group_ids"`
-	Published        bool            `json:"published"`
-	Result           json.RawMessage `json:"result"`
-	AllowVoteSplit   bool            `json:"allow_vote_split"`
+	Title            string            `json:"title"`
+	ContentObjectID  string            `json:"content_object_id"`
+	MeetingID        int               `json:"meeting_id"`
+	Method           string            `json:"method"`
+	MethodConfig     json.RawMessage   `json:"method_config"`
+	OptionType       string            `json:"options_type"`
+	Options          []json.RawMessage `json:"options"`
+	Visibility       string            `json:"visibility"`
+	EntitledGroupIDs []int             `json:"entitled_group_ids"`
+	Published        bool              `json:"published"`
+	Result           json.RawMessage   `json:"result"`
+	AllowVoteSplit   bool              `json:"allow_vote_split"`
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
@@ -237,6 +283,10 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, e
 
 	if ci.MethodConfig == nil {
 		return createInput{}, MessageError(ErrInvalid, "Field 'config' can not be empty")
+	}
+
+	if ci.OptionType == "" && len(ci.Options) != 0 {
+		return createInput{}, MessageError(ErrInvalid, "Field `option_type` has to be set, if options are given")
 	}
 
 	if ci.Visibility == "" {
@@ -942,7 +992,7 @@ func (v *Vote) resolveMethod(ctx context.Context, poll dsmodels.Poll) (method.Me
 			return nil, fmt.Errorf("fetching poll_config_selection: %w", err)
 		}
 
-		return method.SelectionFromDB(configDB), nil
+		return method.SelectionFromDB(configDB, poll.OptionIDs), nil
 
 	case "poll_config_rating_score":
 		configDB, err := dsm.PollConfigRatingScore(configID).First(ctx)
@@ -950,7 +1000,7 @@ func (v *Vote) resolveMethod(ctx context.Context, poll dsmodels.Poll) (method.Me
 			return nil, fmt.Errorf("fetching poll_config_rating_score: %w", err)
 		}
 
-		return method.RatingScoreFromDB(configDB), nil
+		return method.RatingScoreFromDB(configDB, poll.OptionIDs), nil
 
 	case "poll_config_rating_approval":
 		configDB, err := dsm.PollConfigRatingApproval(configID).First(ctx)
@@ -958,7 +1008,7 @@ func (v *Vote) resolveMethod(ctx context.Context, poll dsmodels.Poll) (method.Me
 			return nil, fmt.Errorf("fetching poll_config_rating_approval: %w", err)
 		}
 
-		return method.RatingApprovalFromDB(configDB), nil
+		return method.RatingApprovalFromDB(configDB, poll.OptionIDs), nil
 
 	default:
 		return nil, fmt.Errorf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID)

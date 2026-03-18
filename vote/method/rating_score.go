@@ -22,9 +22,9 @@ type RatingScore struct {
 	MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
 }
 
-func RatingScoreFromDB(configDB dsmodels.PollConfigRatingScore) RatingScore {
+func RatingScoreFromDB(configDB dsmodels.PollConfigRatingScore, optionIDs []int) RatingScore {
 	return RatingScore{
-		Options:           configDB.OptionIDs,
+		Options:           optionIDs,
 		MaxOptionsAmount:  maybeZeroIsNull(configDB.MaxOptionsAmount),
 		MinOptionsAmount:  maybeZeroIsNull(configDB.MinOptionsAmount),
 		MaxVotesPerOption: maybeZeroIsNull(configDB.MaxVotesPerOption),
@@ -35,7 +35,6 @@ func RatingScoreFromDB(configDB dsmodels.PollConfigRatingScore) RatingScore {
 
 func RatingScoreFromRequest(config json.RawMessage) (*RatingScore, error) {
 	var cfg struct {
-		Options           []any              `json:"options"`
 		MaxOptionsAmount  dsfetch.Maybe[int] `json:"max_options_amount"`
 		MinOptionsAmount  dsfetch.Maybe[int] `json:"min_options_amount"`
 		MaxVotesPerOption dsfetch.Maybe[int] `json:"max_votes_per_option"`
@@ -46,14 +45,7 @@ func RatingScoreFromRequest(config json.RawMessage) (*RatingScore, error) {
 		return nil, invalidConfigError{}
 	}
 
-	// This is only needed for easier testing. In production, the id from the db is used.
-	options := make([]int, len(cfg.Options))
-	for i := range cfg.Options {
-		options[i] = i + 1
-	}
-
 	return &RatingScore{
-		Options:           options,
 		MaxOptionsAmount:  cfg.MaxOptionsAmount,
 		MinOptionsAmount:  cfg.MinOptionsAmount,
 		MaxVotesPerOption: cfg.MaxVotesPerOption,
@@ -101,13 +93,7 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
 
-	configObjectID := fmt.Sprintf("poll_config_rating_score/%d", configID)
-
-	if err := insertOption(ctx, tx, config, configObjectID); err != nil {
-		return "", fmt.Errorf("insert options: %w", err)
-	}
-
-	return configObjectID, nil
+	return fmt.Sprintf("poll_config_rating_score/%d", configID), nil
 }
 
 func (rs RatingScore) ValidateBallot(vote json.RawMessage) error {

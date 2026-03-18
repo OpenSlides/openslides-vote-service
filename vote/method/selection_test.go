@@ -15,69 +15,79 @@ func TestSelectionValidateVote(t *testing.T) {
 		name        string
 		method      string
 		config      string
+		options     []int
 		vote        string
 		expectValid bool
 	}{
 		{
 			name:        "Selection invalid json",
 			method:      "selection",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `[0`,
 			expectValid: false,
 		},
 		{
 			name:        "Selection",
 			method:      "selection",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `[1]`,
 			expectValid: true,
 		},
 		{
 			name:        "Selection same value multiple times",
 			method:      "selection",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `[1,1]`,
 			expectValid: false,
 		},
 		{
 			name:        "Selection unknown key",
 			method:      "selection",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `[3]`,
 			expectValid: false,
 		},
 		{
 			name:        "Selection max_options_amount",
 			method:      "selection",
-			config:      `{"options":[1,2],"max_options_amount":1}`,
+			config:      `{"max_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `[1]`,
 			expectValid: true,
 		},
 		{
 			name:        "Selection max_options_amount too many",
 			method:      "selection",
-			config:      `{"options":[1,2],"max_options_amount":1}`,
+			config:      `{"max_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `[1,2]`,
 			expectValid: false,
 		},
 		{
 			name:        "Selection min_options_amount",
 			method:      "selection",
-			config:      `{"options":[1,2],"min_options_amount":1}`,
+			config:      `{"min_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `[1]`,
 			expectValid: true,
 		},
 		{
 			name:        "Selection min_options_amount too few",
 			method:      "selection",
-			config:      `{"options":[1,2],"min_options_amount":2}`,
+			config:      `{"min_options_amount":2}`,
+			options:     []int{1, 2},
 			vote:        `[1]`,
 			expectValid: false,
 		},
 		{
 			name:        "Selection nota",
 			method:      "selection",
-			config:      `{"options":[1,2],"min_options_amount":2,"allow_nota":true}`,
+			config:      `{"min_options_amount":2,"allow_nota":true}`,
+			options:     []int{1, 2},
 			vote:        `"nota"`,
 			expectValid: true,
 		},
@@ -87,6 +97,7 @@ func TestSelectionValidateVote(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+			a.Options = tt.options
 
 			err = a.ValidateBallot(json.RawMessage(tt.vote))
 
@@ -115,13 +126,15 @@ func TestSelectionCreateResult(t *testing.T) {
 		name         string
 		method       string
 		config       string
+		options      []int
 		ballots      []dsmodels.Ballot
 		expectResult string
 	}{
 		{
-			name:   "Selection",
-			method: "selection",
-			config: `{"options":[1,2,3]}`,
+			name:    "Selection",
+			method:  "selection",
+			config:  `{}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `[1,2]`},
 				{Value: `[2,3]`},
@@ -130,9 +143,10 @@ func TestSelectionCreateResult(t *testing.T) {
 			expectResult: `{"1":"1","2":"2","3":"6"}`,
 		},
 		{
-			name:   "Selection abstain",
-			method: "selection",
-			config: `{"options":[1,2,3]}`,
+			name:    "Selection abstain",
+			method:  "selection",
+			config:  `{}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `[1,2]`},
 				{Value: `[]`},
@@ -141,9 +155,10 @@ func TestSelectionCreateResult(t *testing.T) {
 			expectResult: `{"1":"1","2":"1","abstain":"6"}`,
 		},
 		{
-			name:   "Selection nota",
-			method: "selection",
-			config: `{"options":[1,2,3],"allow_nota":true}`,
+			name:    "Selection nota",
+			method:  "selection",
+			config:  `{"allow_nota":true}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `[1,2]`},
 				{Value: `"nota"`},
@@ -157,6 +172,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+			a.Options = tt.options
 
 			result, err := a.Result(tt.ballots)
 			if err != nil {
