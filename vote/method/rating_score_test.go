@@ -15,111 +15,127 @@ func TestRatingScoreValidateVote(t *testing.T) {
 		name        string
 		method      string
 		config      string
+		options     []int
 		vote        string
 		expectValid bool
 	}{
 		{
 			name:        "Rating Score",
 			method:      "rating_score",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Score invalid key",
 			method:      "rating_score",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `{"0":3}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score with negative value",
 			method:      "rating_score",
-			config:      `{"options":[1,2]}`,
+			config:      `{}`,
+			options:     []int{1, 2},
 			vote:        `{"1":-3}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score max_options_amount",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_options_amount":1}`,
+			config:      `{"max_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Score max_options_amount too many",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_options_amount":1}`,
+			config:      `{"max_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3, "2":1}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score min_options_amount",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"min_options_amount":1}`,
+			config:      `{"min_options_amount":1}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Score min_options_amount too few",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"min_options_amount":2}`,
+			config:      `{"min_options_amount":2}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score max_votes_per_option",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_votes_per_option":2}`,
+			config:      `{"max_votes_per_option":2}`,
+			options:     []int{1, 2},
 			vote:        `{"1":2}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Score max_votes_per_option too many",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_votes_per_option":2}`,
+			config:      `{"max_votes_per_option":2}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score max_vote_sum",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_vote_sum":5}`,
+			config:      `{"max_vote_sum":5}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3}`,
 			expectValid: true,
 		},
 		{
 			name:        "Rating Score max_vote_sum too many",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_vote_sum":5}`,
+			config:      `{"max_vote_sum":5}`,
+			options:     []int{1, 2},
 			vote:        `{"1":6}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score max_vote_sum too many on different options",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"max_vote_sum":5}`,
+			config:      `{"max_vote_sum":5}`,
+			options:     []int{1, 2},
 			vote:        `{"1":3, "2":3}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score min_vote_sum on one vote",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"min_vote_sum":10}`,
+			config:      `{"min_vote_sum":10}`,
+			options:     []int{1, 2},
 			vote:        `{"1":5}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score min_vote_sum on many votes",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"min_vote_sum":10}`,
+			config:      `{"min_vote_sum":10}`,
+			options:     []int{1, 2},
 			vote:        `{"1":5, "2":4}`,
 			expectValid: false,
 		},
 		{
 			name:        "Rating Score min_vote_sum enough",
 			method:      "rating_score",
-			config:      `{"options":[1,2],"min_vote_sum":1}`,
+			config:      `{"min_vote_sum":1}`,
+			options:     []int{1, 2},
 			vote:        `{"1":5, "2":5}`,
 			expectValid: true,
 		},
@@ -129,6 +145,7 @@ func TestRatingScoreValidateVote(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+			a.Options = tt.options
 
 			err = a.ValidateBallot(json.RawMessage(tt.vote))
 
@@ -157,13 +174,15 @@ func TestRatingScoreCreateResult(t *testing.T) {
 		name         string
 		method       string
 		config       string
+		options      []int
 		ballots      []dsmodels.Ballot
 		expectResult string
 	}{
 		{
-			name:   "Rating Score",
-			method: "rating_score",
-			config: `{"options":[1,2,3]}`,
+			name:    "Rating Score",
+			method:  "rating_score",
+			config:  `{}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{"2":2,"3":3}`},
@@ -172,9 +191,10 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			expectResult: `{"1":"3","2":"5","3":"28"}`,
 		},
 		{
-			name:   "Rating Score Abstain",
-			method: "rating_score",
-			config: `{"options":[1,2,3]}`,
+			name:    "Rating Score Abstain",
+			method:  "rating_score",
+			config:  `{}`,
+			options: []int{1, 2, 3},
 			ballots: []dsmodels.Ballot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{}`},
@@ -188,6 +208,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
+			a.Options = tt.options
 
 			result, err := a.Result(tt.ballots)
 			if err != nil {

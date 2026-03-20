@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
@@ -107,63 +105,6 @@ func hasDuplicates[T comparable](slice []T) bool {
 		seen[v] = struct{}{}
 	}
 	return false
-}
-
-func insertOption(ctx context.Context, tx pgx.Tx, config json.RawMessage, configObjectID string) error {
-	var cfg struct {
-		Type    string `json:"option_type"`
-		Options []any  `json:"options"`
-	}
-	if err := json.Unmarshal(config, &cfg); err != nil {
-		return fmt.Errorf("unmarshal config: %w", err)
-	}
-
-	if len(cfg.Options) == 0 {
-		return invalidConfig("Need at least one value in options")
-	}
-
-	for _, option := range cfg.Options {
-		str, ok := option.(string)
-		if !ok {
-			continue
-		}
-		if slices.Contains(reservedOptionNames, str) {
-			return invalidConfig("%s is not allowed as an option", option)
-		}
-	}
-
-	var sqlColumns string
-	var args []any
-
-	switch cfg.Type {
-	case "text":
-		sqlColumns = `(poll_config_id, weight, text)`
-	case "meeting_user":
-		sqlColumns = `(poll_config_id, weight, meeting_user_id)`
-	default:
-		return invalidConfig("unknown option_type %q", cfg.Type)
-	}
-
-	for weight, opt := range cfg.Options {
-		args = append(args, configObjectID, weight, opt)
-	}
-
-	valuePlaceholders := make([]string, len(cfg.Options))
-	for i := range cfg.Options {
-		valuePlaceholders[i] = fmt.Sprintf("($%d, $%d, $%d)", 3*i+1, 3*i+2, 3*i+3)
-	}
-
-	query := fmt.Sprintf(
-		"INSERT INTO poll_config_option %s VALUES %s",
-		sqlColumns,
-		strings.Join(valuePlaceholders, ", "),
-	)
-
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
-		return fmt.Errorf("insert options: %w", err)
-	}
-
-	return nil
 }
 
 func maybeZeroIsNull(n int) dsfetch.Maybe[int] {
