@@ -5,7 +5,7 @@
 
 The Service uses the following environment variables:
 
-* `VOTE_PORT`: Port on which the service listen on. The default is `9013`.
+* `VOTE_PORT`: Port on which the service listens on. The default is `9013`.
 * `MESSAGE_BUS_HOST`: Host of the redis server. The default is `localhost`.
 * `MESSAGE_BUS_PORT`: Port of the redis server. The default is `6379`.
 * `OPENSLIDES_DEVELOPMENT`: If set, the service uses the default secrets. The default is `false`.
@@ -20,11 +20,4 @@ The Service uses the following environment variables:
 * `AUTH_FAKE`: Use user id 1 for every request. Ignores all other auth environment variables. The default is `false`.
 * `AUTH_TOKEN_KEY_FILE`: Key to sign the JWT auth tocken. The default is `/run/secrets/auth_token_key`.
 * `AUTH_COOKIE_KEY_FILE`: Key to sign the JWT auth cookie. The default is `/run/secrets/auth_cookie_key`.
-* `CACHE_HOST`: Host of the redis used for the fast backend. The default is `localhost`.
-* `CACHE_PORT`: Port of the redis used for the fast backend. The default is `6379`.
-* `VOTE_DATABASE_PASSWORD_FILE`: Password of the postgres database used for long polls. The default is `/run/secrets/postgres_password`.
-* `VOTE_DATABASE_USER`: Databasename of the postgres database used for long polls. The default is `openslides`.
-* `VOTE_DATABASE_HOST`: Host of the postgres database used for long polls. The default is `localhost`.
-* `VOTE_DATABASE_PORT`: Port of the postgres database used for long polls. The default is `5432`.
-* `VOTE_DATABASE_NAME`: Name of the database to save long running polls. The default is `openslides`.
-* `VOTE_SINGLE_INSTANCE`: More performance if the serice is not scalled horizontally. The default is `false`.
+* `VOTE_SECRET_KEY_FILE`: Path to the secret key for secret polls. The default is `/run/secrets/vote_secret_key`.
