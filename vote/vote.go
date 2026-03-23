@@ -250,7 +250,7 @@ type createInput struct {
 	MeetingID        int               `json:"meeting_id"`
 	Method           string            `json:"method"`
 	MethodConfig     json.RawMessage   `json:"method_config"`
-	OptionType       string            `json:"options_type"`
+	OptionType       string            `json:"option_type"`
 	Options          []json.RawMessage `json:"options"`
 	Visibility       string            `json:"visibility"`
 	EntitledGroupIDs []int             `json:"entitled_group_ids"`
