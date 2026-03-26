@@ -3,7 +3,7 @@ module github.com/OpenSlides/openslides-vote-service
 go 1.25.0
 
 require (
-	github.com/OpenSlides/openslides-go v0.0.0-20260326105742-c6027713eb9b
+	github.com/OpenSlides/openslides-go v0.0.0-20260326122751-748c5075901c
 	github.com/alecthomas/kong v1.14.0
 	github.com/gomodule/redigo v1.9.3
 	github.com/jackc/pgx/v5 v5.8.0
