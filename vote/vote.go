@@ -891,8 +891,8 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		),
 		inserted AS (
 			INSERT INTO ballot
-			(poll_id, value, weight, acting_meeting_user_id, represented_meeting_user_id)
-			SELECT $1, $2, $3, $4, $5
+			(poll_id, value, weight, acting_meeting_user_id, represented_meeting_user_id, meeting_id)
+			SELECT $1, $2, $3, $4, $5, $6
 			FROM poll_check p, ballot_check b
 			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
 			RETURNING id
@@ -908,7 +908,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		LEFT JOIN inserted i ON true;`
 
 	var status string
-	err = v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID).Scan(
+	err = v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID, poll.MeetingID).Scan(
 		&status,
 	)
 	if err != nil {
