@@ -262,7 +262,7 @@ type createInput struct {
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
 	var ci createInput
 	if err := json.NewDecoder(r).Decode(&ci); err != nil {
-		return createInput{}, MessageError(ErrInvalid, "Invalid request body.")
+		return createInput{}, MessageError(ErrInvalid, "Request body is not a valid json object.")
 	}
 
 	if ci.Title == "" {

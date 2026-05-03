@@ -3,6 +3,7 @@ package vote_test
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -248,9 +249,92 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error getting title from created poll: %v", err)
 				}
 			})
-
 		},
 	)
+}
+
+func TestCreateSelection(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	organization/1/enable_electronic_voting: true
+	user/5:
+		username: admin
+		organization_management_level: superadmin
+
+	assignment/5:
+		meeting_id: 1
+		title: my assignment
+
+	list_of_speakers/7:
+		content_object_id: assignment/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1/welcome_title: hello world
+	`
+
+	withData(t, pg, data, func(service *vote.Vote, flow flow.Flow) {
+		body := `{
+			"title": "my poll",
+			"content_object_id": "assignment/5",
+			"method": "selection",
+			"method_config": {
+				"onehundred_percent_base": "valid",
+				"min_options_amount": 1,
+				"max_options_amount": 2
+			},
+			"visibility": "open",
+			"meeting_id": 1
+		}`
+
+		id, err := service.Create(ctx, 5, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("Error creating poll: %v", err)
+		}
+
+		if id != 1 {
+			t.Errorf("Expected id 1, got %d", id)
+		}
+
+		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+		if err != nil {
+			t.Fatalf("Fetch poll: %v", err)
+		}
+
+		_, configIDRaw, ok := strings.Cut(poll.ConfigID, "/")
+		if !ok {
+			t.Fatalf("invalid configID: %s", poll.ConfigID)
+		}
+
+		configID, err := strconv.Atoi(configIDRaw)
+		if err != nil {
+			t.Fatalf("invalid configID: %s", poll.ConfigID)
+		}
+
+		config, err := dsmodels.New(flow).PollConfigSelection(configID).First(ctx)
+
+		if config.MaxOptionsAmount != 2 {
+			t.Errorf("got max_options_amount %d, expected 2", config.MaxOptionsAmount)
+		}
+
+		if config.MinOptionsAmount != 1 {
+			t.Errorf("got min_options_amount %d, expected 1", config.MinOptionsAmount)
+		}
+
+	})
 }
 
 func TestManually(t *testing.T) {
