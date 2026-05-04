@@ -118,8 +118,8 @@ func maybeZeroIsNull(n int) dsfetch.Maybe[int] {
 // TODO: Maybe find a way to directly implement this in the maybe type, so pgx
 // can understand it.
 func maybeNullIsNil(n dsfetch.Maybe[int]) any {
-	v, isNull := n.Value()
-	if isNull {
+	v, hasValue := n.Value()
+	if !hasValue {
 		return nil
 	}
 	return v
