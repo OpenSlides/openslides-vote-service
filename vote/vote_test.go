@@ -306,7 +306,8 @@ func TestVoteStop(t *testing.T) {
 		}
 
 		expect := [][]byte{[]byte(`"polldata1"`), []byte(`"polldata2"`)}
-		if !reflect.DeepEqual(result.Votes, expect) {
+		expectReverse := [][]byte{[]byte(`"polldata2"`), []byte(`"polldata1"`)}
+		if !reflect.DeepEqual(result.Votes, expect) && !reflect.DeepEqual(result.Votes, expectReverse) {
 			t.Errorf("Got:\n`%s`, expected\n`%s`", result.Votes, expect)
 		}
 

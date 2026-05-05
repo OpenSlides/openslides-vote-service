@@ -73,7 +73,7 @@ func Backend(t *testing.T, backend vote.Backend) {
 			}
 
 			if len(data) != 0 || len(users) != 0 {
-				t.Errorf("Stop() returned (%q, %q), expected two empty lists", data, users)
+				t.Errorf("Stop() returned (%q, %v), expected two empty lists", data, users)
 			}
 		})
 	})
