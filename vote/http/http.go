@@ -369,7 +369,7 @@ func handleHealth() HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		w.Header().Set("Content-Type", "application/json")
 
-		fmt.Fprintf(w, `{"healthy":true}`)
+		fmt.Fprintf(w, `{"healthy": true, "service":"vote"}`)
 		return nil
 	}
 }
@@ -406,14 +406,15 @@ func HealthClient(ctx context.Context, useHTTPS bool, host, port string, insecur
 	}
 
 	var body struct {
-		Healthy bool `json:"healthy"`
+		Healthy bool   `json:"healthy"`
+		Service string `json:"service"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return fmt.Errorf("reading and parsing response body: %w", err)
 	}
 
-	if !body.Healthy {
+	if !body.Healthy || body.Service != "vote" {
 		return fmt.Errorf("Server returned unhealthy response")
 	}
 
