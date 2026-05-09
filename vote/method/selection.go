@@ -61,6 +61,7 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 	var cfg struct {
 		StrikeOut             bool   `json:"strike_out"`
 		OneHundredPercentBase string `json:"onehundred_percent_base"`
+		DisplayChart          bool   `json:"display_chart"`
 	}
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return "", fmt.Errorf("load additional config: %w", err)
@@ -72,8 +73,8 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 
 	var configID int
 	sql := `INSERT INTO poll_config_selection
-	(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base)
-	VALUES ($1, $2, $3, $4, $5)
+	(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base, display_chart)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id;`
 	if err := tx.QueryRow(
 		ctx,
@@ -83,6 +84,7 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 		s.AllowNota,
 		cfg.StrikeOut,
 		cfg.OneHundredPercentBase,
+		cfg.DisplayChart,
 	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save approval config: %w", err)
 	}
