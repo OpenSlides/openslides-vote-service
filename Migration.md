@@ -78,6 +78,7 @@ es eine motion, assignment oder topic poll ist.
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
+  anonymized: old.is_pseudoanonymized,
   allow_invalid: false,
   allow_vote_split: false,
   sequential_number: old.sequential_number,
@@ -273,7 +274,7 @@ verwendet, sondern option.text.
   * "cryptographic": There should be no case. If so, "secret" can be used.
 
 * poll/backend: was removed. No migration necessary.
-* poll/is_pseudoanonymized: Was removed. No migraton necessary.
+* poll/is_pseudoanonymized: poll/anonymized.
 * poll/pollmethod. Was removed, is now part of poll/config_id.
 * poll/state: The value `published` was removed. polls in this state have to be set to `finished` and the field `poll/published` has to be set to true.
 * poll/min_votes_amount, poll/max_votes_amount, poll/max_votes_per_option, poll/global_yes, poll/global_no, poll/global_abstain are removed. The new field poll/config has to be generated from them.

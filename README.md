@@ -265,6 +265,8 @@ result, but only to present the relative result in percent.
 `strike_out`: boolean value. If set, the selected options are interpreted
 negativly and the result is presented accordingly.
 
+`display_chart`: string value. Tells the client, how to display the poll.
+
 
 #### ballot/value
 
