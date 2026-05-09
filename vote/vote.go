@@ -719,12 +719,20 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
 		}
 
-		sql := `UPDATE poll_ballot
-				SET acting_meeting_user_id = NULL, represented_meeting_user_id = NULL
-				WHERE poll_id = $1`
-
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+		sqlBallots := `
+		UPDATE poll_ballot
+		SET acting_meeting_user_id = NULL, represented_meeting_user_id = NULL
+		WHERE poll_id = $1`
+		if _, err := tx.Exec(ctx, sqlBallots, pollID); err != nil {
 			return fmt.Errorf("anonymize ballots: %w", err)
+		}
+
+		sqlPoll := `
+        UPDATE poll
+        SET anonymized = TRUE
+        WHERE id = $1`
+		if _, err := tx.Exec(ctx, sqlPoll, pollID); err != nil {
+			return fmt.Errorf("set anonymize on poll: %w", err)
 		}
 	}
 
@@ -772,7 +780,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		state = "finished"
 	}
 
-	updateQuery := `UPDATE poll SET state = $1, published = false, result = '' WHERE id = $2`
+	updateQuery := `UPDATE poll SET state = $1, published = false, result = '', anonymized = FALSE WHERE id = $2`
 	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
 		return fmt.Errorf("reset poll state: %w", err)
 	}

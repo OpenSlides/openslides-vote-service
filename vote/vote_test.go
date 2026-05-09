@@ -220,6 +220,14 @@ func TestAll(t *testing.T) {
 				if id, set := vote.ActingMeetingUserID.Value(); set {
 					t.Errorf("Expected acting meeting_user ID not to be set, but is is %d", id)
 				}
+
+				anonymized, err := ds.Poll_Anonymized(1).Value(t.Context())
+				if err != nil {
+					t.Fatalf("Error: %v", err)
+				}
+				if !anonymized {
+					t.Errorf("Expected poll to be anonymized")
+				}
 			})
 
 			t.Run("Reset", func(t *testing.T) {
@@ -235,6 +243,15 @@ func TestAll(t *testing.T) {
 
 				if string(values[key]) != `"created"` {
 					t.Errorf("Expected state to be created, got %s", values[key])
+				}
+
+				ds := dsmodels.New(flow)
+				anonymized, err := ds.Poll_Anonymized(1).Value(t.Context())
+				if err != nil {
+					t.Fatalf("Error: %v", err)
+				}
+				if anonymized {
+					t.Errorf("Expected poll not to be anonymized")
 				}
 			})
 
