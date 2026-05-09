@@ -1525,6 +1525,82 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	}
 }
 
+func TestDeleteWithOptions(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(ctx)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+	defer pg.Close()
+
+	data := `---
+	assignment/5:
+		meeting_id: 1
+		sequential_number: 1
+		title: my assignment
+
+	list_of_speakers/7:
+		content_object_id: assignment/5
+		sequential_number: 1
+		meeting_id: 1
+
+	meeting/1:
+		present_user_ids: [30]
+
+	user:
+		30:
+			username: tom
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user/300:
+		group_ids: [40]
+		user_id: 30
+		meeting_id: 1
+
+	group/40:
+		name: delegate
+		meeting_id: 1
+
+	poll/5:
+		title: poll with votes and options
+		config_id: poll_config_selection/77
+		visibility: open
+		sequential_number: 1
+		content_object_id: assignment/5
+		meeting_id: 1
+		state: started
+		entitled_group_ids: [40]
+
+	poll_config_selection/77:
+		onehundred_percent_base: valid
+
+	poll_option/31:
+		poll_id: 5
+		meeting_user_id: 300
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			err := service.Delete(ctx, 5, 5)
+			if err != nil {
+				t.Errorf("Error: %v", err)
+			}
+		},
+	)
+}
+
 func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(service *vote.Vote, flow flow.Flow)) {
 	t.Helper()
 
