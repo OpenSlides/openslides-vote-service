@@ -80,7 +80,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 		method       string
 		config       string
 		options      []int
-		ballots      []dsmodels.Ballot
+		ballots      []dsmodels.PollBallot
 		expectResult string
 	}{
 		{
@@ -88,7 +88,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			method:  "rating_approval",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `{"1":"yes","2":"no"}`},
 				{Value: `{"2":"yes","3":"no"}`},
 				{Value: `{"3":"yes"}`, Weight: decimal.NewFromInt(5)},
@@ -100,7 +100,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			method:  "rating_approval",
 			config:  `{"allow_abstain":false}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `{"1":"yes","2":"abstain"}`},
 				{Value: `{"1":"yes","2":"no"}`},
 			},

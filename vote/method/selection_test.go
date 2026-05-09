@@ -127,7 +127,7 @@ func TestSelectionCreateResult(t *testing.T) {
 		method       string
 		config       string
 		options      []int
-		ballots      []dsmodels.Ballot
+		ballots      []dsmodels.PollBallot
 		expectResult string
 	}{
 		{
@@ -135,7 +135,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `[1,2]`},
 				{Value: `[2,3]`},
 				{Value: `[3]`, Weight: decimal.NewFromInt(5)},
@@ -147,7 +147,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `[1,2]`},
 				{Value: `[]`},
 				{Value: `[]`, Weight: decimal.NewFromInt(5)},
@@ -159,7 +159,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{"allow_nota":true}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `[1,2]`},
 				{Value: `"nota"`},
 				{Value: `"nota"`, Weight: decimal.NewFromInt(5)},

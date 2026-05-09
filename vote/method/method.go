@@ -16,7 +16,7 @@ import (
 type Method interface {
 	Name() string
 	ValidateBallot(ballot json.RawMessage) error
-	Result(votes []dsmodels.Ballot) (string, error)
+	Result(votes []dsmodels.PollBallot) (string, error)
 }
 
 // SaveConfig saves the configuration for a given vote method.
@@ -60,7 +60,7 @@ func addInvalid(result []byte, invalid int) ([]byte, error) {
 
 func iterateValues(
 	m Method,
-	votes []dsmodels.Ballot,
+	votes []dsmodels.PollBallot,
 	fn func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error,
 ) (string, error) {
 	result := make(map[string]decimal.Decimal)

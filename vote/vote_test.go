@@ -155,7 +155,7 @@ func TestAll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Ballot(1).First(t.Context())
+				vote, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
@@ -212,7 +212,7 @@ func TestAll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Ballot(1).First(t.Context())
+				vote, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
@@ -496,7 +496,7 @@ func TestVote(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.Ballot(1).First(t.Context())
+				vote, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting vote: %v", err)
 				}
@@ -1001,7 +1001,7 @@ func TestSecretPoll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				ballot, err := ds.Ballot(1).First(t.Context())
+				ballot, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting ballot: %v", err)
 				}
@@ -1018,7 +1018,7 @@ func TestSecretPoll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				ballotList, err := ds.Ballot(1, 2).Get(t.Context())
+				ballotList, err := ds.PollBallot(1, 2).Get(t.Context())
 				if err != nil {
 					t.Fatalf("Error: Getting ballot: %v", err)
 				}
@@ -1504,7 +1504,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 						if err != nil {
 							t.Fatalf("Error: Getting votes from poll: %v", err)
 						}
-						found := slices.ContainsFunc(poll.BallotList, func(vote dsmodels.Ballot) bool {
+						found := slices.ContainsFunc(poll.BallotList, func(vote dsmodels.PollBallot) bool {
 							userID, _ := vote.RepresentedMeetingUserID.Value()
 							return userID == tt.expectRepresentedMeetingUserID
 						})

@@ -621,7 +621,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	if poll.State == `started` {
 		ds := dsmodels.New(v.flow)
 
-		ballots, err := ds.Ballot(poll.BallotIDs...).Get(ctx)
+		ballots, err := ds.PollBallot(poll.BallotIDs...).Get(ctx)
 		if err != nil {
 			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
 		}
@@ -1156,7 +1156,7 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingUserID int
 }
 
 // CreateResult creates the result from a list of votes.
-func CreateResult(method method.Method, allowVoteSplit bool, ballots []dsmodels.Ballot) (string, error) {
+func CreateResult(method method.Method, allowVoteSplit bool, ballots []dsmodels.PollBallot) (string, error) {
 	if allowVoteSplit {
 		ballots = splitVote(method, ballots)
 	}
@@ -1164,8 +1164,8 @@ func CreateResult(method method.Method, allowVoteSplit bool, ballots []dsmodels.
 	return method.Result(ballots)
 }
 
-func splitVote(method method.Method, ballots []dsmodels.Ballot) []dsmodels.Ballot {
-	var splittedBallots []dsmodels.Ballot
+func splitVote(method method.Method, ballots []dsmodels.PollBallot) []dsmodels.PollBallot {
+	var splittedBallots []dsmodels.PollBallot
 	for _, ballot := range ballots {
 		if !ballot.Split {
 			splittedBallots = append(splittedBallots, ballot)
@@ -1185,14 +1185,14 @@ func splitVote(method method.Method, ballots []dsmodels.Ballot) []dsmodels.Ballo
 	return splittedBallots
 }
 
-func ballotsFromSplitted(method method.Method, ballot dsmodels.Ballot, splitted map[decimal.Decimal]json.RawMessage) []dsmodels.Ballot {
-	var fromThisBallot []dsmodels.Ballot
+func ballotsFromSplitted(method method.Method, ballot dsmodels.PollBallot, splitted map[decimal.Decimal]json.RawMessage) []dsmodels.PollBallot {
+	var fromThisBallot []dsmodels.PollBallot
 	for splitWeight, splitValue := range splitted {
 		if err := method.ValidateBallot(splitValue); err != nil {
-			return []dsmodels.Ballot{ballot}
+			return []dsmodels.PollBallot{ballot}
 		}
 
-		fromThisBallot = append(fromThisBallot, dsmodels.Ballot{
+		fromThisBallot = append(fromThisBallot, dsmodels.PollBallot{
 			PollID:                   ballot.PollID,
 			Weight:                   splitWeight,
 			Value:                    string(splitValue),
@@ -1254,7 +1254,7 @@ func canManagePoll(ctx context.Context, getter flow.Getter, meetingID int, conte
 	case "assignment":
 		requiredPerm = perm.AssignmentCanManagePolls
 	case "topic":
-		requiredPerm = perm.PollCanManage
+		requiredPerm = perm.AgendaItemCanManagePolls
 	default:
 		return fmt.Errorf(
 			"invalid content object id %s, only motion, assignment or topic allowed",

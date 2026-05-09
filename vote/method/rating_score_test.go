@@ -175,7 +175,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 		method       string
 		config       string
 		options      []int
-		ballots      []dsmodels.Ballot
+		ballots      []dsmodels.PollBallot
 		expectResult string
 	}{
 		{
@@ -183,7 +183,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			method:  "rating_score",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{"2":2,"3":3}`},
 				{Value: `{"3":5}`, Weight: decimal.NewFromInt(5)},
@@ -195,7 +195,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			method:  "rating_score",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{}`},
 				{Value: `{}`, Weight: decimal.NewFromInt(5)},

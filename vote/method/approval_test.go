@@ -79,14 +79,14 @@ func TestApprovalCreateResult(t *testing.T) {
 		name         string
 		method       string
 		config       string
-		ballots      []dsmodels.Ballot
+		ballots      []dsmodels.PollBallot
 		expectResult string
 	}{
 		{
 			name:   "Approval",
 			method: "approval",
 			config: "",
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `"Yes"`},
 				{Value: `"Yes"`},
 				{Value: `"No"`},
@@ -97,7 +97,7 @@ func TestApprovalCreateResult(t *testing.T) {
 			name:   "Approval with invalid",
 			method: "approval",
 			config: "",
-			ballots: []dsmodels.Ballot{
+			ballots: []dsmodels.PollBallot{
 				{Value: `"Yes"`},
 				{Value: `"Yes"`},
 				{Value: `"No"`},

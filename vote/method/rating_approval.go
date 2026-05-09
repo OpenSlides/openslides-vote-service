@@ -120,7 +120,7 @@ func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {
 	return nil
 }
 
-func (ra RatingApproval) Result(votes []dsmodels.Ballot) (string, error) {
+func (ra RatingApproval) Result(votes []dsmodels.PollBallot) (string, error) {
 	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0
 
