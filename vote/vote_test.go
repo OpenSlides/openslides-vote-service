@@ -853,11 +853,11 @@ func TestVoteFinalize(t *testing.T) {
 		allow_abstain: true
 		onehundred_percent_base: valid
 
-	ballot/1:
+	poll_ballot/1:
 		poll_id: 5
 		value: '"yes"'
 		represented_meeting_user_id: 300
-	ballot/2:
+	poll_ballot/2:
 		poll_id: 5
 		value: '"no"'
 		represented_meeting_user_id: 500

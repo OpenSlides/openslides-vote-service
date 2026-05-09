@@ -640,14 +640,14 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			})
 
 			// Delete and reinsert old ballots.
-			_, err = tx.Exec(ctx, "DELETE FROM ballot_t WHERE poll_id = $1", poll.ID)
+			_, err = tx.Exec(ctx, "DELETE FROM poll_ballot WHERE poll_id = $1", poll.ID)
 			if err != nil {
 				return fmt.Errorf("deleting old ballots: %w", err)
 			}
 
 			_, err = tx.CopyFrom(
 				ctx,
-				pgx.Identifier{"ballot_t"},
+				pgx.Identifier{"poll_ballot_t"},
 				[]string{"weight", "split", "value", "poll_id"},
 				pgx.CopyFromSlice(len(ballots), func(i int) ([]any, error) {
 					return []any{
@@ -718,7 +718,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
 		}
 
-		sql := `UPDATE ballot
+		sql := `UPDATE poll_ballot
 				SET acting_meeting_user_id = NULL, represented_meeting_user_id = NULL
 				WHERE poll_id = $1`
 
@@ -761,7 +761,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
 	}
 
-	deleteVoteQuery := `DELETE FROM ballot WHERE poll_id = $1`
+	deleteVoteQuery := `DELETE FROM poll_ballot WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteVoteQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
@@ -886,11 +886,11 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					WHEN COUNT(*) > 0 THEN 'USER_HAS_VOTED_BEFORE'
 					ELSE 'BALLOT_OK'
 				END as ballot_status
-			FROM ballot
+			FROM poll_ballot
 			WHERE poll_id = $1 AND represented_meeting_user_id = $5
 		),
 		inserted AS (
-			INSERT INTO ballot
+			INSERT INTO poll_ballot
 			(poll_id, value, weight, acting_meeting_user_id, represented_meeting_user_id)
 			SELECT $1, $2, $3, $4, $5
 			FROM poll_check p, ballot_check b
