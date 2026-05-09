@@ -124,7 +124,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	sql := `INSERT INTO poll
-		(title, config_id, visibility, state, content_object_id, meeting_id, result, published, allow_vote_split)
+		(title, config_id, visibility, state, content_object_id, meeting_id, result, live_voting_enabled, allow_vote_split)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id;`
 
@@ -139,7 +139,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		ci.ContentObjectID,
 		ci.MeetingID,
 		string(ci.Result),
-		ci.Published,
+		ci.LiveVotingEnabled,
 		ci.AllowVoteSplit,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
@@ -245,18 +245,18 @@ func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optio
 }
 
 type createInput struct {
-	Title            string            `json:"title"`
-	ContentObjectID  string            `json:"content_object_id"`
-	MeetingID        int               `json:"meeting_id"`
-	Method           string            `json:"method"`
-	MethodConfig     json.RawMessage   `json:"method_config"`
-	OptionType       string            `json:"option_type"`
-	Options          []json.RawMessage `json:"options"`
-	Visibility       string            `json:"visibility"`
-	EntitledGroupIDs []int             `json:"entitled_group_ids"`
-	Published        bool              `json:"published"`
-	Result           json.RawMessage   `json:"result"`
-	AllowVoteSplit   bool              `json:"allow_vote_split"`
+	Title             string            `json:"title"`
+	ContentObjectID   string            `json:"content_object_id"`
+	MeetingID         int               `json:"meeting_id"`
+	Method            string            `json:"method"`
+	MethodConfig      json.RawMessage   `json:"method_config"`
+	OptionType        string            `json:"option_type"`
+	Options           []json.RawMessage `json:"options"`
+	Visibility        string            `json:"visibility"`
+	EntitledGroupIDs  []int             `json:"entitled_group_ids"`
+	LiveVotingEnabled bool              `json:"live_voting_enabled"`
+	Result            json.RawMessage   `json:"result"`
+	AllowVoteSplit    bool              `json:"allow_vote_split"`
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
@@ -399,14 +399,14 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 }
 
 type updateInput struct {
-	Title            string              `json:"title"`
-	Method           string              `json:"method"`
-	MethodConfig     json.RawMessage     `json:"method_config"`
-	Visibility       string              `json:"visibility"`
-	EntitledGroupIDs []int               `json:"entitled_group_ids"`
-	Published        dsfetch.Maybe[bool] `json:"published"`
-	Result           json.RawMessage     `json:"result"`
-	AllowVoteSplit   dsfetch.Maybe[bool] `json:"allow_vote_split"`
+	Title             string              `json:"title"`
+	Method            string              `json:"method"`
+	MethodConfig      json.RawMessage     `json:"method_config"`
+	Visibility        string              `json:"visibility"`
+	EntitledGroupIDs  []int               `json:"entitled_group_ids"`
+	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
+	Result            json.RawMessage     `json:"result"`
+	AllowVoteSplit    dsfetch.Maybe[bool] `json:"allow_vote_split"`
 }
 
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
@@ -488,9 +488,9 @@ func (ui updateInput) query(pollID int) (string, []any) {
 		argIndex++
 	}
 
-	if published, hasValue := ui.Published.Value(); hasValue {
-		setParts = append(setParts, fmt.Sprintf("published = $%d", argIndex))
-		args = append(args, published)
+	if liveVoting, hasValue := ui.LiveVotingEnabled.Value(); hasValue {
+		setParts = append(setParts, fmt.Sprintf("live_voting_enabled = $%d", argIndex))
+		args = append(args, liveVoting)
 		argIndex++
 	}
 
@@ -580,8 +580,8 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("preloading poll: %w", err)
 	}
 
-	sql := `UPDATE poll SET state = 'started' WHERE id = $1 AND state != 'finished';`
-	commandTag, err := v.querier.Exec(ctx, sql, pollID)
+	sql := `UPDATE poll SET state = 'started', published = $2 WHERE id = $1 AND state != 'finished';`
+	commandTag, err := v.querier.Exec(ctx, sql, pollID, poll.LiveVotingEnabled)
 	if err != nil {
 		return fmt.Errorf("set poll %d to started: %w", pollID, err)
 	}

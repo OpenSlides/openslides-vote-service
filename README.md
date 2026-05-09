@@ -452,6 +452,15 @@ The value is an integer and not a decimal value decoded as string. It counts the
 amount of invalid ballots and not the vote-weight.
 
 
+## Live Voting
+
+Live Voting behaves identically to normal voting, however the results can
+already be viewed during the ongoing election.
+
+If the `live_voting_enabled` flag is set when creating a poll, the poll will
+automatically be published upon starting.
+
+
 ## Configuration of the service
 
 The service is configured with environment variables. See [all environment
