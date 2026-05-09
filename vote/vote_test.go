@@ -314,7 +314,9 @@ func TestCreateSelection(t *testing.T) {
 				"max_options_amount": 2
 			},
 			"visibility": "open",
-			"meeting_id": 1
+			"meeting_id": 1,
+			"options": ["Hubert", "Max"],
+			"option_type": "text"
 		}`
 
 		id, err := service.Create(ctx, 5, strings.NewReader(body))

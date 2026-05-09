@@ -17,6 +17,7 @@ type Method interface {
 	Name() string
 	ValidateBallot(ballot json.RawMessage) error
 	Result(votes []dsmodels.PollBallot) (string, error)
+	RequireOptions() bool
 }
 
 // SaveConfig saves the configuration for a given vote method.
@@ -32,6 +33,30 @@ func SaveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMe
 		return ratingApprovalSaveConfig(ctx, tx, config)
 	default:
 		return "", fmt.Errorf("unknown method: %s", method)
+	}
+}
+
+func RequireOptions(methodStr string) (bool, error) {
+	method, err := methodFromString(methodStr)
+	if err != nil {
+		return false, fmt.Errorf("getting method from string %s: %w", methodStr, err)
+	}
+
+	return method.RequireOptions(), nil
+}
+
+func methodFromString(methodStr string) (Method, error) {
+	switch methodStr {
+	case Approval{}.Name():
+		return &Approval{}, nil
+	case Selection{}.Name():
+		return &Selection{}, nil
+	case RatingScore{}.Name():
+		return &RatingScore{}, nil
+	case RatingApproval{}.Name():
+		return &RatingApproval{}, nil
+	default:
+		return nil, fmt.Errorf("unknown method: %s", methodStr)
 	}
 }
 

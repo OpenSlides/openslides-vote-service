@@ -17,6 +17,10 @@ type Approval struct {
 	AllowAbstain bool `json:"allow_abstain"`
 }
 
+func (Approval) RequireOptions() bool {
+	return false
+}
+
 func ApprovalFromDB(configDB dsmodels.PollConfigApproval) *Approval {
 	return &Approval{
 		AllowAbstain: configDB.AllowAbstain,

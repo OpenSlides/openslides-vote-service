@@ -281,6 +281,15 @@ func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, e
 		return createInput{}, MessageError(ErrInvalid, "Field 'method' can not be empty")
 	}
 
+	requireOptions, err := method.RequireOptions(ci.Method)
+	if err != nil {
+		return createInput{}, fmt.Errorf("getting method: %w", err)
+	}
+
+	if requireOptions && len(ci.Options) == 0 {
+		return createInput{}, MessageErrorf(ErrInvalid, "Method %s needs at least one option", ci.Method)
+	}
+
 	if ci.MethodConfig == nil {
 		return createInput{}, MessageError(ErrInvalid, "Field 'config' can not be empty")
 	}

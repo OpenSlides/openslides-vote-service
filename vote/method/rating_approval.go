@@ -21,6 +21,10 @@ type RatingApproval struct {
 	AllowAbstain     bool               `json:"allow_abstain"`
 }
 
+func (RatingApproval) RequireOptions() bool {
+	return true
+}
+
 func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval, optionIDs []int) *RatingApproval {
 	return &RatingApproval{
 		Options:          optionIDs,
@@ -86,7 +90,7 @@ func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMes
 		ra.AllowAbstain,
 		cfg.OneHundredPercentBase,
 	).Scan(&configID); err != nil {
-		return "", fmt.Errorf("save approval config: %w", err)
+		return "", fmt.Errorf("save rating_approval config: %w", err)
 	}
 
 	return fmt.Sprintf("poll_config_rating_approval/%d", configID), nil

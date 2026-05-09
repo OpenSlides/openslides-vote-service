@@ -22,6 +22,10 @@ type RatingScore struct {
 	MinVoteSum        dsfetch.Maybe[int] `json:"min_vote_sum"`
 }
 
+func (RatingScore) RequireOptions() bool {
+	return true
+}
+
 func RatingScoreFromDB(configDB dsmodels.PollConfigRatingScore, optionIDs []int) RatingScore {
 	return RatingScore{
 		Options:           optionIDs,
@@ -90,7 +94,7 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 		maybeNullIsNil(rs.MinVoteSum),
 		cfg.OneHundredPercentBase,
 	).Scan(&configID); err != nil {
-		return "", fmt.Errorf("save approval config: %w", err)
+		return "", fmt.Errorf("save rating_score config: %w", err)
 	}
 
 	return fmt.Sprintf("poll_config_rating_score/%d", configID), nil

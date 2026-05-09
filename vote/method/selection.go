@@ -22,6 +22,10 @@ type Selection struct {
 	AllowNota        bool               `json:"allow_nota"`
 }
 
+func (Selection) RequireOptions() bool {
+	return true
+}
+
 func SelectionFromDB(configDB dsmodels.PollConfigSelection, optionIDs []int) Selection {
 	return Selection{
 		Options:          optionIDs,
@@ -61,7 +65,7 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 	var cfg struct {
 		StrikeOut             bool   `json:"strike_out"`
 		OneHundredPercentBase string `json:"onehundred_percent_base"`
-		DisplayChart          bool   `json:"display_chart"`
+		DisplayChart          string `json:"display_chart"`
 	}
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return "", fmt.Errorf("load additional config: %w", err)
@@ -86,7 +90,7 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 		cfg.OneHundredPercentBase,
 		cfg.DisplayChart,
 	).Scan(&configID); err != nil {
-		return "", fmt.Errorf("save approval config: %w", err)
+		return "", fmt.Errorf("save selection config: %w", err)
 	}
 
 	return fmt.Sprintf("poll_config_selection/%d", configID), nil
