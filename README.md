@@ -20,13 +20,10 @@ corresponding poll.
 - assignments: `assignment.can_manage`
 - topic: `poll.can_manage`
 
-With the exception of the create request, all requests need an HTTP GET argument
-in the url, to specify the poll-id. For example `/system/vote/update?id=23`
-
 
 ### Create a poll
 
-`/system/vote/create`
+`POST /system/vote/poll`
 
 The permissions for the create requests are a bit different, since the poll does
 not exist in the database, when the request is sent. Therefore the permission
@@ -54,7 +51,7 @@ The type of `options` depends on `option_type`. It is either a list of string (`
 
 ### Update a poll
 
-`/system/vote/update?id=XX`
+`POST /system/vote/poll/{id}`
 
 The fields `content_object_id` and `meeting_id` can not be changed. You have to
 create a new poll to "update" them.
@@ -71,21 +68,21 @@ is set, all options are overwritten.
 
 ### Delete a poll
 
-`/system/vote/delete?id=XX`
+`DELETE /system/vote/poll/{id}`
 
 The delete request removes the poll and all its ballots in any state. Be careful.
 
 
 ### Start a poll
 
-`/system/vote/start?id=XX`
+`POST /system/vote/poll/{id}/start`
 
 To start a poll means that the users can send their ballots.
 
 
 ### Finalize a poll
 
-`/system/vote/finalize?id=XX`
+`POST /system/vote/poll/{id}/finalize`
 
 To finalize a poll means that users can not send their ballots anymore. It
 creates the `poll/result` field.
@@ -100,17 +97,19 @@ The request can be send many times. It only creates the result the first time.
 To stop a poll and publish and anonymize it at the same time, the following
 request can be used:
 
-`/system/vote/finalize?id=42&publish&anonymize`
+`/system/vote/poll/{id}/finalize?publish&anonymize`
 
 
 ### Reset a poll
 
-`/system/vote/reset?id=XX`
+`POST /system/vote/poll/{id}/reset`
 
 Reset sets the state back to `created` and removes all `ballot` objects.
 
 
 ### Send a ballot
+
+`POST /system/vote/poll/{id}/vote`
 
 A vote-request is a post request with the ballot as body. Only logged in users
 can vote. The body has to be valid json.
