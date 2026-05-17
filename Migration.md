@@ -41,7 +41,9 @@ Im neuen System gibt es keine optionen. Stattdessen wird das Ergebnis direkt im
 Feld `poll/result` gebündelt. Die Votes (jetzt ballot genannt) enthalten genau
 die Daten, die ein Nutzer gesendet hat. Es gibt daher pro Poll und User nur ein
 ballot-objekt. options gibt es nicht mehr als Collection. Jedoch werden bei
-Wahlen die möglichen optionen in `poll_config_X/options` gespeichert.
+Wahlen die möglichen optionen in `poll_option` gespeichert. Die alte
+`options` collection und die neue `poll_option` sind zwei verschiedene Dinge
+die nur zufällig ähnlich heißen.
 
 Eigentlich sollte das Feld `poll/result` redundant sein. Daher, es lässt sich zu
 jeder Zeit aus den votes neu berechnen. Dies gilt nicht für manuelle polls und
@@ -61,6 +63,7 @@ es eine motion, assignment oder topic poll ist.
 ```
 {
   id: kann automatisch erstellt werden,
+  poll_id: ID zum neuen poll objekt.
   allow_abstain: if old.method == "YNA" then "" else false,
   onehundred_percent_base: old.onehundred_percent_base  (Die werte sind anders. Bitte mit Bastian besprechen, wie diese am besten gemappt werden)
   
@@ -73,7 +76,6 @@ es eine motion, assignment oder topic poll ist.
 {
   id: old.id,
   title: old.title,
-  config_id: neu erstellte config-id,
   visibility: old{"analog": "manually", "named": "open", "pseudoanonymous": "secret", "cryptographic": @panic(immpossible)},
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
@@ -81,13 +83,12 @@ es eine motion, assignment oder topic poll ist.
   anonymized: old.is_pseudoanonymized,
   allow_invalid: false,
   allow_vote_split: false,
+  live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  vote_ids: Egal in rel-db. Die Vote-objekte setzten die Relation,
-  voted_ids: [e.user_id for e in old.entitled_users_at_stop if e.voted],
+  voted_ids: old.voted_ids,
   entitled_group_ids: old.entitled_group_ids,
-  projection_ids: Egal in rel-db,
-  meeting_id: old.meeting_id
+  meeting_id: old.meeting_id,
 }
 ```
 
@@ -95,7 +96,7 @@ es eine motion, assignment oder topic poll ist.
 #### poll/result
 
 Im alten System gibt es pro poll eine Option. Es gibt zusätzlich eine
-global-option die jedoch ignoriert werden kann. Das neue `poll/result`
+global-option, die jedoch ignoriert werden kann. Das neue `poll/result`
 entspricht im wesentlichen dieser einen option. Sollte es mehr als eine option
 geben, dann @panic.
 
@@ -109,7 +110,7 @@ geschrieben werden. Allerdings nicht als decimal, sondern als int. `{...,
 "invalid": 42}`
 
 
-#### ballot
+#### poll_ballot
 
 Wenn poll.state "created" oder "started" ist, dann gibt es keine ballots.
 
@@ -128,7 +129,7 @@ old_poll.option_ids[0].vote_ids gefunden werden.
   value: old{"Y": "yes", "N": "no", "A": "abstain"} ansonsten @panic,
   poll_id: old.poll_id,
   acting_meeting_user_id: old.delegated_user_id -> jedoch seine meeting_user_id im poll.meeting,
-  represented_meeting_user_id: old.user_id -> jedoch seine meeting_user_id im poll.meeting.
+  represented_meeting_user_id: old.user_id -> jedoch seine meeting_user_id im poll.meeting,
 }
 ```
 
@@ -139,6 +140,8 @@ Wenn im alten system "Ja/Nein/Enthaltung pro Liste" ausgewählt wurde (Ich
 glaube, dann gibt es nur eine option mit content_object_id auf
 poll_candidate_list), dann behandle es wie bei motion. Daher mit "method":
 "approval". Daher alles hier ignorieren und nur wie bei motion bearbeiten.
+Jedoch müssen die einzelnen Einträge in der Liste als `poll_option` gespeichert
+werden.
 
 
 #### poll_config_rating_approval
@@ -155,7 +158,7 @@ poll_candidate_list), dann behandle es wie bei motion. Daher mit "method":
 ```
 
 
-#### poll_config_option
+#### poll_option
 
 Relevant sind die alten options (old_option) der poll. Für jede option sollte der Werte
 option.content_object_id ein user-collection sein. Ansonsten @panic. Von diesem
@@ -164,9 +167,10 @@ Feld wird die user_id und zu dieser die meeting_user_id im entsprechenden meetin
 ```
 {
   id:
-  poll_config_id: poll_config_rating_approval/ID_VON_OBEN,
+  poll_id: Neue ID der poll,
   weight: old_option.weight,
-  meeting_user_id: old_option.content_object_id -> Davon user_id, von dieser die meeting_user_id herausfinden,
+  text: NULL,
+  meeting_user_id: old_option.content_object_id -> Davon user_id, von dieser die meeting_user_id,
 }
 ```
 
@@ -177,19 +181,18 @@ Feld wird die user_id und zu dieser die meeting_user_id im entsprechenden meetin
 {
   id: old.id,
   title: old.title,
-  config_id: poll_config_rating_approval/ID_FROM_ABOVE,
   visibility: old{"analog": "manually", "named": "open", "pseudoanonymous": "secret", "cryptographic": @panic(immpossible)},
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
+  anonymized: old.is_pseudoanonymized,
   allow_invalid: false,
   allow_vote_split: false,
+  live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  vote_ids: Egal in rel-db. Die Vote-objekte setzten die Relation,
-  voted_ids: [e.user_id for e in old.entitled_users_at_stop if e.voted],
+  voted_ids: old.voted_ids,
   entitled_group_ids: old.entitled_group_ids,
-  projection_ids: Egal in rel-db,
   meeting_id: old.meeting_id
 }
 ```
@@ -198,9 +201,10 @@ Feld wird die user_id und zu dieser die meeting_user_id im entsprechenden meetin
 #### poll/result
 
 Poll/result ist ein dict. Pro alter option gibt es einen Eintrag. Der Key ist
-jeweils die oben angelegte poll_config_option-id. Die Werte "yes", "no" und "abstain"
+jeweils die oben angelegte poll_option-id. Die Werte "yes", "no" und "abstain"
 werden als object übernommen. Zusätzlich wird bei manuellen polls als weiterer
-Wert "invalid" aus der alten poll übernommen.
+Wert "invalid" aus der alten poll übernommen. Invalid ist ein int, die anderen
+Werte sind ein string (da decimal).
 
 `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1}`
 
@@ -209,7 +213,7 @@ Daher die "yes"-"no"-"abstain" Werte der globalen Abstimmung wird bei jeder
 Option addiert.
 
 
-#### ballot
+#### poll_ballot
 
 Wenn poll.state "created" oder "started" ist, dann gibt es keine ballots.
 
@@ -230,13 +234,12 @@ gehören zusammen.
   value: Siehe unten,
   poll_id: old.poll_id,
   acting_meting_user_id: old.delegated_user_id -> Als meeting_user_id im entsprechenden meeting,
-  represented_meeting_user_id: old.user_id -> Als meeting_user_id im entsprechenden meeting
+  represented_meeting_user_id: old.user_id -> Als meeting_user_id im entsprechenden meeting,
 }
 ```
 
-
-`ballot/value` sieht wie folgt aus:
-`{"option_id_A":"yes","option_idB":"abstain"}`. Daher pro option gibt es ein
+`poll_ballot/value` sieht wie folgt aus:
+`{"option_id_A":"yes","option_id_B":"abstain"}`. Daher pro option gibt es ein
 Attribut als String. Der Wert wird genauso umgerechnet, wie bei motion: old{"Y":
 "yes", "N": "no", "A": "abstain"} ansonsten @panic.
 
@@ -246,7 +249,7 @@ Attribut als String. Der Wert wird genauso umgerechnet, wie bei motion: old{"Y":
 Wird fast identisch wie bei assignment durchgeführt.
 
 Aber als key bei poll/result und config werden nicht die meeting_user_ids
-verwendet, sondern option.text.
+verwendet, sondern `poll_option.text`.
 
 
 
@@ -261,6 +264,9 @@ verwendet, sondern option.text.
 
 
 ## Einzelvergleich
+
+(Dieser Abschnitt ist möglicherweise veraltet. Ich gehe davon aus, dass es ihn
+aufgrund der Beschreibung oben nicht braucht.)
 
 ### Alte Felder
 
@@ -290,3 +296,15 @@ verwendet, sondern option.text.
 * vote/user_id was renamed to ballot/represented_meeting_user_id.
 * vote/delegated_user_id was renamed to ballot/acting_meeting_user_id.
 * vote/meeting_id was removed. No migration necessary.
+
+
+## Permissions
+
+Mit dem neuen System werden auch Permissions angepasst. Hier der Diff:
+
+https://github.com/OpenSlides/openslides-meta/pull/506/changes#diff-028ac608b338b62cdb586060b482ae073373845dd5de19118d2cbd253b597418
+
+Es wurden neue Rechte eingefügt, die für die Migration nicht gebraucht werden.
+Die einzige migrationsrelevante Änderung ist:
+
+`poll.can_manage` heißt jetzt `agenda_item.can_manage_polls`.
