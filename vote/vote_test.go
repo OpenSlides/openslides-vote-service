@@ -1544,7 +1544,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	}
 }
 
-func TestDeleteWithOptions(t *testing.T) {
+func TestDeleteWithOptionsAndBallots(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
@@ -1605,6 +1605,14 @@ func TestDeleteWithOptions(t *testing.T) {
 	poll_option/31:
 		poll_id: 5
 		meeting_user_id: 300
+
+	poll_ballot:
+		501:
+			poll_id: 5
+			value: Yes
+		502:
+			poll_id: 5
+			value: No
 	`
 
 	withData(

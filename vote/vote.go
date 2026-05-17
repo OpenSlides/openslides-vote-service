@@ -546,6 +546,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	defer tx.Rollback(ctx)
 
 	deleteStatements := []string{
+		`DELETE FROM poll_ballot WHERE poll_id = $1`,
 		`DELETE FROM poll_config_approval WHERE poll_id = $1`,
 		`DELETE FROM poll_config_selection WHERE poll_id = $1`,
 		`DELETE FROM poll_config_rating_score WHERE poll_id = $1`,
