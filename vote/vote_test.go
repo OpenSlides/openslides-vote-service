@@ -2,6 +2,7 @@ package vote_test
 
 import (
 	"errors"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +19,10 @@ import (
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 )
 
+func TestMain(m *testing.M) {
+	os.Exit(pgtest.RunTests(m))
+}
+
 func TestAll(t *testing.T) {
 	t.Parallel()
 
@@ -27,11 +32,10 @@ func TestAll(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	organization/1/enable_electronic_voting: true
@@ -279,11 +283,10 @@ func TestCreateSelection(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	organization/1/enable_electronic_voting: true
@@ -365,11 +368,10 @@ func TestManually(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	user/5:
@@ -454,11 +456,10 @@ func TestVote(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	motion/5:
@@ -507,8 +508,6 @@ func TestVote(t *testing.T) {
 		data,
 		func(service *vote.Vote, flow flow.Flow) {
 			t.Run("Simple Vote", func(t *testing.T) {
-				defer pg.Cleanup(t)
-
 				body := `{"value":"Yes"}`
 				if err := service.Vote(ctx, 5, 30, strings.NewReader(body)); err != nil {
 					t.Fatalf("Error processing poll: %v", err)
@@ -712,11 +711,10 @@ func TestVoteStart(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	motion/5:
@@ -816,11 +814,10 @@ func TestVoteFinalize(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	motion/5:
@@ -944,11 +941,10 @@ func TestSecretPoll(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	motion/5:
@@ -1089,11 +1085,10 @@ func TestVoteVote(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	motion/5:
@@ -1226,14 +1221,6 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Postgres Test")
 	}
-
-	ctx := t.Context()
-
-	pg, err := pgtest.NewPostgresTest(ctx)
-	if err != nil {
-		t.Fatalf("Error starting postgres: %v", err)
-	}
-	defer pg.Close()
 
 	baseData := `
 	meeting/1/users_enable_vote_delegations: true
@@ -1493,12 +1480,11 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if err := pg.Reset(ctx); err != nil {
-					t.Logf("Cleanup database: %v", err)
-				}
-			}()
-			//pg.Cleanup(t)
+			ctx := t.Context()
+			pg, err := pgtest.NewPostgresTest(t)
+			if err != nil {
+				t.Fatalf("Error starting postgres: %v", err)
+			}
 
 			if err := pg.AddData(ctx, baseData); err != nil {
 				t.Fatalf("Insert base data: %v", err)
@@ -1553,11 +1539,10 @@ func TestDeleteWithOptionsAndBallots(t *testing.T) {
 
 	ctx := t.Context()
 
-	pg, err := pgtest.NewPostgresTest(ctx)
+	pg, err := pgtest.NewPostgresTest(t)
 	if err != nil {
 		t.Fatalf("Error starting postgres: %v", err)
 	}
-	defer pg.Close()
 
 	data := `---
 	assignment/5:

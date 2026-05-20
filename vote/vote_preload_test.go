@@ -24,14 +24,6 @@ func TestVoteNoRequests(t *testing.T) {
 		t.Skip("Postgres Test")
 	}
 
-	ctx := t.Context()
-
-	pg, err := pgtest.NewPostgresTest(ctx)
-	if err != nil {
-		t.Fatalf("Error starting postgres: %v", err)
-	}
-	defer pg.Close()
-
 	baseData := `
 	meeting/1/users_enable_vote_delegations: true
 
@@ -158,11 +150,11 @@ func TestVoteNoRequests(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			defer func() {
-				if err := pg.Reset(ctx); err != nil {
-					t.Logf("Cleanup database: %v", err)
-				}
-			}()
+			ctx := t.Context()
+			pg, err := pgtest.NewPostgresTest(t)
+			if err != nil {
+				t.Fatalf("Error starting postgres: %v", err)
+			}
 
 			if err := pg.AddData(ctx, baseData); err != nil {
 				t.Fatalf("Error: Insert base data: %v", err)
