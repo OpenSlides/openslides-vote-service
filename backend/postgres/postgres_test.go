@@ -1,43 +1,28 @@
 package postgres_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/OpenSlides/openslides-vote-service/backend/postgres"
 	"github.com/OpenSlides/openslides-vote-service/backend/test"
-	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v4"
 )
 
-func startPostgres(t *testing.T) (string, func()) {
+func startPostgres(t *testing.T) string {
 	t.Helper()
 
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		t.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	runOpts := dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        "13",
-		Env: []string{
+	pool := dockertest.NewPoolT(t, "")
+	postgres := pool.RunT(t, "postgres",
+		dockertest.WithTag("17"),
+		dockertest.WithEnv([]string{
 			"POSTGRES_USER=postgres",
 			"POSTGRES_PASSWORD=password",
 			"POSTGRES_DB=database",
-		},
-	}
+		}),
+	)
 
-	resource, err := pool.RunWithOptions(&runOpts)
-	if err != nil {
-		t.Fatalf("Could not start postgres container: %s", err)
-	}
-
-	return resource.GetPort("5432/tcp"), func() {
-		if err = pool.Purge(resource); err != nil {
-			t.Fatalf("Could not purge postgres container: %s", err)
-		}
-	}
+	return postgres.GetPort("5432/tcp")
 }
 
 func TestImplementBackendInterface(t *testing.T) {
@@ -45,9 +30,8 @@ func TestImplementBackendInterface(t *testing.T) {
 		t.Skip("Skip Postgres Test")
 	}
 
-	ctx := context.Background()
-	port, close := startPostgres(t)
-	defer close()
+	ctx := t.Context()
+	port := startPostgres(t)
 
 	addr := fmt.Sprintf(`user=postgres password='password' host=localhost port=%s dbname=database`, port)
 	p, err := postgres.New(ctx, addr)
