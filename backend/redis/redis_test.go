@@ -6,27 +6,19 @@ import (
 
 	"github.com/OpenSlides/openslides-vote-service/backend/redis"
 	"github.com/OpenSlides/openslides-vote-service/backend/test"
-	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v4"
 )
 
-func startRedis(t *testing.T) (string, func()) {
+func startRedis(t *testing.T) string {
 	t.Helper()
 
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		t.Fatalf("Could not connect to docker: %s", err)
-	}
+	pool := dockertest.NewPoolT(t, "")
 
-	resource, err := pool.Run("redis", "6.2", nil)
-	if err != nil {
-		t.Fatalf("Could not start redis container: %s", err)
-	}
+	redis := pool.RunT(t, "redis",
+		dockertest.WithTag("6.2"),
+	)
 
-	return resource.GetPort("6379/tcp"), func() {
-		if err = pool.Purge(resource); err != nil {
-			t.Fatalf("Could not purge redis container: %s", err)
-		}
-	}
+	return redis.GetPort("6379/tcp")
 }
 
 func TestImplementBackendInterface(t *testing.T) {
@@ -34,8 +26,7 @@ func TestImplementBackendInterface(t *testing.T) {
 		t.Skip("Skip Redis Test")
 	}
 
-	port, close := startRedis(t)
-	defer close()
+	port := startRedis(t)
 
 	r := redis.New("localhost:" + port)
 	r.Wait(context.Background())
