@@ -64,21 +64,21 @@ const (
 	keyAbstain = "abstain"
 	keyNota    = "nota"
 	keyInvalid = "invalid"
+	keyTurnout = "turnout"
 )
 
-var reservedOptionNames = []string{keyAbstain, keyNota, keyInvalid}
+var reservedOptionNames = []string{keyAbstain, keyNota, keyInvalid, keyTurnout}
 
-func addInvalid(result []byte, invalid int) ([]byte, error) {
-	if invalid == 0 {
-		return result, nil
-	}
-
+func addInvalidAndTurnout(result []byte, turnout, invalid int) ([]byte, error) {
 	var data map[string]any
 	if err := json.Unmarshal(result, &data); err != nil {
 		return nil, err
 	}
 
-	data[keyInvalid] = invalid
+	if invalid != 0 {
+		data[keyInvalid] = invalid
+	}
+	data[keyTurnout] = turnout
 
 	return json.Marshal(data)
 }
@@ -114,11 +114,12 @@ func iterateValues(
 		return "", fmt.Errorf("encode result: %w", err)
 	}
 
-	withInvalid, err := addInvalid(encodedResult, invalid)
+	withInvalidAndTurnout, err := addInvalidAndTurnout(encodedResult, len(votes), invalid)
 	if err != nil {
 		return "", fmt.Errorf("add invalid: %w", err)
 	}
-	return string(withInvalid), nil
+
+	return string(withInvalidAndTurnout), nil
 }
 
 func hasDuplicates[T comparable](slice []T) bool {
