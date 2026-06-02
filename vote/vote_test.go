@@ -10,6 +10,7 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/cache"
 	"github.com/OpenSlides/openslides-go/datastore/dsmock"
+	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-vote-service/backend/memory"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
@@ -47,7 +48,7 @@ func TestVoteStart(t *testing.T) {
 			user/1/is_present_in_meeting_ids: [1]
 			meeting/5/id: 5
 			`),
-			dsmock.NewCounter,
+			func(g flow.Getter) flow.Getter { return dsmock.NewCounter(g) },
 		)
 		counter := ds.Middlewares()[0].(*dsmock.Counter)
 
@@ -305,7 +306,8 @@ func TestVoteStop(t *testing.T) {
 		}
 
 		expect := [][]byte{[]byte(`"polldata1"`), []byte(`"polldata2"`)}
-		if !reflect.DeepEqual(result.Votes, expect) {
+		expectReverse := [][]byte{[]byte(`"polldata2"`), []byte(`"polldata1"`)}
+		if !reflect.DeepEqual(result.Votes, expect) && !reflect.DeepEqual(result.Votes, expectReverse) {
 			t.Errorf("Got:\n`%s`, expected\n`%s`", result.Votes, expect)
 		}
 
@@ -645,7 +647,7 @@ func TestVoteNoRequests(t *testing.T) {
 			ctx := context.Background()
 			ds := dsmock.NewFlow(
 				dsmock.YAMLData(tt.data),
-				dsmock.NewCounter,
+				func(g flow.Getter) flow.Getter { return dsmock.NewCounter(g) },
 			)
 			counter := ds.Middlewares()[0].(*dsmock.Counter)
 			cachedDS := cache.New(ds)

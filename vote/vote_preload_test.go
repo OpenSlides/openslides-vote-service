@@ -110,9 +110,12 @@ func TestPreload(t *testing.T) {
 				500:
 					user_id: 50
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			3,
 		},
@@ -147,9 +150,12 @@ func TestPreload(t *testing.T) {
 				500:
 					user_id: 50
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			3,
 		},
@@ -191,16 +197,21 @@ func TestPreload(t *testing.T) {
 					user_id: 50
 					vote_delegated_to_id: 520
 					meeting_id: 5
+					group_ids: [7]
 				510:
 					user_id: 51
 					vote_delegated_to_id: 530
 					meeting_id: 5
+					group_ids: [7]
 				520:
 					user_id: 52
 					meeting_id: 5
+					group_ids: [7]
 				530:
 					user_id: 53
 					meeting_id: 5
+					group_ids: [7]
+			group/7/id: 7
 			`,
 			4,
 		},
@@ -215,15 +226,15 @@ func TestPreload(t *testing.T) {
 				t.Fatalf("loadPoll returned: %v", err)
 			}
 
-			dsCount.(*dsmock.Counter).Reset()
+			dsCount.Reset()
 
 			if err := preload(ctx, dsfetch.New(ds), poll); err != nil {
 				t.Errorf("preload returned: %v", err)
 			}
 
-			if got := dsCount.(*dsmock.Counter).Count(); got != tt.expectCount {
+			if got := dsCount.Count(); got != tt.expectCount {
 				buf := new(bytes.Buffer)
-				for _, req := range dsCount.(*dsmock.Counter).Requests() {
+				for _, req := range dsCount.Requests() {
 					fmt.Fprintln(buf, req)
 				}
 				t.Errorf("preload send %d requests, expected %d:\n%s", got, tt.expectCount, buf)
