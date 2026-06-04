@@ -46,7 +46,8 @@ The request expects a body with the fields to create the poll:
 
 `option_type` can either be `text` or `meeting_user`.
 
-The type of `options` depends on `option_type`. It is either a list of string (`text`) or a list of numbers (`meeting_user`)
+The type of `options` depends on `option_type`. It is either a list of string
+(`text`) or a list of numbers (`meeting_user`)
 
 
 ### Update a poll

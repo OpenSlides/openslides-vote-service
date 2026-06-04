@@ -479,18 +479,6 @@ func (ui updateInput) query(pollID int) (string, []any) {
 		argIndex++
 	}
 
-	if ui.Method != "" {
-		setParts = append(setParts, fmt.Sprintf("method = $%d", argIndex))
-		args = append(args, ui.Method)
-		argIndex++
-	}
-
-	if ui.MethodConfig != nil {
-		setParts = append(setParts, fmt.Sprintf("config = $%d", argIndex))
-		args = append(args, string(ui.MethodConfig))
-		argIndex++
-	}
-
 	if ui.Visibility != "" {
 		setParts = append(setParts, fmt.Sprintf("visibility = $%d", argIndex))
 		args = append(args, ui.Visibility)
