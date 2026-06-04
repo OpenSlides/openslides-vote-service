@@ -186,7 +186,7 @@ func (ra RatingApproval) Result(votes []dsmodels.PollBallot) (string, error) {
 	return string(withInvalid), nil
 }
 
-func addExtra(result []byte, turnout, invalid int, abstain decimal.Decimal) ([]byte, error) {
+func addExtra(result []byte, totalBallots, invalid int, abstain decimal.Decimal) ([]byte, error) {
 	var data map[string]any
 	if err := json.Unmarshal(result, &data); err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func addExtra(result []byte, turnout, invalid int, abstain decimal.Decimal) ([]b
 		data[keyAbstain] = abstain
 	}
 
-	data[keyTurnout] = turnout
+	data[keyTotalBallots] = totalBallots
 
 	return json.Marshal(data)
 }
