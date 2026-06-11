@@ -565,6 +565,12 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		return fmt.Errorf("write histroy: %w", err)
 	}
 
+	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
+	sql = `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
+	if _, err := tx.Exec(ctx, sql, fmt.Sprintf("poll/%d", pollID)); err != nil {
+		return fmt.Errorf("update old history entries: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
