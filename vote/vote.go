@@ -173,7 +173,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", newID), ci.MeetingID, "created"); err != nil {
-		return 0, fmt.Errorf("write histroy: %w", err)
+		return 0, fmt.Errorf("write history: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -396,7 +396,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "updated"); err != nil {
-		return fmt.Errorf("write histroy: %w", err)
+		return fmt.Errorf("write history: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -562,7 +562,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "deleted"); err != nil {
-		return fmt.Errorf("write histroy: %w", err)
+		return fmt.Errorf("write history: %w", err)
 	}
 
 	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
@@ -615,7 +615,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "started"); err != nil {
-		return fmt.Errorf("write histroy: %w", err)
+		return fmt.Errorf("write history: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -778,7 +778,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, historyMessages...); err != nil {
-		return fmt.Errorf("write histroy: %w", err)
+		return fmt.Errorf("write history: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -836,7 +836,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "resetted"); err != nil {
-		return fmt.Errorf("write histroy: %w", err)
+		return fmt.Errorf("write history: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
