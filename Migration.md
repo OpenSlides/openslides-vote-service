@@ -465,49 +465,142 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll/valid was previously counted separately. In future, it should be
   calculated by subtracting result.invalid from the total number of votes.
 
+## Changes in old fields by collection
 
-## Einzelvergleich
+### Group (permissions)
 
-(Dieser Abschnitt ist möglicherweise veraltet. Ich gehe davon aus, dass es ihn
-aufgrund der Beschreibung oben nicht braucht.)
+* group/permissions: poll.can_manage was replaced with 3 separate permissions:
+  * motion.can_manage_polls (existing)
+  * assignment.can_manage_polls (existing)
+  * agenda_item.can_manage_polls (new)
 
-### Alte Felder
+To be discussed: should all the users who previously had `poll.can_manage` get
+all the 3 collection-specific permissions.
 
-* meeting/poll_default_backend was removed. No migration necessary. Just remove the value.
-* motion/option_ids was removed. I think, it can just be removed (ignored) since it has no meaning.
-* poll/description was removed. No migration needed. Was not used before.
-* poll/type was renamed to poll/visibility and the values have changed.
-  * "analog" -> "manually"
-  * "named": Its not clear to me if old "named" values should be "named" in the new system or "open". I think, "open" is ok.
-  * "pseudoanonymous" -> "secret"
-  * "cryptographic": There should be no case. If so, "secret" can be used.
+### Meeting
 
-* poll/backend: was removed. No migration necessary.
-* poll/is_pseudoanonymized: poll/anonymized.
-* poll/pollmethod. Was removed, is now part of poll/config_id.
-* poll/state: The value `published` was removed. polls in this state have to be set to `finished` and the field `poll/published` has to be set to true.
-* poll/min_votes_amount, poll/max_votes_amount, poll/max_votes_per_option, poll/global_yes, poll/global_no, poll/global_abstain are removed. The new field poll/config has to be generated from them.
-* poll/onehundred_percent_base moved to config_id and some options were removed or renamed. YNA -> valid, YN -> yes_no.
-* poll/votesvalid, poll/votesinvalid, poll/votescast where removed. They have to be used to generate the field `poll/result`.
-* poll/entitled_users_at_stop was removed. TODO after the client is done.
-* poll/live_voting_enabled was removed. No migration needed, since there are no ongoing polls at the same time as the migration.
-* poll/live_votes was removed. No migration needed.
-* poll/crypt_key, poll/crypt_signature, poll/votes_raw, poll/votes_signature were removed: No migration needed. There was no case with this values.
-* poll/option_ids, poll/global_option_id was removed: No migration needed. But are necessary to generate `poll/result`.
-* The `option` collection was removed. No migration needed, but necessary to generate `poll/result`.
-* vote/user_token was removed: No migration necessary
-* vote/user_id was renamed to ballot/represented_meeting_user_id.
-* vote/delegated_user_id was renamed to ballot/acting_meeting_user_id.
-* vote/meeting_id was removed. No migration necessary.
+* Fields were removed. No migration necessary:
+  * meeting/motion_poll_default_method
+  * meeting/assignment_poll_default_backend
+  * meeting/poll_default_backend
+  * meeting/poll_candidate_list_ids
+  * meeting/poll_candidate_ids
+  * meeting/option_ids
+  * meeting/vote_ids
+* Fields should be renamed and values should be changed similarly to poll/type:
+  * meeting/motion_poll_default_type -> meeting/motion_poll_default_visibility
+  * meeting/assignment_poll_default_type -> meeting/assignment_poll_default_visibility
+  * meeting/poll_default_type -> meeting/poll_default_visibility
+* Values should be changed similarly to poll/onehundred_percent_base:
+  * meeting/motion_poll_default_onehundred_percent_base
+  * meeting/assignment_poll_default_onehundred_percent_base
+  * meeting/poll_default_onehundred_percent_base
+* meeting/assignment_poll_default_method:
+  * Y -> selection
+  * N -> selection
+  * YN -> ???
+  * YNA -> ???
 
+### Motion
 
-## Permissions
+* Field was removed. No migration necessary:
+  * motion/option_ids
 
-Mit dem neuen System werden auch Permissions angepasst. Hier der Diff:
+### Poll
 
-https://github.com/OpenSlides/openslides-meta/pull/506/changes#diff-028ac608b338b62cdb586060b482ae073373845dd5de19118d2cbd253b597418
+* Fields were removed. No migration necessary:
+  * poll/description
+  * poll/backend
+  * poll/live_votes
+  * poll/entitled_users_at_stop
+  * poll/votesvalid
+  * poll/votesinvalid
+  * poll/votescast
+* poll/is_pseudoanonymized -> poll/anonymized.
+* poll/type -> poll/visibility and the values have changed:
+  * analog -> manually
+  * named -> open
+  * pseudoanonymous -> secret
+  * cryptographic There should be no case. If so, "secret" can be used.
+* poll/onehundred_percent_base -> poll_config_X/onehundred_percent_base and
+  some values have changed:
+  * YN -> yes_no
+  * YNA -> valid
+  * Y -> no_general
+  * N -> no_general (+ poll_config_selection/strike_out: true)
+  * valid: no changes.
+  * cast: no changes.
+  * entitled: no changes.
+  * entitled_present: no changes.
+  * disabled: no changes.
+* poll/state: The value `published` was removed. Published polls have to be migrated:
+  * poll/state -> `finished`.
+  * poll/published -> `true`.
+* Fields were moved to poll_config_X collections, data has to be migrated.
+  Refer to [Migrating the polls](#migrating-the-polls) for more details:
+  * poll/pollmethod
+  * poll/min_votes_amount
+  * poll/max_votes_amount
+  * poll/max_votes_per_option
+  * poll/option_ids
+* Fields were removed, `poll/result` has to be generated from them. Refer to
+  [Migrating the polls](#migrating-the-polls) for more details:
+  * poll/global_yes
+  * poll/global_no
+  * poll/global_abstain
+  * poll/global_option_id
 
-Es wurden neue Rechte eingefügt, die für die Migration nicht gebraucht werden.
-Die einzige migrationsrelevante Änderung ist:
+### Poll_candidate_list
 
-`poll.can_manage` heißt jetzt `agenda_item.can_manage_polls`.
+* The `poll_candidate_list` collection was removed. No migration needed.
+
+### Poll_candidate, option -> poll_option
+
+* Parts `poll_candidate` and `option` were absorbed by the new collection `poll_option`:
+  * poll_option/weight:
+    * option/weight
+    * poll_candidate/weight
+  * poll_option/poll_id:
+    * option/poll_id
+    * poll_candidate_list_id.option_id.poll_id
+  * poll_option/text:
+    * option/text
+    * None
+  * poll_option/meeting_user_id:
+    * if collection of content_object_id == "user" -> meeting_user from
+      option/content_object_id and option/meeting_id
+    * meeting_user from poll_candidate/user_id and
+      poll_candidate.option_id.meeting_id
+
+### Option -> other collections
+
+* The following fields were removed but have to be used in the migration for
+  generating values for generating poll/result:
+  * yes, no and abstain
+  * vote_ids
+
+### Projection
+
+* projection/content was removed. No migration necessary.
+
+### Vote
+
+* The `vote` collection was renamed into `poll_ballot`.
+* Field was removed. No migration necessary:
+  * vote/meeting_id
+* vote/user_token: is used to merge old votes into new ballots
+* vote/user_id -> poll_ballot/represented_meeting_user_id (needs to be
+  generated from user_id and meeting_id).
+* vote/delegated_user_id -> poll_ballot/acting_meeting_user_id (needs to be
+  generated from user_id and meeting_id).
+* vote/option_id: replaced with the direct relation to the poll. Needs
+  migration: vote.option_id.poll_id -> poll_ballot.poll_id.
+
+### User
+
+* Direct relation between `user` and `poll`, `option` and `vote` was replaced
+with relation through the `meeting_user`:
+  * user/poll_voted_ids -> meeting_user/poll_voted_ids
+  * user/option_ids + user/poll_candidate_ids -> meeting_user/poll_option_ids
+  * user/vote_ids -> meeting_user/represented_ballot_ids
+  * user/delegated_vote_ids -> meeting_user/acting_ballot_ids
