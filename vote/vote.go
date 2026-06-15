@@ -835,7 +835,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("delete poll votes: %w", err)
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "resetted"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "reset"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
