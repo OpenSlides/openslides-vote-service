@@ -63,24 +63,38 @@ unpublished results of the polls.
 
 The following information is relevant for all the poll types.
 
-#### poll and poll_config_X
+#### poll, poll_config_X and poll_option
 
-For each old poll 2 models have to be created: a new `poll` and a related
-`poll_config_X`. How the data should be migrated depends on whether it is a
-motion, assignment or a topic poll. When it comes to assignement polls, there
-are 3 possibilities based on content_object_id and whether the global yes or no
-option is used.
+Regardless of the type, for each old poll 2 models have to be created: a new
+`poll` and a related `poll_config_X`. Additionally for some poll types
+`poll_option` models should be generated.
+
+How the data should be migrated depends on whether it is a motion, assignment
+or a topic poll. When it comes to assignement polls, there are 3 possibilities
+based on content_object_id and whether the global yes or no option is used.
 
 #### poll_ballot objects and poll/result
 
-If poll.state is "created" or "started", then poll/result is empty.
+If old_poll.type is "analog" (corresponds to the new visibility "manually"),
+no ballots should be created for the poll. Othervise `poll_ballot` models
+should be generated from the old votes.
 
-If old_poll.state if "analog" (corresponds to the new state "manually"), no
-ballots should be created for the poll. The result for the finished polls in
-this case should be carried over from the old poll.
+If poll.state is "created" or "started", then poll/result is empty. Otherwise
+it should be generated from the old votes and options.
 
-For the other finished poll the ballots have to be generated from the votes
-and the result has to be calculated and saved in the field `poll/result`.
+Additionally to the calculated part, poll/result can include 2 extra values
+carried over from the old poll:
+
+* total_ballots (old_poll.votescast): it's the total number of votes that
+  includes both valid and invalid votes. Should be always included into the
+  result.
+* invalid (old_poll.votesinvalid): should be included into the result only if
+  new_poll.visibility == "manually"
+
+"total_ballots" and "invalid" should be saved as integers.
+
+Old polls used to have a separate field for the valid votes: `votesvalid`. It
+should be omitted in the migration.
 
 ### motion
 
@@ -114,16 +128,16 @@ and the result has to be calculated and saved in the field `poll/result`.
       - pseudoanonymous -> secret
       - cryptographic -> @panic(immpossible)
   state: if old.state == "published" then "finished" else old.state,
-  result: old.result if old.type == "analog" else see below,
+  result: see below,
   published: old.state == "published",
   anonymized: old.is_pseudoanonymized,
-  allow_invalid: old.type == "analog",
+  allow_invalid: false,
   allow_vote_split: false,
-  live_voting_enabled: old.live_voting_enabled if old.type != "analog",
+  live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
   voted_ids: old.voted_ids -> replace each user_id with meeting_user_id in poll.meeting_id,
-  entitled_group_ids: old.entitled_group_ids if old.type != "analog",
+  entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id,
 }
 ```
@@ -135,10 +149,10 @@ In the old system, there is one option per poll. There is also a global option,
 but this can be ignored. The new `poll/result` essentially corresponds to this
 single option. If there is more than one option, then @panic.
 
-The value "total_ballots" is calculated additionally. It should be stored as an
-integer. The other values are strings as they are decimal.
+Values for "invalid" and "total_ballots" should be stored as integers. The
+other values are strings as they are decimal.
 
-Example: `{"yes":"32","no":"20","abstain":"10","total_ballots":62}`
+Example: `{"yes":"32","no":"20","abstain":"10","invalid":2,"total_ballots":64}`
 
 Calculated from `old_poll.option_ids[0].vote_ids`:
 
@@ -147,6 +161,7 @@ Calculated from `old_poll.option_ids[0].vote_ids`:
   yes: option.yes -> string,  (skip if 0)
   no: option.no -> string,  (skip if 0)
   abstain: option.abstain -> string,  (skip if 0)
+  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
   total_ballots: count(option.vote_ids) -> number
 }
 ```
@@ -213,16 +228,7 @@ collections are being migrated differently.
   allow_nota: old_poll.global_option_id exists,
   strike_out: old_poll.pollmethod == N,
   display_chart: pie,
-  onehundred_percent_base: old_poll.onehundred_percent_base. Map (old_poll -> new):
-      - YNA -> valid
-      - Y -> no_general
-      - N -> no_general
-      - valid: (remains unchanged).
-      - cast: (remains unchanged).
-      - entitled: (remains unchanged).
-      - entitled_present: (remains unchanged).
-      - disabled: (remains unchanged).
-      - YN -> @panic(not allowed for this config type)
+  onehundred_percent_base: no_general
 }
 ```
 
@@ -248,7 +254,7 @@ poll_option.text. The value is being calculated from the old votes.
 `global_yes` and `global_no` in polls with `poll_config_selection` are being
 calculated separately into the value "nota".
 
-Example: `{"Option 1":"40","Option 2":"23","nota":"6","abstain":"7","total_ballots":76}`
+Example: `{"Option 1":"40","Option 2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
@@ -258,7 +264,8 @@ Calculation:
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
-  total_ballots: count(all_options.vote_ids) -> number
+  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
+  total_ballots: old_poll.votescast -> number
 }
 ```
 
@@ -327,7 +334,7 @@ but it always has `allow_nota: true` and should not have `display_chart`:
 Calculated similarly to the topic polls, but ids of the poll_options created
 above are used as the keys instead of the poll_option/text.
 
-Example: `{"1":"40","2":"23","nota":"6","abstain":"7","total_ballots":76}`
+Example: `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
@@ -337,7 +344,8 @@ Calculation:
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
-  total_ballots: count(all_options.vote_ids) -> number
+  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
+  total_ballots: old_poll.votescast -> number
 }
 ```
 
@@ -375,16 +383,16 @@ Calculation:
       - pseudoanonymous -> secret
       - cryptographic -> @panic(immpossible)
   state: if old.state == "published" then "finished" else old.state,
-  result: old.result if old.type == "analog" else see below,
+  result: see below,
   published: old.state == "published",
   anonymized: old.is_pseudoanonymized,
-  allow_invalid: old.type == "analog",
+  allow_invalid: false,
   allow_vote_split: false,
-  live_voting_enabled: old.live_voting_enabled if old.type != "analog",
+  live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
   voted_ids: for each user in old.voted_ids -> meeting_user_id in old.meeting_id,
-  entitled_group_ids: old.entitled_group_ids if old.type != "analog",
+  entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id
 }
 ```
@@ -411,7 +419,7 @@ Poll/result is a dict. There is one entry for each old option. The key is
 the poll_option-id created above. The values "yes", "no" and "abstain" are
 adopted as objects.
 
-Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"total_ballots":7}`
+Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1,"total_ballots":7}`
 
 Calculation:
 ```
@@ -423,7 +431,8 @@ Calculation:
       abstain: option.abstain -> string   (skip if 0)
     },
 
-  total_ballots: count(all_options.vote_ids) -> number
+  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
+  total_ballots: old_poll.votescast -> number
 }
 ```
 
@@ -474,12 +483,10 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 ## Changes in old fields by collection
 
-### Group (permissions)
+### Group
 
-* group/permissions: poll.can_manage was replaced with 3 separate permissions:
-  * motion.can_manage_polls (existing)
-  * assignment.can_manage_polls (existing)
-  * agenda_item.can_manage_polls (new)
+* group/permissions: poll.can_manage -> agenda_item.can_manage_polls (migration
+  is needed)
 
 To be discussed: should all the users who previously had `poll.can_manage` get
 all the 3 collection-specific permissions.
@@ -521,8 +528,6 @@ all the 3 collection-specific permissions.
   * poll/live_votes
   * poll/entitled_users_at_stop
   * poll/votesvalid
-  * poll/votesinvalid
-  * poll/votescast
 * poll/is_pseudoanonymized -> poll/anonymized.
 * poll/type -> poll/visibility and the values have changed:
   * analog -> manually
@@ -556,6 +561,8 @@ all the 3 collection-specific permissions.
   * poll/global_no
   * poll/global_abstain
   * poll/global_option_id
+  * poll/votescast
+  * poll/votesinvalid
 
 ### Poll_candidate_list
 
