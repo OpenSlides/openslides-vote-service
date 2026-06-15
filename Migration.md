@@ -488,9 +488,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * group/permissions: poll.can_manage -> agenda_item.can_manage_polls (migration
   is needed)
 
-To be discussed: should all the users who previously had `poll.can_manage` get
-all the 3 collection-specific permissions.
-
 ### Meeting
 
 * Fields were removed. No migration necessary:
