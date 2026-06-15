@@ -1,54 +1,61 @@
-# Migration zum neuen Vote-Service
+# Migration to the new Vote-Service
 
-Das alte System und das neue unterscheiden sich wesentlich. Eine eins zu eins
-übersetzung der alten und neuen Felder ist nicht möglich.
+The old system and the new one differ significantly. It is not possible to map
+the old and new fields on a one-to-one basis.
 
+## Previous system
 
-## Bisheriges System
+In the current system, each poll has several options. These are linked via
+`poll/option_ids` and `poll/global_option_id`. A global option was also created
+for motions, even though it should never be used there.
 
-Im bisherigen System hat jede Poll mehrere optionen. Diese werden über
-`poll/option_ids` und `poll/global_option_id` verlinkt. Auch für motions wird
-eine global-option angelegt, obwohl diese dort nie verwendet werden sollte.
+Each option has the values `yes`, `no` and `abstain`. When voting, each user
+selects one of these three options for each poll. There are therefore several
+`vote` objects per user. These are always stored as yes-no-abstain, even if it
+is actually a selection. The `option` objects contain the result. They store
+the sum of all vote objects relating to them in the `yes`-`no`-`abstain`
+fields. The global options are counted separately. Hence "General approval",
+"General rejection" or "General abstain".
 
-Jede option hat die Werte `yes`, `no` und `abstain`. Bei der Abstimmung gibt
-jeder Nutzer für jede Option eine dieser drei Möglichkeiten an. Es gibt daher
-pro User mehrere `vote` objekte. Diese werden immer als Ja-Nein-Enthaltung
-gespeichert, auch wenn es eigentlich eine Auswahl ist. Die `option`-Objekte
-enthalten das Result. Sie speichern in den `yes`-`no`-`abstain`-Feldern die
-Summe aller auf sie bezogenen vote objekte. Die globale Obtion werden separat
-gezählt. Daher als "Generelle Ablehnung", "Generelle Enthaltung" oder "Generelle
-Zustimmung".
+The `vote` objects serve solely to display who voted and how. The `user_token`
+field helps to group together different votes from a single user if the user ID
+has been removed. In non-anonymised polls, `vote/user_id` is the user for whom
+the vote is to be counted, and `vote/delegated_user_id` is the user who cast
+the vote. If multiple votes are permitted per user, these votes are aggregated
+in the vote objects via the vote-weight feature.
 
-Die vote objekte dienen lediglich der Anzeige, wer wie abgestimmt hat. Das Feld
-`user_token` hilft dabei, verschiedene votes eines Nutzers zu bündeln, wenn die
-user-id entfernt wurde. Bei nicht anonymisierten polls is `vote/user_id` der
-Nutzer, für den die Stimme gezählt werden soll und `vote/ delegated_user_id`,
-der die Stimme abgegeben hat. Werden pro Nutzer mehrere Stimmen erlaubt, dann
-werden diese Stimmen in den vote-objekten über das vote-weight-feature
-gebündelt.
+The data actually sent by the user is not stored, but is interpreted and
+distributed across the vote objects.
 
-Die vom Nutzer eigentlich gesendeten Daten werden nicht gespeichert, sondern
-interpretiert in die vote-objekte aufgeteilt.
+## New system
 
-Fragen: Sind folgende Aussagen korrekt:
-* Bei motion gibt es zwar immer eine global-option, diese wurde aber nie genutzt.
+The old `option` collection and the new `poll_option` are two different things
+that just happen to have similar names. In the new system, options no longer
+contain the result. The new collection `poll_option` is only used in the
+elections for storing the possible options.
 
+Such system makes old collections `poll_candidate_list` and `poll_candidate`
+redundant. Relations between the poll and the candidates are now defined
+directly in the `poll_option` via `meeting_user_id` field.
 
+The votes (collection is now called `poll_ballot`) contain exactly the data
+that a user has submitted. There is therefore only one ballot object per poll
+and user.
 
-## Neues System
+## Permissions
 
-Im neuen System gibt es keine optionen. Stattdessen wird das Ergebnis direkt im
-Feld `poll/result` gebündelt. Die Votes (jetzt ballot genannt) enthalten genau
-die Daten, die ein Nutzer gesendet hat. Es gibt daher pro Poll und User nur ein
-ballot-objekt. options gibt es nicht mehr als Collection. Jedoch werden bei
-Wahlen die möglichen optionen in `poll_option` gespeichert. Die alte
-`options` collection und die neue `poll_option` sind zwei verschiedene Dinge
-die nur zufällig ähnlich heißen.
+In the old system along with the separate `can_manage_polls` for assinments and
+motions there was also a general setting `poll.can manage`. In the new system
+this general permission was replaced with 3 distinct permissions depending on
+the value in the `content_object_id` field:
 
-Eigentlich sollte das Feld `poll/result` redundant sein. Daher, es lässt sich zu
-jeder Zeit aus den votes neu berechnen. Dies gilt nicht für manuelle polls und
-es wäre in Ordnung, wenn es auch nicht für migrierte polls gilt.
+* motions: `motion.can_manage_polls`
+* assignments: `assignment.can_manage_polls`
+* topic: `agenda_item.can_manage_polls`  (new)
 
+New system also introduces a new child permission `can_see_polls` for each of
+these content object collections. This permissions allows to see the
+unpublished results of the polls.
 
 ## Migrating the polls
 
