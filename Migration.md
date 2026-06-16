@@ -502,6 +502,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/motion_poll_projection_name_order_first -> poll_projection_name_order_first
   * meeting/motion_poll_projection_max_columns -> poll_projection_max_columns
 * Fields that need to be moved to meeting_poll_default:
+  * meeting/*_poll_group_ids -> meeting_poll_default/group_ids
   * meeting/*_poll_ballot_paper_selection -> meeting_poll_default/ballot_paper_selection
   * meeting/*_poll_ballot_paper_number -> meeting_poll_default/ballot_paper_number
   * meeting/*_poll_sort_result_by_votes -> meeting_poll_default/sort_result_by_votes
