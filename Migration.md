@@ -498,19 +498,30 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/poll_candidate_ids
   * meeting/option_ids
   * meeting/vote_ids
+* Fields that were renamed:
+  * meeting/motion_poll_projection_name_order_first -> poll_projection_name_order_first
+  * meeting/motion_poll_projection_max_columns -> poll_projection_max_columns
+* Fields that need to be moved to meeting_poll_default:
+  * meeting/*_poll_ballot_paper_selection -> meeting_poll_default/ballot_paper_selection
+  * meeting/*_poll_ballot_paper_number -> meeting_poll_default/ballot_paper_number
+  * meeting/*_poll_sort_result_by_votes -> meeting_poll_default/sort_result_by_votes
+  * meeting/*_poll_sort_result_by_votes -> meeting_poll_default/sort_result_by_votes
 * Fields should be renamed and values should be changed similarly to poll/type:
-  * meeting/motion_poll_default_type -> meeting/motion_poll_default_visibility
-  * meeting/assignment_poll_default_type -> meeting/assignment_poll_default_visibility
-  * meeting/poll_default_type -> meeting/poll_default_visibility
+  * meeting/*_poll_default_type -> meeting_poll_default/visibility
 * Values should be changed similarly to poll/onehundred_percent_base:
-  * meeting/motion_poll_default_onehundred_percent_base
-  * meeting/assignment_poll_default_onehundred_percent_base
-  * meeting/poll_default_onehundred_percent_base
-* meeting/assignment_poll_default_method:
-  * Y -> selection
-  * N -> selection
-  * YN -> ???
-  * YNA -> ???
+  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_default/onehundred_percent_base
+* Topic meeting_poll_default/display_chart: pie
+* meeting/assignment_poll_default_method
+  * Y
+    *  meeting_poll_default/method -> selection
+  * N
+    *  meeting_poll_default/method -> selection
+    *  meeting_poll_default/strike_out -> true
+  * YN
+    * meeting_poll_default/method -> rating_approval
+  * YNA
+    * meeting_poll_default/method -> rating_approval
+    * meeting_poll_default/allow_abstain -> true
 
 ### Motion
 
