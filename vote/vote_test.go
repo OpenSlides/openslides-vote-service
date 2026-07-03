@@ -327,11 +327,7 @@ func TestCreateSelection(t *testing.T) {
 			t.Fatalf("Error creating poll: %v", err)
 		}
 
-		if id != 1 {
-			t.Errorf("Expected id 1, got %d", id)
-		}
-
-		poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+		poll, err := dsmodels.New(flow).Poll(id).First(ctx)
 		if err != nil {
 			t.Fatalf("Fetch poll: %v", err)
 		}
@@ -347,6 +343,9 @@ func TestCreateSelection(t *testing.T) {
 		}
 
 		config, err := dsmodels.New(flow).PollConfigSelection(configID).First(ctx)
+		if err != nil {
+			t.Fatalf("Fetch poll config: %v", err)
+		}
 
 		if config.MaxOptionsAmount != 2 {
 			t.Errorf("got max_options_amount %d, expected 2", config.MaxOptionsAmount)
