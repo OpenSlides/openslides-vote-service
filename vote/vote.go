@@ -641,6 +641,13 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
+	if poll.Visibility == "secret" {
+		// Do not anonymize a secret poll. A secret poll is anonymized anyway
+		// and the code below expects, that a secret poll does not get
+		// anonymized manually.
+		anonymize = false
+	}
+
 	if poll.State == "created" {
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
@@ -651,17 +658,18 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 	defer tx.Rollback(ctx)
 
+	ds := dsmodels.New(v.flow)
+
+	ballots, err := ds.PollBallot(poll.BallotIDs...).Get(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
+	}
+
 	historyMessages := make([]string, 0, 4)
 	historyMessages = append(historyMessages, "finalized")
 
 	if poll.State == `started` {
 		historyMessages = append(historyMessages, "stopped")
-		ds := dsmodels.New(v.flow)
-
-		ballots, err := ds.PollBallot(poll.BallotIDs...).Get(ctx)
-		if err != nil {
-			return fmt.Errorf("fetch votes of poll %d: %w", poll.ID, err)
-		}
 
 		if poll.Visibility == "secret" {
 			for i := range ballots {
@@ -671,32 +679,8 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 				}
 			}
 
-			// Change the order of the ballots so the new values can not be guessed.
-			sort.Slice(ballots, func(i, j int) bool {
-				return ballots[i].Value < ballots[j].Value
-			})
-
-			// Delete and reinsert old ballots.
-			_, err = tx.Exec(ctx, "DELETE FROM poll_ballot WHERE poll_id = $1", poll.ID)
-			if err != nil {
-				return fmt.Errorf("deleting old ballots: %w", err)
-			}
-
-			_, err = tx.CopyFrom(
-				ctx,
-				pgx.Identifier{"poll_ballot_t"},
-				[]string{"weight", "split", "value", "poll_id"},
-				pgx.CopyFromSlice(len(ballots), func(i int) ([]any, error) {
-					return []any{
-						ballots[i].Weight,
-						ballots[i].Split,
-						ballots[i].Value,
-						poll.ID,
-					}, nil
-				}),
-			)
-			if err != nil {
-				return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
+			if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+				return fmt.Errorf("rewrite ballots: %w", err)
 			}
 		}
 
@@ -710,48 +694,19 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("create poll result: %w", err)
 		}
 
-		votedMeetingUserIDs := make([]int, len(ballots))
-		for i, vote := range ballots {
-			meetingUserID, set := vote.RepresentedMeetingUserID.Value()
-			if !set {
-				return fmt.Errorf("vote %d has no representedMeetingUserID", vote.ID)
-			}
-			votedMeetingUserIDs[i] = meetingUserID
-		}
-
 		sql := `UPDATE poll SET result = $1 WHERE id = $2;`
 		if _, err := tx.Exec(ctx, sql, result, pollID); err != nil {
 			return fmt.Errorf("set result of poll %d: %w", pollID, err)
 		}
+	}
 
-		if len(votedMeetingUserIDs) > 0 {
-			placeholders := make([]string, len(votedMeetingUserIDs))
-			args := make([]any, len(votedMeetingUserIDs)*2)
-
-			for i, votedUserID := range votedMeetingUserIDs {
-				placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-				args[i*2] = votedUserID
-				args[i*2+1] = pollID
-			}
-
-			votedSQL := fmt.Sprintf(
-				"INSERT INTO nm_meeting_user_poll_voted_ids_poll_t (meeting_user_id, poll_id) VALUES %s",
-				strings.Join(placeholders, ", "),
-			)
-
-			if _, err := tx.Exec(ctx, votedSQL, args...); err != nil {
-				return fmt.Errorf("insert voted_user_ids to meeting_user relations: %w", err)
-			}
-		}
+	if publish && !poll.Published {
+		historyMessages = append(historyMessages, "published")
 	}
 
 	sql := `UPDATE poll SET state = 'finished', published = $1 WHERE id = $2;`
 	if _, err := tx.Exec(ctx, sql, publish, pollID); err != nil {
 		return fmt.Errorf("set poll %d to finished and publish to %v: %w", pollID, publish, err)
-	}
-
-	if publish && !poll.Published {
-		historyMessages = append(historyMessages, "published")
 	}
 
 	if anonymize {
@@ -760,19 +715,11 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
 		}
 
-		sqlBallots := `
-		UPDATE poll_ballot
-		SET acting_meeting_user_id = NULL, represented_meeting_user_id = NULL
-		WHERE poll_id = $1`
-		if _, err := tx.Exec(ctx, sqlBallots, pollID); err != nil {
-			return fmt.Errorf("anonymize ballots: %w", err)
+		if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+			return fmt.Errorf("rewrite ballots: %w", err)
 		}
 
-		sqlPoll := `
-        UPDATE poll
-        SET anonymized = TRUE
-        WHERE id = $1`
-		if _, err := tx.Exec(ctx, sqlPoll, pollID); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE poll SET anonymized = TRUE WHERE id = $1`, pollID); err != nil {
 			return fmt.Errorf("set anonymize on poll: %w", err)
 		}
 	}
@@ -783,6 +730,36 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// rewriteBallots rewrites all ballots in a different order to the database, so
+// all references to the original ballots are removed.
+func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []dsmodels.PollBallot) error {
+	sort.Slice(ballots, func(i, j int) bool {
+		return ballots[i].Value < ballots[j].Value
+	})
+
+	if _, err := tx.Exec(ctx, "DELETE FROM poll_ballot WHERE poll_id = $1", poll.ID); err != nil {
+		return fmt.Errorf("deleting old ballots: %w", err)
+	}
+
+	if _, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"poll_ballot_t"},
+		[]string{"weight", "split", "value", "poll_id"},
+		pgx.CopyFromSlice(len(ballots), func(i int) ([]any, error) {
+			return []any{
+				ballots[i].Weight,
+				ballots[i].Split,
+				ballots[i].Value,
+				poll.ID,
+			}, nil
+		}),
+	); err != nil {
+		return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
 	}
 
 	return nil
@@ -815,8 +792,13 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
 	}
 
-	deleteVoteQuery := `DELETE FROM poll_ballot WHERE poll_id = $1`
-	if _, err := tx.Exec(ctx, deleteVoteQuery, pollID); err != nil {
+	deleteBallotQuery := `DELETE FROM poll_ballot WHERE poll_id = $1`
+	if _, err := tx.Exec(ctx, deleteBallotQuery, pollID); err != nil {
+		return fmt.Errorf("delete ballots: %w", err)
+	}
+
+	deleteBallotUserQuery := `DELETE FROM poll_ballot_user WHERE poll_id = $1`
+	if _, err := tx.Exec(ctx, deleteBallotUserQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
 
@@ -830,11 +812,6 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
 
-	deleteVotedQuery := `DELETE FROM nm_meeting_user_poll_voted_ids_poll_t WHERE poll_id = $1`
-	if _, err := tx.Exec(ctx, deleteVotedQuery, pollID); err != nil {
-		return fmt.Errorf("delete poll votes: %w", err)
-	}
-
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "reset"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
@@ -846,7 +823,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	return nil
 }
 
-// Vote validates and saves the vote.
+// Vote validates and saves the ballot of a user.
 func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader) error {
 	if requestUserID == 0 {
 		return MessageErrorf(ErrInvalid, "Anonymous can not vote")
@@ -944,17 +921,22 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					WHEN COUNT(*) > 0 THEN 'USER_HAS_VOTED_BEFORE'
 					ELSE 'BALLOT_OK'
 				END as ballot_status
-			FROM poll_ballot
+			FROM poll_ballot_user
 			WHERE poll_id = $1 AND represented_meeting_user_id = $5
 		),
-		inserted AS (
-			INSERT INTO poll_ballot
-			(poll_id, value, weight, acting_meeting_user_id, represented_meeting_user_id)
-			SELECT $1, $2, $3, $4, $5
-			FROM poll_check p, ballot_check b
-			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
-			RETURNING id
-		)
+		insert_ballot_user AS (
+	        INSERT INTO poll_ballot_user (poll_id, acting_meeting_user_id, represented_meeting_user_id)
+	        SELECT  $1, $4, $5
+	        FROM poll_check p, ballot_check b
+	        WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
+	        RETURNING id
+	    ),
+		insert_ballot AS (
+	        INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
+	        SELECT $1, $2, $3, bu.id
+        	FROM insert_ballot_user bu
+	        RETURNING id
+	    )
 		SELECT
 			CASE
 				WHEN i.id IS NOT NULL THEN 'VALID'
@@ -963,13 +945,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 				ELSE 'UNKNOWN_ERROR'
 			END as status
 		FROM poll_check p, ballot_check b
-		LEFT JOIN inserted i ON true;`
+		LEFT JOIN insert_ballot i ON true;`
 
 	var status string
-	err = v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID).Scan(
+	if err := v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID).Scan(
 		&status,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("insert ballot: %w", err)
 	}
 
@@ -1201,12 +1182,10 @@ func ballotsFromSplitted(method method.Method, ballot dsmodels.PollBallot, split
 		}
 
 		fromThisBallot = append(fromThisBallot, dsmodels.PollBallot{
-			PollID:                   ballot.PollID,
-			Weight:                   splitWeight,
-			Value:                    string(splitValue),
-			ActingMeetingUserID:      ballot.ActingMeetingUserID,
-			RepresentedMeetingUserID: ballot.RepresentedMeetingUserID,
-			Split:                    true,
+			PollID: ballot.PollID,
+			Weight: splitWeight,
+			Value:  string(splitValue),
+			Split:  true,
 		})
 	}
 	return fromThisBallot
