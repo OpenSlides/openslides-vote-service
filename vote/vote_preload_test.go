@@ -205,8 +205,7 @@ func TestVoteNoRequests(t *testing.T) {
 				t.Fatalf("Error: Getting ballot_user from poll: %v", err)
 			}
 			found := slices.ContainsFunc(poll.BallotUserList, func(ballotUser dsmodels.PollBallotUser) bool {
-				meetingUserID, _ := ballotUser.RepresentedMeetingUserID.Value()
-				return meetingUserID == tt.expectRepresentedMeetingUserID
+				return ballotUser.RepresentedMeetingUserID == tt.expectRepresentedMeetingUserID
 			})
 
 			if !found {

@@ -169,8 +169,8 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if id, _ := ballotUser.ActingMeetingUserID.Value(); id != 300 {
-					t.Errorf("Expected acting meeting_user ID to be 300, got %d", id)
+				if ballotUser.ActingMeetingUserID != 300 {
+					t.Errorf("Expected acting meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
 				}
 
 				if ballot.Value != `"Yes"` {
@@ -640,8 +640,8 @@ func TestVote(t *testing.T) {
 					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if id, _ := ballotUser.ActingMeetingUserID.Value(); id != 300 {
-					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", id)
+				if ballotUser.ActingMeetingUserID != 300 {
+					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
 				}
 
 				if ballot.Value != `"Yes"` {
@@ -1003,9 +1003,11 @@ func TestFinalize(t *testing.T) {
 		10:
 			poll_id: 5
 			represented_meeting_user_id: 300
+			acting_meeting_user_id: 300
 		20:
 			poll_id: 5
 			represented_meeting_user_id: 500
+			acting_meeting_user_id: 500
 	`
 
 	withData(
@@ -1635,8 +1637,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 							t.Fatalf("Error: Getting votes from poll: %v", err)
 						}
 						found := slices.ContainsFunc(poll.BallotUserList, func(ballotUser dsmodels.PollBallotUser) bool {
-							userID, _ := ballotUser.RepresentedMeetingUserID.Value()
-							return userID == tt.expectRepresentedMeetingUserID
+							return ballotUser.RepresentedMeetingUserID == tt.expectRepresentedMeetingUserID
 						})
 
 						if !found {
