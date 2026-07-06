@@ -525,10 +525,10 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting_poll_default/display_chart: pie
 * meeting/assignment_poll_default_method
   * Y
-    *  meeting_poll_default/method -> selection
+    * meeting_poll_default/method -> selection
   * N
-    *  meeting_poll_default/method -> selection
-    *  meeting_poll_default/strike_out -> true
+    * meeting_poll_default/method -> selection
+    * meeting_poll_default/strike_out -> true
   * YN
     * meeting_poll_default/method -> rating_approval
   * YNA
