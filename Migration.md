@@ -519,7 +519,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_default/sort_result_by_votes
 * Field should be renamed and moved to meeting_poll_default, values should be changed similarly to poll/type:
   * meeting/*_poll_default_type -> meeting_poll_default/visibility
-* Field should be moved to meeting_poll_default and alues should be changed similarly to poll/onehundred_percent_base:
+* Field should be moved to meeting_poll_default and values should be changed similarly to poll/onehundred_percent_base:
   * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_default/onehundred_percent_base
 * For topic polls:
   * meeting_poll_default/display_chart: pie
