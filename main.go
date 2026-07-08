@@ -103,7 +103,7 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	messageBus := messageBusRedis.New(lookup)
 
 	// Datastore Service.
-	database, initVote, err := vote.Flow(lookup, messageBus)
+	database, err := vote.Flow(lookup, messageBus)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
@@ -121,10 +121,6 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	}
 
 	service := func(ctx context.Context) error {
-		if err := initVote(ctx); err != nil {
-			return fmt.Errorf("init vote service: %w", err)
-		}
-
 		fastBackend, err := fastBackendStarter(ctx)
 		if err != nil {
 			return fmt.Errorf("start fast backend: %w", err)
