@@ -415,7 +415,7 @@ type updateInput struct {
 	Visibility        string              `json:"visibility"`
 	EntitledGroupIDs  []int               `json:"entitled_group_ids"`
 	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
-	Result            []byte              `json:"result"`
+	Result            json.RawMessage     `json:"result"`
 	AllowVoteSplit    dsfetch.Maybe[bool] `json:"allow_vote_split"`
 }
 
