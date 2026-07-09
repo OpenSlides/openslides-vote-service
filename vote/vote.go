@@ -415,14 +415,14 @@ type updateInput struct {
 	Visibility        string              `json:"visibility"`
 	EntitledGroupIDs  []int               `json:"entitled_group_ids"`
 	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
-	Result            json.RawMessage     `json:"result"`
+	Result            []byte              `json:"result"`
 	AllowVoteSplit    dsfetch.Maybe[bool] `json:"allow_vote_split"`
 }
 
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
 	var ui updateInput
 	if err := json.NewDecoder(r).Decode(&ui); err != nil {
-		return updateInput{}, fmt.Errorf("decoding update input: %w", err)
+		return updateInput{}, MessageError(ErrInvalid, "Request body is not a valid json object.")
 	}
 
 	if poll.Visibility == "manually" {
