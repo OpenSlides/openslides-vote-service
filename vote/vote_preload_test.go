@@ -110,7 +110,7 @@ func TestVoteNoRequests(t *testing.T) {
 			meeting_user:
 				41:
 					group_ids: [40]
-					vote_delegated_to_id: 31
+					vote_delegated_to_ids: [31]
 
 			`,
 			`{"meeting_user_id":41,"value":"Yes"}`,
@@ -143,7 +143,7 @@ func TestVoteNoRequests(t *testing.T) {
 			meeting_user:
 				41:
 					group_ids: [40]
-					vote_delegated_to_id: 31
+					vote_delegated_to_ids: [31]
 			`,
 			`{"meeting_user_id":41,"value":"Yes"}`,
 			41,
@@ -518,12 +518,12 @@ func TestPreload(t *testing.T) {
 			meeting_user:
 				500:
 					user_id: 50
-					vote_delegated_to_id: 520
+					vote_delegated_to_ids: [520]
 					meeting_id: 5
 					group_ids: [40]
 				510:
 					user_id: 51
-					vote_delegated_to_id: 530
+					vote_delegated_to_ids: [530]
 					meeting_id: 5
 					group_ids: [41]
 				520:

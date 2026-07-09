@@ -1098,12 +1098,12 @@ func allowedToVote(
 		return fmt.Errorf("fetching meeting/users_forbid_delegator_to_vote: %w", err)
 	}
 
-	delegation, err := ds.MeetingUser_VoteDelegatedToID(representedMeetingUserID).Value(ctx)
+	delegationList, err := ds.MeetingUser_VoteDelegatedToIDs(representedMeetingUserID).Value(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching meeting_user/vote_delegated_to_id: %w", err)
+		return fmt.Errorf("fetching meeting_user/vote_delegated_to_ids: %w", err)
 	}
 
-	if delegationActivated && forbitDelegateToVote && !delegation.Null() && representedMeetingUserID == actingMeetingUserID {
+	if delegationActivated && forbitDelegateToVote && len(delegationList) > 0 && representedMeetingUserID == actingMeetingUserID {
 		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
 	}
 
@@ -1115,7 +1115,7 @@ func allowedToVote(
 		return MessageErrorf(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
 	}
 
-	if id, ok := delegation.Value(); !ok || id != actingMeetingUserID {
+	if !slices.Contains(delegationList, actingMeetingUserID) {
 		return MessageErrorf(ErrNotAllowed, "You can not vote for meeting user %d", representedMeetingUserID)
 	}
 
@@ -1322,7 +1322,7 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 
 	q := ds.Poll(pollID)
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().User())
-	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedTo().User())
+	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedToList().User())
 	poll, err := q.First(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch preload data: %w", err)
