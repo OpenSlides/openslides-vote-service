@@ -535,6 +535,13 @@ It's a dictionary where each key-value pair represents an old `vote`:
     * meeting_poll_default/method -> rating_approval
     * meeting_poll_default/allow_abstain -> true
 
+### Meeting_user
+
+* meeting_user/vote_delegated_to_id:
+  * Field renamed to meeting_user/vote_delegated_to_ids
+  * Type changes from relation to relation-list. In backend vote_delegated_to_ids remains the writing side.
+  * Value should be transformed as: value -> list with this value as a single item
+
 ### Motion
 
 * Field was removed. No migration necessary:
