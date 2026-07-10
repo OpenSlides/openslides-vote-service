@@ -42,6 +42,10 @@ The votes (collection is now called `poll_ballot`) contain exactly the data
 that a user has submitted. There is therefore only one ballot object per poll
 and user.
 
+Data about who has voted for who is being stored separately in a new collection
+`poll_ballot_user`. Direct connection between the ballos and users is being
+replaced with the relation through `meeting_user`.
+
 ## Permissions
 
 In the old system along with the separate `can_manage_polls` for assinments and
@@ -100,6 +104,18 @@ carried over from the old poll:
 
 Old polls used to have a separate field for the valid votes: `votesvalid`. It
 should be omitted in the migration.
+
+For each poll that is not anonymized, per each `poll_ballot` an additional
+`poll_ballot_user` instance should be created:
+
+```
+{
+  poll_id: poll_ballot.poll_id,
+  poll_ballot_id: poll_ballot.id,
+  acting_meeting_user_id: meeting_user_id from old_vote.delegated_user_id and poll.meeting,
+  represented_meeting_user_id: meeting_user_id from old_vote.user_id and poll.meeting
+}
+```
 
 ### motion
 
@@ -624,18 +640,25 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * projection/content was removed. No migration necessary.
 
-### Vote
+### Vote -> poll_ballot
 
 * The `vote` collection was renamed into `poll_ballot`.
 * Field was removed. No migration necessary:
   * vote/meeting_id
 * vote/user_token: is used to merge old votes into new ballots
-* vote/user_id -> poll_ballot/represented_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
-* vote/delegated_user_id -> poll_ballot/acting_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
 * vote/option_id: replaced with the direct relation to the poll. Needs
-  migration: vote.option_id.poll_id -> poll_ballot.poll_id.
+  migration: vote.option_id/poll_id -> poll_ballot/poll_id.
+
+### Vote -> poll_ballot_user
+
+* vote/option_id: replaced with the direct relation to the poll. Needs
+  migration: vote.option_id/poll_id -> poll_ballot_user/poll_id.
+* vote/user_id -> poll_ballot_user/represented_meeting_user_id (needs to be
+  generated from user_id and meeting_id).
+* vote/delegated_user_id -> poll_ballot_user/acting_meeting_user_id (needs to be
+  generated from user_id and meeting_id).
+* poll_ballot_user/poll_ballot_id: id of the poll_ballot instance generated
+  from the same vote.
 
 ### User
 
