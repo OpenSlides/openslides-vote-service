@@ -157,7 +157,6 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
   live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  voted_ids: old.voted_ids -> replace each user_id with meeting_user_id in poll.meeting_id,
   entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id,
 }
@@ -412,7 +411,6 @@ Calculation:
   live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  voted_ids: for each user in old.voted_ids -> meeting_user_id in old.meeting_id,
   entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id
 }
@@ -662,9 +660,10 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 ### User
 
+* Field was removed. No migration necessary:
+  * user/poll_voted_ids
 * Direct relation between `user` and `poll`, `option` and `vote` was replaced
 with relation through the `meeting_user`:
-  * user/poll_voted_ids -> meeting_user/poll_voted_ids
   * user/option_ids + user/poll_candidate_ids -> meeting_user/poll_option_ids
   * user/vote_ids -> meeting_user/represented_ballot_ids
   * user/delegated_vote_ids -> meeting_user/acting_ballot_ids
