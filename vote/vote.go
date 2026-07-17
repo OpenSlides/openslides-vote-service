@@ -422,7 +422,7 @@ type updateInput struct {
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
 	var ui updateInput
 	if err := json.NewDecoder(r).Decode(&ui); err != nil {
-		return updateInput{}, fmt.Errorf("decoding update input: %w", err)
+		return updateInput{}, MessageError(ErrInvalid, "Request body is not a valid json object.")
 	}
 
 	if poll.Visibility == "manually" {

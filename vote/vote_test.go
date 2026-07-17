@@ -553,6 +553,23 @@ func TestManually(t *testing.T) {
 				t.Errorf("State == %s. A manually poll has to be in state finished after a reset", poll.State)
 			}
 		})
+
+		t.Run("Invalid json", func(t *testing.T) {
+			body := `{
+				"result": {THIS IS NOT JSON}
+			}`
+
+			err := service.Update(ctx, 1, 5, strings.NewReader(body))
+
+			if err == nil {
+				t.Fatalf("Expected an error on invalid json. Got non")
+			}
+
+			if !errors.Is(err, vote.ErrInvalid) {
+				t.Errorf("Update with invalid json returned an unexpected error: %v", err)
+			}
+
+		})
 	})
 }
 

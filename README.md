@@ -161,8 +161,8 @@ manually.
 
 Manual polls behave differently. When created, the field `poll/state` is set to
 `finished`. The poll result can be set either with the create request or with an
-update request. The server does not validate the field `poll/result`, but
-accepts any string.
+update request. The server only makes sure, that the field `poll/result` is
+valid json.
 
 vote-requests are not possible. A finalize-request is possible, but only to set
 the `poll/published` field. A reset-request sets/leaves the state at `finished`.
