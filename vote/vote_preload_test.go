@@ -199,14 +199,13 @@ func TestVoteNoRequests(t *testing.T) {
 
 			ds := dsmodels.New(counter) // Use the counter here to skip the cache
 			q := ds.Poll(5)
-			q = q.Preload(q.BallotList())
+			q = q.Preload(q.BallotUserList())
 			poll, err := q.First(ctx)
 			if err != nil {
-				t.Fatalf("Error: Getting votes from poll: %v", err)
+				t.Fatalf("Error: Getting ballot_user from poll: %v", err)
 			}
-			found := slices.ContainsFunc(poll.BallotList, func(ballot dsmodels.PollBallot) bool {
-				meetingUserID, _ := ballot.RepresentedMeetingUserID.Value()
-				return meetingUserID == tt.expectRepresentedMeetingUserID
+			found := slices.ContainsFunc(poll.BallotUserList, func(ballotUser dsmodels.PollBallotUser) bool {
+				return ballotUser.RepresentedMeetingUserID == tt.expectRepresentedMeetingUserID
 			})
 
 			if !found {

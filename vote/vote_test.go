@@ -155,27 +155,32 @@ func TestAll(t *testing.T) {
 			t.Run("Vote", func(t *testing.T) {
 				body := `{"value":"Yes"}`
 				if err := service.Vote(ctx, 1, 30, strings.NewReader(body)); err != nil {
-					t.Fatalf("Error voting poll: %v", err)
+					t.Fatalf("Error voting on poll: %v", err)
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.PollBallot(1).First(t.Context())
+				ballot, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
-					t.Fatalf("Error: Getting vote: %v", err)
+					t.Fatalf("Error: Getting ballot: %v", err)
 				}
 
-				if id, _ := vote.ActingMeetingUserID.Value(); id != 300 {
-					t.Errorf("Expected acting meeting_user ID to be 300, got %d", id)
+				ballotUser, err := ds.PollBallotUser(1).First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if vote.Value != `"Yes"` {
-					t.Errorf("Expected vote value to be '\"Yes\"', got '%s'", vote.Value)
+				if ballotUser.ActingMeetingUserID != 300 {
+					t.Errorf("Expected acting meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
+				}
+
+				if ballot.Value != `"Yes"` {
+					t.Errorf("Expected vote value to be '\"Yes\"', got '%s'", ballot.Value)
 				}
 			})
 
-			t.Run("Stop", func(t *testing.T) {
+			t.Run("Finalize", func(t *testing.T) {
 				if err := service.Finalize(ctx, 1, 5, false, false); err != nil {
-					t.Fatalf("Error stopping poll: %v", err)
+					t.Fatalf("Error finalizing poll: %v", err)
 				}
 
 				keyState := dskey.MustKey("poll/1/state")
@@ -216,20 +221,23 @@ func TestAll(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.PollBallot(1).First(t.Context())
+				q := ds.Poll(1)
+				q = q.Preload(q.BallotList())
+				poll, err := q.First(t.Context())
 				if err != nil {
-					t.Fatalf("Error: Getting vote: %v", err)
+					t.Fatalf("Error: Getting poll with ballot: %v", err)
 				}
 
-				if id, set := vote.ActingMeetingUserID.Value(); set {
-					t.Errorf("Expected acting meeting_user ID not to be set, but is is %d", id)
+				if len(poll.BallotList) == 0 {
+					t.Fatalf("poll has no ballots")
+				}
+				ballot := poll.BallotList[0]
+
+				if id, set := ballot.PollBallotUserID.Value(); set {
+					t.Errorf("Expected ballot.poll_ballot_user_id not to be set, but it is to %d", id)
 				}
 
-				anonymized, err := ds.Poll_Anonymized(1).Value(t.Context())
-				if err != nil {
-					t.Fatalf("Error: %v", err)
-				}
-				if !anonymized {
+				if !poll.Anonymized {
 					t.Errorf("Expected poll to be anonymized")
 				}
 			})
@@ -541,7 +549,7 @@ func TestManually(t *testing.T) {
 		t.Run("Reset", func(t *testing.T) {
 			err := service.Reset(ctx, 1, 5)
 			if err != nil {
-				t.Fatalf("Error creating poll: %v", err)
+				t.Fatalf("Error resetting poll: %v", err)
 			}
 
 			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
@@ -640,17 +648,21 @@ func TestVote(t *testing.T) {
 				}
 
 				ds := dsmodels.New(flow)
-				vote, err := ds.PollBallot(1).First(t.Context())
+				ballot, err := ds.PollBallot(1).First(t.Context())
 				if err != nil {
-					t.Fatalf("Error: Getting vote: %v", err)
+					t.Fatalf("Error: Getting ballot: %v", err)
+				}
+				ballotUser, err := ds.PollBallotUser(1).First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if id, _ := vote.ActingMeetingUserID.Value(); id != 300 {
-					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", id)
+				if ballotUser.ActingMeetingUserID != 300 {
+					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
 				}
 
-				if vote.Value != `"Yes"` {
-					t.Errorf("Expected vote value to be 'Yes', got '%s'", vote.Value)
+				if ballot.Value != `"Yes"` {
+					t.Errorf("Expected vote value to be 'Yes', got '%s'", ballot.Value)
 				}
 			})
 		},
@@ -931,7 +943,7 @@ func TestVoteStart(t *testing.T) {
 	)
 }
 
-func TestVoteFinalize(t *testing.T) {
+func TestFinalize(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
@@ -995,14 +1007,24 @@ func TestVoteFinalize(t *testing.T) {
 		allow_abstain: true
 		onehundred_percent_base: valid
 
-	poll_ballot/1:
-		poll_id: 5
-		value: '"yes"'
-		represented_meeting_user_id: 300
-	poll_ballot/2:
-		poll_id: 5
-		value: '"no"'
-		represented_meeting_user_id: 500
+	poll_ballot:
+		1:
+			poll_id: 5
+			value: '"yes"'
+			poll_ballot_user_id: 10
+		2:
+			poll_id: 5
+			value: '"no"'
+			poll_ballot_user_id: 20
+	poll_ballot_user:
+		10:
+			poll_id: 5
+			represented_meeting_user_id: 300
+			acting_meeting_user_id: 300
+		20:
+			poll_id: 5
+			represented_meeting_user_id: 500
+			acting_meeting_user_id: 500
 	`
 
 	withData(
@@ -1033,10 +1055,6 @@ func TestVoteFinalize(t *testing.T) {
 
 				if poll.State != "finished" {
 					t.Errorf("Poll state is %s, expected finished", poll.State)
-				}
-
-				if slices.Compare(poll.VotedIDs, []int{30, 5}) == 0 {
-					t.Errorf("VotedIDs are %v, expected %v", poll.VotedIDs, []int{30, 5})
 				}
 			})
 
@@ -1630,14 +1648,13 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 						ds := dsmodels.New(flow)
 						q := ds.Poll(5)
-						q = q.Preload(q.BallotList())
+						q = q.Preload(q.BallotUserList())
 						poll, err := q.First(ctx)
 						if err != nil {
 							t.Fatalf("Error: Getting votes from poll: %v", err)
 						}
-						found := slices.ContainsFunc(poll.BallotList, func(vote dsmodels.PollBallot) bool {
-							userID, _ := vote.RepresentedMeetingUserID.Value()
-							return userID == tt.expectRepresentedMeetingUserID
+						found := slices.ContainsFunc(poll.BallotUserList, func(ballotUser dsmodels.PollBallotUser) bool {
+							return ballotUser.RepresentedMeetingUserID == tt.expectRepresentedMeetingUserID
 						})
 
 						if !found {
