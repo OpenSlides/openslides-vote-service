@@ -1708,10 +1708,15 @@ func TestDeleteWithOptionsAndBallots(t *testing.T) {
 			username: admin
 			organization_management_level: superadmin
 
-	meeting_user/300:
-		group_ids: [40]
-		user_id: 30
-		meeting_id: 1
+	meeting_user:
+		300:
+			group_ids: [40]
+			user_id: 30
+			meeting_id: 1
+		50:
+			group_ids: [40]
+			user_id: 5
+			meeting_id: 1
 
 	group/40:
 		name: delegate
@@ -1741,6 +1746,16 @@ func TestDeleteWithOptionsAndBallots(t *testing.T) {
 		502:
 			poll_id: 5
 			value: No
+
+	poll_ballot_user:
+		5010:
+			poll_id: 5
+			acting_meeting_user_id: 300
+			represented_meeting_user_id: 300
+		5020:
+			poll_id: 5
+			acting_meeting_user_id: 50
+			represented_meeting_user_id: 50
 	`
 
 	withData(

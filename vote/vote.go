@@ -542,23 +542,21 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 	defer tx.Rollback(ctx)
 
-	deleteStatements := []string{
-		`DELETE FROM poll_ballot WHERE poll_id = $1`,
-		`DELETE FROM poll_option WHERE poll_id = $1`,
-	}
-	for _, sql := range deleteStatements {
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-			return fmt.Errorf("remove old config entries for poll %d: %w", pollID, err)
-		}
-	}
-
 	if err := method.DeleteConfig(ctx, tx, pollID, poll.ConfigID); err != nil {
 		return fmt.Errorf("delete method: %w", err)
 	}
 
-	sql := `DELETE FROM poll WHERE id = $1;`
-	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-		return fmt.Errorf("delete poll: %w", err)
+	deleteStatements := []string{
+		`DELETE FROM poll_ballot WHERE poll_id = $1`,
+		`DELETE FROM poll_option WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
+		`DELETE FROM poll WHERE id = $1`,
+	}
+	for _, sql := range deleteStatements {
+		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+			return fmt.Errorf("delete related data with %s: %w", sql, err)
+		}
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "deleted"); err != nil {
@@ -566,7 +564,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 
 	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
-	sql = `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
+	sql := `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
 	if _, err := tx.Exec(ctx, sql, fmt.Sprintf("poll/%d", pollID)); err != nil {
 		return fmt.Errorf("update old history entries: %w", err)
 	}
