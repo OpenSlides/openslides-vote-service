@@ -22,7 +22,9 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-go/history"
+	"github.com/OpenSlides/openslides-go/oslog"
 	"github.com/OpenSlides/openslides-go/perm"
+	"github.com/OpenSlides/openslides-go/set"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -671,6 +673,10 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	if poll.State == `started` {
 		historyMessages = append(historyMessages, "stopped")
 
+		if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
+			return fmt.Errorf("generate entitled meeting users: %w", err)
+		}
+
 		if poll.Visibility == "secret" {
 			for i := range ballots {
 				ballots[i].Value, err = v.decryptBallot(ballots[i].Value)
@@ -763,6 +769,216 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 	}
 
 	return nil
+}
+
+func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
+	// This query returns fales, if there are no ballots.
+	usedDelegationQuery := `
+		SELECT EXISTS (
+		    SELECT 1
+		    FROM poll_ballot_user_t
+		    WHERE poll_id = $1
+		      AND acting_meeting_user_id <> represented_meeting_user_id
+		) AS used_delegation;`
+	var usedDelegation bool
+	if err := tx.QueryRow(ctx, usedDelegationQuery, pollID).Scan(&usedDelegation); err != nil {
+		return fmt.Errorf("check for delegation: %w", err)
+	}
+	if usedDelegation {
+		return nil
+	}
+
+	var entitledGroupIDs []int
+	if err := tx.QueryRow(ctx, `SELECT group_id FROM nm_group_poll_ids_poll_t WHERE poll_id = $1`, pollID).Scan(&entitledGroupIDs); err != nil {
+		return fmt.Errorf("fetching entitled group id: %w", err)
+	}
+
+	// Fetch meeting_user_ids, that have voted
+	rows, err := tx.Query(ctx, `SELECT represented_meeting_user_id FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching represented users: %w", err)
+	}
+	defer rows.Close()
+
+	representedMeetingUserIDs, err := pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
+		return fmt.Errorf("read represented_meeting_user ids: %w", err)
+	}
+
+	entitledUsers := set.New(representedMeetingUserIDs...)
+
+	// Fetch present and not present meetingUsers
+	presentMeetingUserIDs, notPresentMeetingUserIDs, err := meetingUserPresence(ctx, tx, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching present and not present meeting users: %w", err)
+	}
+
+	entitledUsers.Add(presentMeetingUserIDs...)
+	slices.DeleteFunc(notPresentMeetingUserIDs, func(id int) bool {
+		return entitledUsers.Has(id)
+	})
+
+	type posrange [2]int
+	// map from meeting_user_id to a list of position ranges
+	maybeEndtitledUsers := make(map[int][]posrange, len(notPresentMeetingUserIDs))
+	for _, id := range notPresentMeetingUserIDs {
+		maybeEndtitledUsers[id] = nil
+	}
+
+	events, err := fetchMeetingUserEvents(ctx, tx, pollID)
+	if err != nil {
+		return fmt.Errorf("fetching meeting user events: %w", err)
+	}
+
+	for _, event := range events {
+		if entitledUsers.Has(event.meetingUserID) {
+			continue
+		}
+
+		type changedGroup struct {
+			GroupIDs struct {
+				Added   []int `json:"added"`
+				Removed []int `json:"removed"`
+			} `json:"group_ids"`
+		}
+		var cg changedGroup
+		if err := json.Unmarshal(event.information, &cg); err != nil {
+			// Skip events, that can not be parsed
+			oslog.Debug("Can not parse event `%s`: %w", event.information, err)
+			continue
+		}
+
+		for _, removedGroup := range cg.GroupIDs.Removed {
+			if !slices.Contains(entitledGroupIDs, removedGroup) {
+				continue
+			}
+			// TODO: What if a user is in more then one entitled group?
+			maybeEndtitledUsers[event.meetingUserID] = append(maybeEndtitledUsers[event.meetingUserID], posrange{0, removedGroup})
+		}
+
+		for _, addedGroup := range cg.GroupIDs.Added {
+			if !slices.Contains(entitledGroupIDs, addedGroup) {
+				continue
+			}
+			lastIndex := len(maybeEndtitledUsers[event.meetingUserID]) - 1
+			if maybeEndtitledUsers[event.meetingUserID][lastIndex][0] == 0 {
+				continue
+			}
+
+			maybeEndtitledUsers[event.meetingUserID][lastIndex][0] = addedGroup
+		}
+
+	}
+
+	// Go though all group events until poll-start and create ranges for each possibleEntitledUser, when they where in an entitled group
+	// Add users to the second set, that were deleted from a group
+	// For each of this users, go though the present-events and add each user, that has a present event inside a rage to the first set.
+	// Write first set to nm_meeting_user_entitled_at_poll_ids_poll_t
+	return fmt.Errorf("TODO")
+}
+
+// meetingUserPresence returns all meeting_user_ids that are in a entitled group of pollID.
+//
+// The first result value are the present meeting_users, the second are the not present users.
+func meetingUserPresence(ctx context.Context, tx pgx.Tx, pollID int) ([]int, []int, error) {
+	query := `
+	SELECT mu.id AS meeting_user_id,
+       CASE WHEN pu.user_id IS NULL THEN false ELSE true END AS present
+	FROM meeting_user_t mu
+	LEFT JOIN nm_meeting_present_user_ids_user_t pu
+	       ON pu.meeting_id = mu.meeting_id
+	      AND pu.user_id = mu.user_id
+	WHERE mu.meeting_id = (SELECT meeting_id FROM poll_t WHERE id = $1)
+	  AND EXISTS (
+	      SELECT 1
+	      FROM nm_group_meeting_user_ids_meeting_user_t gmu
+	      JOIN nm_group_poll_ids_poll_t gp
+	           ON gp.group_id = gmu.group_id
+	      WHERE gmu.meeting_user_id = mu.id
+	        AND gp.poll_id = $1
+	  );`
+
+	rows, err := tx.Query(ctx, query, pollID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var presentUsers []int
+	var notPresentUsers []int
+
+	for rows.Next() {
+		var meetingUserID int
+		var present bool
+		if err := rows.Scan(&meetingUserID, &present); err != nil {
+			return nil, nil, fmt.Errorf("scan raw: %w", err)
+		}
+		if present {
+			presentUsers = append(presentUsers, meetingUserID)
+		} else {
+			notPresentUsers = append(notPresentUsers, meetingUserID)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return presentUsers, notPresentUsers, nil
+}
+
+type meetingUserEvent struct {
+	position      int
+	meetingUserID int
+	information   json.RawMessage
+}
+
+// fetchMeetingUserEvents returns all meeting_user related events since
+// poll-start in reverse order.
+func fetchMeetingUserEvents(ctx context.Context, tx pgx.Tx, pollID int) ([]meetingUserEvent, error) {
+	eventsQuery := `
+	WITH poll_start AS (
+	    SELECT he.position_id
+	    FROM history_entry_t he
+	    WHERE he.model_id = 'poll/' || $1
+	      AND 'started' = ANY(he.entries)
+	    ORDER BY he.position_id DESC
+	    LIMIT 1
+	),
+	target_meeting AS (
+	    SELECT meeting_id
+	    FROM poll_t
+	    WHERE id = $1
+	)
+	SELECT he.changed_fields,
+	       he.position_id,
+	       he.model_id_meeting_user_id
+	FROM history_entry_t he
+	JOIN target_meeting tm ON he.meeting_id = tm.meeting_id
+	JOIN poll_start ps ON he.position_id >= ps.position_id
+	WHERE he.model_id_meeting_user_id IS NOT NULL
+	ORDER BY he.position_id DESC;`
+
+	rows, err := tx.Query(ctx, eventsQuery, pollID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []meetingUserEvent
+	for rows.Next() {
+		var event meetingUserEvent
+		if err := rows.Scan(&event.information, &event.position, &event.meetingUserID); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return events, nil
 }
 
 // Reset removes all votes from a poll and sets its state to created.
