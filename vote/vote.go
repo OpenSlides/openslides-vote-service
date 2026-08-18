@@ -664,7 +664,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	// Set a lock on first query. Postgres creates the repeatable read snapshot
 	// on the first query. So the lock and the snapshot are created at the same
 	// time.
-	sql := `SELECT id FROM polls WHERE id = $1 FOR NO KEY UPDATE`
+	sql := `SELECT id FROM poll WHERE id = $1 FOR NO KEY UPDATE`
 	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("select poll %d: %w", pollID, err)
 	}
@@ -799,12 +799,17 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 	}
 
 	var entitledGroupIDs []int
-	if err := tx.QueryRow(ctx, `SELECT group_id FROM nm_group_poll_ids_poll_t WHERE poll_id = $1`, pollID).Scan(&entitledGroupIDs); err != nil {
-		return fmt.Errorf("fetching entitled group id: %w", err)
+	rows, err := tx.Query(ctx, `SELECT group_id FROM nm_group_poll_ids_poll_t WHERE poll_id = $1`, pollID)
+	if err != nil {
+		return fmt.Errorf("executing query: %w", err)
+	}
+	entitledGroupIDs, err = pgx.CollectRows(rows, pgx.RowTo[int])
+	if err != nil {
+		return fmt.Errorf("fetching entitled group ids: %w", err)
 	}
 
 	// Fetch meeting_user_ids, that have voted.
-	rows, err := tx.Query(ctx, `SELECT represented_meeting_user_id FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
+	rows, err = tx.Query(ctx, `SELECT represented_meeting_user_id FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching represented users: %w", err)
 	}
@@ -858,7 +863,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		}
 		if err := json.Unmarshal(event.information, &cg); err != nil {
 			// Skip events, that can not be parsed
-			oslog.Debug("Can not parse event `%s`: %w", event.information, err)
+			oslog.Debug("Can not parse event `%s`: %v", event.information, err)
 			continue
 		}
 
@@ -897,7 +902,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		}
 		if err := json.Unmarshal(event.information, &ev); err != nil {
 			// Skip events, that can not be parsed
-			oslog.Debug("Can not parse event `%s`: %w", event.information, err)
+			oslog.Debug("Can not parse event `%s`: %v", event.information, err)
 			continue
 		}
 		// The value of the event is not relevant. Only, that the event is a
@@ -995,7 +1000,7 @@ func fetchMeetingUserEvents(ctx context.Context, tx pgx.Tx, pollID int) ([]meeti
 	WITH poll_start AS (
 	    SELECT he.position_id
 	    FROM history_entry_t he
-	    WHERE he.model_id = 'poll/' || $1
+	    WHERE he.model_id_poll_id = $1
 	      AND 'started' = ANY(he.entries)
 	    ORDER BY he.position_id DESC
 	    LIMIT 1
@@ -1005,9 +1010,9 @@ func fetchMeetingUserEvents(ctx context.Context, tx pgx.Tx, pollID int) ([]meeti
 	    FROM poll_t
 	    WHERE id = $1
 	)
-	SELECT he.changed_fields,
-	       he.position_id,
-	       he.model_id_meeting_user_id
+	SELECT he.structured_information,
+		he.position_id,
+		he.model_id_meeting_user_id
 	FROM history_entry_t he
 	JOIN target_meeting tm ON he.meeting_id = tm.meeting_id
 	JOIN poll_start ps ON he.position_id >= ps.position_id
