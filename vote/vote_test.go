@@ -561,6 +561,23 @@ func TestManually(t *testing.T) {
 				t.Errorf("State == %s. A manually poll has to be in state finished after a reset", poll.State)
 			}
 		})
+
+		t.Run("Invalid json", func(t *testing.T) {
+			body := `{
+				"result": {THIS IS NOT JSON}
+			}`
+
+			err := service.Update(ctx, 1, 5, strings.NewReader(body))
+
+			if err == nil {
+				t.Fatalf("Expected an error on invalid json. Got non")
+			}
+
+			if !errors.Is(err, vote.ErrInvalid) {
+				t.Errorf("Update with invalid json returned an unexpected error: %v", err)
+			}
+
+		})
 	})
 }
 
@@ -1516,7 +1533,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user:
 				41:
 					group_ids: [40]
-					vote_delegated_to_id: 31
+					vote_delegated_to_ids: [31]
 			`,
 			`{"meeting_user_id": 41, "value":"Yes"}`,
 
@@ -1533,7 +1550,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 			meeting_user:
 				41:
 					group_ids: [40]
-					vote_delegated_to_id: 31
+					vote_delegated_to_ids: [31]
 			`,
 			`{"meeting_user_id": 41, "value":"Yes"}`,
 
@@ -1548,7 +1565,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user:
 				41:
-					vote_delegated_to_id: 31
+					vote_delegated_to_ids: [31]
 			`,
 			`{"meeting_user_id": 41, "value":"Yes"}`,
 
@@ -1564,7 +1581,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user/31:
 				group_ids: [40]
-				vote_delegated_to_id: 41
+				vote_delegated_to_ids: [41]
 			`,
 			`{"meeting_user_id": 31, "value":"Yes"}`,
 
@@ -1580,7 +1597,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user/31:
 				group_ids: [40]
-				vote_delegated_to_id: 41
+				vote_delegated_to_ids: [41]
 			`,
 			`{"meeting_user_id": 31, "value":"Yes"}`,
 
@@ -1599,7 +1616,7 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 
 			meeting_user/31:
 				group_ids: [40]
-				vote_delegated_to_id: 41
+				vote_delegated_to_ids: [41]
 			`,
 			`{"meeting_user_id": 31, "value":"Yes"}`,
 
@@ -1691,10 +1708,15 @@ func TestDeleteWithOptionsAndBallots(t *testing.T) {
 			username: admin
 			organization_management_level: superadmin
 
-	meeting_user/300:
-		group_ids: [40]
-		user_id: 30
-		meeting_id: 1
+	meeting_user:
+		300:
+			group_ids: [40]
+			user_id: 30
+			meeting_id: 1
+		50:
+			group_ids: [40]
+			user_id: 5
+			meeting_id: 1
 
 	group/40:
 		name: delegate
@@ -1724,6 +1746,16 @@ func TestDeleteWithOptionsAndBallots(t *testing.T) {
 		502:
 			poll_id: 5
 			value: No
+
+	poll_ballot_user:
+		5010:
+			poll_id: 5
+			acting_meeting_user_id: 300
+			represented_meeting_user_id: 300
+		5020:
+			poll_id: 5
+			acting_meeting_user_id: 50
+			represented_meeting_user_id: 50
 	`
 
 	withData(

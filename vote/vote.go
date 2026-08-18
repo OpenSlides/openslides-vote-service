@@ -31,7 +31,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-var envVoteSecretKeyFile = environment.NewVariable("VOTE_SECRET_KEY_FILE", "/run/secrets/vote_secret_key", "Path to the secret key for secret polls.")
+var envVoteSecretKeyFile = environment.NewVariable("VOTE_SECRET_KEY_FILE", "/run/secrets/vote_secret_key", "Path to the secret key for secret polls. The content of the file can be anything.")
 
 // Vote holds the state of the service.
 //
@@ -424,7 +424,7 @@ type updateInput struct {
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
 	var ui updateInput
 	if err := json.NewDecoder(r).Decode(&ui); err != nil {
-		return updateInput{}, fmt.Errorf("decoding update input: %w", err)
+		return updateInput{}, MessageError(ErrInvalid, "Request body is not a valid json object.")
 	}
 
 	if poll.Visibility == "manually" {
@@ -544,23 +544,21 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 	defer tx.Rollback(ctx)
 
-	deleteStatements := []string{
-		`DELETE FROM poll_ballot WHERE poll_id = $1`,
-		`DELETE FROM poll_option WHERE poll_id = $1`,
-	}
-	for _, sql := range deleteStatements {
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-			return fmt.Errorf("remove old config entries for poll %d: %w", pollID, err)
-		}
-	}
-
 	if err := method.DeleteConfig(ctx, tx, pollID, poll.ConfigID); err != nil {
 		return fmt.Errorf("delete method: %w", err)
 	}
 
-	sql := `DELETE FROM poll WHERE id = $1;`
-	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-		return fmt.Errorf("delete poll: %w", err)
+	deleteStatements := []string{
+		`DELETE FROM poll_ballot WHERE poll_id = $1`,
+		`DELETE FROM poll_option WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
+		`DELETE FROM poll WHERE id = $1`,
+	}
+	for _, sql := range deleteStatements {
+		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+			return fmt.Errorf("delete related data with %s: %w", sql, err)
+		}
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "deleted"); err != nil {
@@ -568,7 +566,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 
 	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
-	sql = `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
+	sql := `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
 	if _, err := tx.Exec(ctx, sql, fmt.Sprintf("poll/%d", pollID)); err != nil {
 		return fmt.Errorf("update old history entries: %w", err)
 	}
@@ -1295,12 +1293,12 @@ func allowedToVote(
 		return fmt.Errorf("fetching meeting/users_forbid_delegator_to_vote: %w", err)
 	}
 
-	delegation, err := ds.MeetingUser_VoteDelegatedToID(representedMeetingUserID).Value(ctx)
+	delegationList, err := ds.MeetingUser_VoteDelegatedToIDs(representedMeetingUserID).Value(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching meeting_user/vote_delegated_to_id: %w", err)
+		return fmt.Errorf("fetching meeting_user/vote_delegated_to_ids: %w", err)
 	}
 
-	if delegationActivated && forbitDelegateToVote && !delegation.Null() && representedMeetingUserID == actingMeetingUserID {
+	if delegationActivated && forbitDelegateToVote && len(delegationList) > 0 && representedMeetingUserID == actingMeetingUserID {
 		return MessageError(ErrNotAllowed, "You have delegated your vote and therefore can not vote for your self")
 	}
 
@@ -1312,7 +1310,7 @@ func allowedToVote(
 		return MessageErrorf(ErrNotAllowed, "Vote delegation is not activated in meeting %d", poll.MeetingID)
 	}
 
-	if id, ok := delegation.Value(); !ok || id != actingMeetingUserID {
+	if !slices.Contains(delegationList, actingMeetingUserID) {
 		return MessageErrorf(ErrNotAllowed, "You can not vote for meeting user %d", representedMeetingUserID)
 	}
 
@@ -1517,7 +1515,7 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 
 	q := ds.Poll(pollID)
 	q = q.Preload(q.EntitledGroupList().MeetingUserList().User())
-	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedTo().User())
+	q = q.Preload(q.EntitledGroupList().MeetingUserList().VoteDelegatedToList().User())
 	poll, err := q.First(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch preload data: %w", err)
