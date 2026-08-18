@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -652,14 +654,23 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
 
-	tx, err := v.querier.Begin(ctx)
+	// Start the transaction as repeatable read so all reads happen on the same snapshot of the db.
+	tx, err := v.querier.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	ds := dsmodels.New(v.flow)
+	// Set a lock on first query. Postgres creates the repeatable read snapshot
+	// on the first query. So the lock and the snapshot are created at the same
+	// time.
+	sql := `SELECT id FROM polls WHERE id = $1 FOR NO KEY UPDATE`
+	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+		return fmt.Errorf("select poll %d: %w", pollID, err)
+	}
 
+	// TODO: Remove ds and fetch all data from the same db-transaction
+	ds := dsmodels.New(v.flow)
 	ballots, err := ds.PollBallot(poll.BallotIDs...).Get(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
@@ -698,7 +709,8 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 			return fmt.Errorf("create poll result: %w", err)
 		}
 
-		sql := `UPDATE poll SET result = $1 WHERE id = $2;`
+		// This sets the state to finished and the result at the same time.
+		sql := `UPDATE poll SET result = $1, state = 'finished' WHERE id = $2;`
 		if _, err := tx.Exec(ctx, sql, result, pollID); err != nil {
 			return fmt.Errorf("set result of poll %d: %w", pollID, err)
 		}
@@ -708,7 +720,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		historyMessages = append(historyMessages, "published")
 	}
 
-	sql := `UPDATE poll SET state = 'finished', published = $1 WHERE id = $2;`
+	sql = `UPDATE poll SET published = $1 WHERE id = $2;`
 	if _, err := tx.Exec(ctx, sql, publish, pollID); err != nil {
 		return fmt.Errorf("set poll %d to finished and publish to %v: %w", pollID, publish, err)
 	}
@@ -770,7 +782,7 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 }
 
 func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
-	// This query returns fales, if there are no ballots.
+	// Find out if there are delegations. Returns false, if there are no ballots.
 	usedDelegationQuery := `
 		SELECT EXISTS (
 		    SELECT 1
@@ -791,7 +803,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		return fmt.Errorf("fetching entitled group id: %w", err)
 	}
 
-	// Fetch meeting_user_ids, that have voted
+	// Fetch meeting_user_ids, that have voted.
 	rows, err := tx.Query(ctx, `SELECT represented_meeting_user_id FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching represented users: %w", err)
@@ -806,21 +818,25 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 	entitledUsers := set.New(representedMeetingUserIDs...)
 
 	// Fetch present and not present meetingUsers
-	presentMeetingUserIDs, notPresentMeetingUserIDs, err := meetingUserPresence(ctx, tx, pollID)
+	presentMeetingUserIDs, notPresentMeetingUserIDs, err := meetingUserPresent(ctx, tx, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching present and not present meeting users: %w", err)
 	}
 
-	entitledUsers.Add(presentMeetingUserIDs...)
-	slices.DeleteFunc(notPresentMeetingUserIDs, func(id int) bool {
-		return entitledUsers.Has(id)
+	// Remove users, that have voted, from the not-present-list. Add the present
+	// users to the entitled users.
+	maps.DeleteFunc(notPresentMeetingUserIDs, func(key int, _ int) bool {
+		return entitledUsers.Has(key)
 	})
+	entitledUsers.Add(presentMeetingUserIDs...)
 
 	type posrange [2]int
 	// map from meeting_user_id to a list of position ranges
 	maybeEndtitledUsers := make(map[int][]posrange, len(notPresentMeetingUserIDs))
+
+	// add all not present users to an entitled group until the end of time.
 	for _, id := range notPresentMeetingUserIDs {
-		maybeEndtitledUsers[id] = nil
+		maybeEndtitledUsers[id] = append(maybeEndtitledUsers[id], posrange{0, math.MaxInt})
 	}
 
 	events, err := fetchMeetingUserEvents(ctx, tx, pollID)
@@ -828,18 +844,18 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		return fmt.Errorf("fetching meeting user events: %w", err)
 	}
 
+	// Go though all group change events.
 	for _, event := range events {
 		if entitledUsers.Has(event.meetingUserID) {
 			continue
 		}
 
-		type changedGroup struct {
+		var cg struct {
 			GroupIDs struct {
 				Added   []int `json:"added"`
 				Removed []int `json:"removed"`
 			} `json:"group_ids"`
 		}
-		var cg changedGroup
 		if err := json.Unmarshal(event.information, &cg); err != nil {
 			// Skip events, that can not be parsed
 			oslog.Debug("Can not parse event `%s`: %w", event.information, err)
@@ -850,51 +866,89 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 			if !slices.Contains(entitledGroupIDs, removedGroup) {
 				continue
 			}
-			// TODO: What if a user is in more then one entitled group?
-			maybeEndtitledUsers[event.meetingUserID] = append(maybeEndtitledUsers[event.meetingUserID], posrange{0, removedGroup})
+
+			if notPresentMeetingUserIDs[event.meetingUserID] == 0 {
+				maybeEndtitledUsers[event.meetingUserID] = append(maybeEndtitledUsers[event.meetingUserID], posrange{0, event.position})
+			}
+			notPresentMeetingUserIDs[event.meetingUserID]++
 		}
 
 		for _, addedGroup := range cg.GroupIDs.Added {
 			if !slices.Contains(entitledGroupIDs, addedGroup) {
 				continue
 			}
-			lastIndex := len(maybeEndtitledUsers[event.meetingUserID]) - 1
-			if maybeEndtitledUsers[event.meetingUserID][lastIndex][0] == 0 {
-				continue
+
+			notPresentMeetingUserIDs[event.meetingUserID]--
+			if notPresentMeetingUserIDs[event.meetingUserID] == 0 {
+				lastIndex := len(maybeEndtitledUsers[event.meetingUserID]) - 1
+				maybeEndtitledUsers[event.meetingUserID][lastIndex][0] = event.position
 			}
-
-			maybeEndtitledUsers[event.meetingUserID][lastIndex][0] = addedGroup
 		}
-
 	}
 
-	// Go though all group events until poll-start and create ranges for each possibleEntitledUser, when they where in an entitled group
-	// Add users to the second set, that were deleted from a group
-	// For each of this users, go though the present-events and add each user, that has a present event inside a rage to the first set.
-	// Write first set to nm_meeting_user_entitled_at_poll_ids_poll_t
-	return fmt.Errorf("TODO")
+	// Go though all set present events for maybeEndtitledUsers
+	for _, event := range events {
+		if _, ok := maybeEndtitledUsers[event.meetingUserID]; !ok {
+			continue
+		}
+
+		var ev struct {
+			IsPresent bool `json:"is_present"`
+		}
+		if err := json.Unmarshal(event.information, &ev); err != nil {
+			// Skip events, that can not be parsed
+			oslog.Debug("Can not parse event `%s`: %w", event.information, err)
+			continue
+		}
+		// The value of the event is not relevant. Only, that the event is a
+		// "set present" event. So we know, the present state changed for the
+		// user in a specific position.
+		for _, r := range maybeEndtitledUsers[event.meetingUserID] {
+			if event.position >= r[0] || event.position <= r[1] {
+				entitledUsers.Add(event.meetingUserID)
+			}
+		}
+	}
+
+	placeholders := make([]string, entitledUsers.Len())
+	args := make([]any, entitledUsers.Len()*2)
+
+	for i, meeting_user_id := range entitledUsers.List() {
+		placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
+		args[i*2] = meeting_user_id
+		args[i*2+1] = pollID
+	}
+
+	groupSQL := fmt.Sprintf(
+		"INSERT INTO nm_meeting_user_entitled_at_poll_ids_poll_t (meeting_user_id, poll_id) VALUES %s",
+		strings.Join(placeholders, ", "),
+	)
+
+	if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+		return fmt.Errorf("insert entitled users relations: %w", err)
+	}
+
+	return nil
 }
 
-// meetingUserPresence returns all meeting_user_ids that are in a entitled group of pollID.
-//
-// The first result value are the present meeting_users, the second are the not present users.
-func meetingUserPresence(ctx context.Context, tx pgx.Tx, pollID int) ([]int, []int, error) {
+// meetingUserPresent returns the meeting_user_ids that are present in the first slice.
+// The second return value maps meeting_user_id -> count of entitled groups for non-present users.
+func meetingUserPresent(ctx context.Context, tx pgx.Tx, pollID int) ([]int, map[int]int, error) {
 	query := `
-	SELECT mu.id AS meeting_user_id,
-       CASE WHEN pu.user_id IS NULL THEN false ELSE true END AS present
-	FROM meeting_user_t mu
-	LEFT JOIN nm_meeting_present_user_ids_user_t pu
-	       ON pu.meeting_id = mu.meeting_id
-	      AND pu.user_id = mu.user_id
-	WHERE mu.meeting_id = (SELECT meeting_id FROM poll_t WHERE id = $1)
-	  AND EXISTS (
-	      SELECT 1
-	      FROM nm_group_meeting_user_ids_meeting_user_t gmu
-	      JOIN nm_group_poll_ids_poll_t gp
-	           ON gp.group_id = gmu.group_id
-	      WHERE gmu.meeting_user_id = mu.id
-	        AND gp.poll_id = $1
-	  );`
+    SELECT
+        mu.id AS meeting_user_id,
+        CASE WHEN pu.user_id IS NOT NULL THEN true ELSE false END AS present,
+        COUNT(DISTINCT gp.group_id) AS group_count
+    FROM meeting_user_t mu
+    JOIN nm_group_meeting_user_ids_meeting_user_t gmu
+        ON gmu.meeting_user_id = mu.id
+    JOIN nm_group_poll_ids_poll_t gp
+        ON gp.group_id = gmu.group_id AND gp.poll_id = $1
+    LEFT JOIN nm_meeting_present_user_ids_user_t pu
+        ON pu.meeting_id = mu.meeting_id
+       AND pu.user_id = mu.user_id
+    WHERE mu.meeting_id = (SELECT meeting_id FROM poll_t WHERE id = $1)
+    GROUP BY mu.id, pu.user_id;`
 
 	rows, err := tx.Query(ctx, query, pollID)
 	if err != nil {
@@ -903,26 +957,29 @@ func meetingUserPresence(ctx context.Context, tx pgx.Tx, pollID int) ([]int, []i
 	defer rows.Close()
 
 	var presentUsers []int
-	var notPresentUsers []int
+	notPresentGroupCount := make(map[int]int)
 
 	for rows.Next() {
 		var meetingUserID int
 		var present bool
-		if err := rows.Scan(&meetingUserID, &present); err != nil {
-			return nil, nil, fmt.Errorf("scan raw: %w", err)
+		var groupCount int
+
+		if err := rows.Scan(&meetingUserID, &present, &groupCount); err != nil {
+			return nil, nil, fmt.Errorf("scan row: %w", err)
 		}
+
 		if present {
 			presentUsers = append(presentUsers, meetingUserID)
-		} else {
-			notPresentUsers = append(notPresentUsers, meetingUserID)
+			continue
 		}
+		notPresentGroupCount[meetingUserID] = groupCount
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, nil, fmt.Errorf("rows error: %w", err)
 	}
 
-	return presentUsers, notPresentUsers, nil
+	return presentUsers, notPresentGroupCount, nil
 }
 
 type meetingUserEvent struct {
@@ -1127,6 +1184,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 				END as poll_status
 			FROM poll
 			WHERE id = $1
+			FOR SHARE
 		),
 		ballot_check AS (
 			SELECT
@@ -1567,6 +1625,7 @@ func Preload(ctx context.Context, flow flow.Getter, pollID int, meetingID int) e
 // DBQuerier is either a pgx-connection or a pgx-pool.
 type DBQuerier interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
