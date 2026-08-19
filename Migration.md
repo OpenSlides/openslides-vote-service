@@ -44,7 +44,9 @@ and user.
 
 Data about who has voted for who is being stored separately in a new collection
 `poll_ballot_user`. Direct connection between the ballos and users is being
-replaced with the relation through `meeting_user`.
+replaced with the relation through `meeting_user`. Relation between `poll_ballot`
+and `poll_ballot_user` is optional and gets removed when poll gets anonymized.
+This allows to safely save the information about who vote for whom.
 
 ## Permissions
 
