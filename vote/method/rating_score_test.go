@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/shopspring/decimal"
 )
@@ -175,7 +174,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 		method       string
 		config       string
 		options      []int
-		ballots      []dsmodels.PollBallot
+		ballots      []method.Ballot
 		expectResult string
 	}{
 		{
@@ -183,7 +182,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			method:  "rating_score",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{"2":2,"3":3}`},
 				{Value: `{"3":5}`, Weight: decimal.NewFromInt(5)},
@@ -195,7 +194,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 			method:  "rating_score",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":3,"2":3}`},
 				{Value: `{}`},
 				{Value: `{}`, Weight: decimal.NewFromInt(5)},

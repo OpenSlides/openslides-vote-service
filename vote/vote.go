@@ -644,13 +644,6 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
-	if poll.Visibility == "secret" {
-		// Do not anonymize a secret poll. A secret poll is anonymized anyway
-		// and the code below expects, that a secret poll does not get
-		// anonymized manually.
-		anonymize = false
-	}
-
 	if poll.State == "created" {
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
@@ -670,9 +663,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return fmt.Errorf("select poll %d: %w", pollID, err)
 	}
 
-	// TODO: Remove ds and fetch all data from the same db-transaction
-	ds := dsmodels.New(v.flow)
-	ballots, err := ds.PollBallot(poll.BallotIDs...).Get(ctx)
+	ballots, err := fetchBallots(ctx, tx, pollID)
 	if err != nil {
 		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
 	}
@@ -681,64 +672,24 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	historyMessages = append(historyMessages, "finalized")
 
 	if poll.State == `started` {
+		if err := v.pollStop(ctx, tx, poll, ballots); err != nil {
+			return fmt.Errorf("stop poll: %w", err)
+		}
 		historyMessages = append(historyMessages, "stopped")
-
-		if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
-			return fmt.Errorf("generate entitled meeting users: %w", err)
-		}
-
-		if poll.Visibility == "secret" {
-			for i := range ballots {
-				ballots[i].Value, err = v.decryptBallot(ballots[i].Value)
-				if err != nil {
-					return fmt.Errorf("decrypting ballot: %w", err)
-				}
-			}
-
-			if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
-				return fmt.Errorf("rewrite ballots: %w", err)
-			}
-		}
-
-		pm, err := v.resolveMethod(ctx, poll)
-		if err != nil {
-			return fmt.Errorf("resolve poll method: %w", err)
-		}
-
-		result, err := CreateResult(pm, poll.AllowVoteSplit, ballots)
-		if err != nil {
-			return fmt.Errorf("create poll result: %w", err)
-		}
-
-		// This sets the state to finished and the result at the same time.
-		sql := `UPDATE poll SET result = $1, state = 'finished' WHERE id = $2;`
-		if _, err := tx.Exec(ctx, sql, result, pollID); err != nil {
-			return fmt.Errorf("set result of poll %d: %w", pollID, err)
-		}
 	}
 
 	if publish && !poll.Published {
+		if err := v.pollPublish(ctx, tx, poll); err != nil {
+			return fmt.Errorf("publish poll: %w", err)
+		}
 		historyMessages = append(historyMessages, "published")
 	}
 
-	sql = `UPDATE poll SET published = $1 WHERE id = $2;`
-	if _, err := tx.Exec(ctx, sql, publish, pollID); err != nil {
-		return fmt.Errorf("set poll %d to finished and publish to %v: %w", pollID, publish, err)
-	}
-
-	if anonymize {
+	if anonymize && !poll.Anonymized {
+		if err := v.pollAnonymize(ctx, tx, poll, ballots); err != nil {
+			return fmt.Errorf("anonymize poll: %w", err)
+		}
 		historyMessages = append(historyMessages, "anonymized")
-		if poll.Visibility == "named" {
-			return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
-		}
-
-		if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
-			return fmt.Errorf("rewrite ballots: %w", err)
-		}
-
-		if _, err := tx.Exec(ctx, `UPDATE poll SET anonymized = TRUE WHERE id = $1`, pollID); err != nil {
-			return fmt.Errorf("set anonymize on poll: %w", err)
-		}
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, historyMessages...); err != nil {
@@ -752,9 +703,98 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	return nil
 }
 
+func fetchBallots(ctx context.Context, tx pgx.Tx, pollID int) ([]method.Ballot, error) {
+	raws, err := tx.Query(ctx, "SELECT weight, split, value FROM poll_ballot WHERE poll_id = $1", pollID)
+	if err != nil {
+		return nil, fmt.Errorf("select ballots: %w", err)
+	}
+	defer raws.Close()
+
+	var ballots []method.Ballot
+	for raws.Next() {
+		var ballot method.Ballot
+		if err := raws.Scan(&ballot.Weight, &ballot.Split, &ballot.Value); err != nil {
+			return nil, fmt.Errorf("scan ballot: %w", err)
+		}
+		ballots = append(ballots, ballot)
+	}
+
+	if err := raws.Err(); err != nil {
+		return nil, fmt.Errorf("raws error: %w", err)
+	}
+
+	return ballots, nil
+}
+
+func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+	if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
+		return fmt.Errorf("generate entitled meeting users: %w", err)
+	}
+
+	if poll.Visibility == "secret" {
+		for i := range ballots {
+			decrypted, err := decryptBallot(ballots[i].Value, v.gcmForSecretPolls)
+			if err != nil {
+				return fmt.Errorf("decrypting ballot: %w", err)
+			}
+			ballots[i].Value = decrypted
+		}
+
+		if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+			return fmt.Errorf("rewrite ballots: %w", err)
+		}
+	}
+
+	pm, err := v.resolveMethod(ctx, poll)
+	if err != nil {
+		return fmt.Errorf("resolve poll method: %w", err)
+	}
+
+	result, err := CreateResult(pm, poll.AllowVoteSplit, ballots)
+	if err != nil {
+		return fmt.Errorf("create poll result: %w", err)
+	}
+
+	sql := `UPDATE poll SET result = $1, state = 'finished' WHERE id = $2;`
+	if _, err := tx.Exec(ctx, sql, result, poll.ID); err != nil {
+		return fmt.Errorf("set result of poll %d: %w", poll.ID, err)
+	}
+
+	return nil
+}
+
+func (v *Vote) pollPublish(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
+	sql := `UPDATE poll SET published = TRUE WHERE id = $1;`
+	if _, err := tx.Exec(ctx, sql, poll.ID); err != nil {
+		return fmt.Errorf("set poll %d to published: %w", poll.ID, err)
+	}
+	return nil
+}
+
+func (v *Vote) pollAnonymize(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+	if poll.Visibility == "named" {
+		return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
+	}
+
+	if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+		return fmt.Errorf("rewrite ballots: %w", err)
+	}
+	return nil
+}
+
 // rewriteBallots rewrites all ballots in a different order to the database, so
 // all references to the original ballots are removed.
-func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []dsmodels.PollBallot) error {
+func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+	var anonymized bool
+	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll WHERE id = $1", poll.ID).Scan(&anonymized); err != nil {
+		return fmt.Errorf("get anonymized status: %w", err)
+	}
+	if anonymized {
+		// Do not anonymize a poll twice. This can happen, when a secret poll
+		// gets finalized with the anonymize flag.
+		return nil
+	}
+
 	sort.Slice(ballots, func(i, j int) bool {
 		return ballots[i].Value < ballots[j].Value
 	})
@@ -777,6 +817,10 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 		}),
 	); err != nil {
 		return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE poll SET anonymized = TRUE WHERE id = $1`, poll.ID); err != nil {
+		return fmt.Errorf("set anonymize on poll: %w", err)
 	}
 
 	return nil
@@ -1259,20 +1303,20 @@ func (v *Vote) encryptBallot(ballotValue string) (string, error) {
 }
 
 // decryptBallot decrypt the given value with AES using the key for secret polls.
-func (v *Vote) decryptBallot(encryptedBallot string) (string, error) {
+func decryptBallot(encryptedBallot string, gcmForSecretPolls cipher.AEAD) (string, error) {
 	encryptedValue, err := base64.StdEncoding.DecodeString(encryptedBallot)
 	if err != nil {
 		return "", fmt.Errorf("base64 decode encrypted ballot: %w", err)
 	}
 
-	nonceSize := v.gcmForSecretPolls.NonceSize()
+	nonceSize := gcmForSecretPolls.NonceSize()
 	if len(encryptedValue) < nonceSize {
 		return "", fmt.Errorf("encrypted ballot too short")
 	}
 
 	nonce, ciphertext := encryptedValue[:nonceSize], encryptedValue[nonceSize:]
 
-	plaintext, err := v.gcmForSecretPolls.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := gcmForSecretPolls.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return "", fmt.Errorf("decrypt ciphertext: %w", err)
 	}
@@ -1423,7 +1467,7 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingUserID int
 }
 
 // CreateResult creates the result from a list of votes.
-func CreateResult(method method.Method, allowVoteSplit bool, ballots []dsmodels.PollBallot) (string, error) {
+func CreateResult(method method.Method, allowVoteSplit bool, ballots []method.Ballot) (string, error) {
 	if allowVoteSplit {
 		ballots = splitVote(method, ballots)
 	}
@@ -1431,8 +1475,8 @@ func CreateResult(method method.Method, allowVoteSplit bool, ballots []dsmodels.
 	return method.Result(ballots)
 }
 
-func splitVote(method method.Method, ballots []dsmodels.PollBallot) []dsmodels.PollBallot {
-	var splittedBallots []dsmodels.PollBallot
+func splitVote(m method.Method, ballots []method.Ballot) []method.Ballot {
+	var splittedBallots []method.Ballot
 	for _, ballot := range ballots {
 		if !ballot.Split {
 			splittedBallots = append(splittedBallots, ballot)
@@ -1447,20 +1491,19 @@ func splitVote(method method.Method, ballots []dsmodels.PollBallot) []dsmodels.P
 			continue
 		}
 
-		splittedBallots = append(splittedBallots, ballotsFromSplitted(method, ballot, splitted)...)
+		splittedBallots = append(splittedBallots, ballotsFromSplitted(m, ballot, splitted)...)
 	}
 	return splittedBallots
 }
 
-func ballotsFromSplitted(method method.Method, ballot dsmodels.PollBallot, splitted map[decimal.Decimal]json.RawMessage) []dsmodels.PollBallot {
-	var fromThisBallot []dsmodels.PollBallot
+func ballotsFromSplitted(m method.Method, ballot method.Ballot, splitted map[decimal.Decimal]json.RawMessage) []method.Ballot {
+	var fromThisBallot []method.Ballot
 	for splitWeight, splitValue := range splitted {
-		if err := method.ValidateBallot(splitValue); err != nil {
-			return []dsmodels.PollBallot{ballot}
+		if err := m.ValidateBallot(splitValue); err != nil {
+			return []method.Ballot{ballot}
 		}
 
-		fromThisBallot = append(fromThisBallot, dsmodels.PollBallot{
-			PollID: ballot.PollID,
+		fromThisBallot = append(fromThisBallot, method.Ballot{
 			Weight: splitWeight,
 			Value:  string(splitValue),
 			Split:  true,

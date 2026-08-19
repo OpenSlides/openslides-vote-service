@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 )
 
@@ -79,14 +78,14 @@ func TestApprovalCreateResult(t *testing.T) {
 		name         string
 		method       string
 		config       string
-		ballots      []dsmodels.PollBallot
+		ballots      []method.Ballot
 		expectResult string
 	}{
 		{
 			name:   "Approval",
 			method: "approval",
 			config: "",
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `"Yes"`},
 				{Value: `"Yes"`},
 				{Value: `"No"`},
@@ -97,7 +96,7 @@ func TestApprovalCreateResult(t *testing.T) {
 			name:   "Approval with invalid",
 			method: "approval",
 			config: "",
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `"Yes"`},
 				{Value: `"Yes"`},
 				{Value: `"No"`},

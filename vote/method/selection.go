@@ -131,7 +131,7 @@ func (s Selection) ValidateBallot(vote json.RawMessage) error {
 	return nil
 }
 
-func (s Selection) Result(votes []dsmodels.PollBallot) (string, error) {
+func (s Selection) Result(votes []Ballot) (string, error) {
 	return iterateValues(s, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions []int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {

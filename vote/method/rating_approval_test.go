@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/shopspring/decimal"
 )
@@ -89,14 +88,14 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 		name         string
 		config       string
 		options      []int
-		ballots      []dsmodels.PollBallot
+		ballots      []method.Ballot
 		expectResult string
 	}{
 		{
 			name:    "Normal",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":"yes","2":"no"}`},
 				{Value: `{"2":"yes","3":"no"}`},
 				{Value: `{"3":"yes"}`, Weight: decimal.NewFromInt(5)},
@@ -107,7 +106,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			name:    "With out abstain but with invalid",
 			config:  `{"allow_abstain":false}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":"yes","2":"abstain"}`},
 				{Value: `{"1":"yes","2":"no"}`},
 			},
@@ -117,7 +116,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			name:    "General abstain",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":"yes","2":"no"}`},
 				{Value: `{}`},
 			},
@@ -128,7 +127,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			// At the moment, to abstain and not vote for a option, is something different.
 			config:  `{"allow_abstain":false}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":"yes","2":"no"}`},
 				{Value: `{"1":"yes","2":"abstain"}`},
 				{Value: `{}`},
@@ -140,7 +139,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			// At the moment, to abstain and not vote for a option, is something different.
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `{"1":"yes","2":"abstain"}`},
 				{Value: `{"1":"yes"}`},
 			},
