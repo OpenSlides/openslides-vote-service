@@ -551,6 +551,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		`DELETE FROM poll_option WHERE poll_id = $1`,
 		`DELETE FROM poll_ballot WHERE poll_id = $1`,
 		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
+		`DELETE FROM projection WHERE content_object_id_poll_id = $1`,
 		`DELETE FROM poll WHERE id = $1`,
 	}
 	for _, sql := range deleteStatements {
