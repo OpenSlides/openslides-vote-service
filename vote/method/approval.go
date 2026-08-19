@@ -91,7 +91,7 @@ func (a *Approval) ValidateBallot(ballot json.RawMessage) error {
 	}
 }
 
-func (a *Approval) Result(ballots []dsmodels.PollBallot) (string, error) {
+func (a *Approval) Result(ballots []Ballot) (string, error) {
 	return iterateValues(a, ballots, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		switch strings.ToLower(value) {
 		case `"yes"`:

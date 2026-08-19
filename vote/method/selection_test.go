@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/shopspring/decimal"
 )
@@ -127,7 +126,7 @@ func TestSelectionCreateResult(t *testing.T) {
 		method       string
 		config       string
 		options      []int
-		ballots      []dsmodels.PollBallot
+		ballots      []method.Ballot
 		expectResult string
 	}{
 		{
@@ -135,7 +134,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `[1,2]`},
 				{Value: `[2,3]`},
 				{Value: `[3]`, Weight: decimal.NewFromInt(5)},
@@ -147,7 +146,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `[1,2]`},
 				{Value: `[]`},
 				{Value: `[]`, Weight: decimal.NewFromInt(5)},
@@ -159,7 +158,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			method:  "selection",
 			config:  `{"allow_nota":true}`,
 			options: []int{1, 2, 3},
-			ballots: []dsmodels.PollBallot{
+			ballots: []method.Ballot{
 				{Value: `[1,2]`},
 				{Value: `"nota"`},
 				{Value: `"nota"`, Weight: decimal.NewFromInt(5)},

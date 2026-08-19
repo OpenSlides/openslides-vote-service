@@ -15,11 +15,19 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// Ballot contains the relevant fields to calculate a vote result. It is simular
+// to dsmodels.PollBallot but not with its functionality.
+type Ballot struct {
+	Weight decimal.Decimal
+	Value  string
+	Split  bool
+}
+
 // Method is an interface to handle the method of a poll.
 type Method interface {
 	Name() string
 	ValidateBallot(ballot json.RawMessage) error
-	Result(votes []dsmodels.PollBallot) (string, error)
+	Result(votes []Ballot) (string, error)
 	RequireOptions() bool
 }
 
@@ -172,7 +180,7 @@ func addInvalidAndTotalBallots(result []byte, totalBallots, invalid int) ([]byte
 
 func iterateValues(
 	m Method,
-	votes []dsmodels.PollBallot,
+	votes []Ballot,
 	fn func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error,
 ) (string, error) {
 	result := make(map[string]decimal.Decimal)

@@ -88,12 +88,20 @@ To start a poll means that the users can send their ballots.
 To finalize a poll means that users can not send their ballots anymore. It
 creates the `poll/result` field.
 
-The request has two optional attributes: `publish` and `anonymize`. `publish`
-sets the field `poll/state` to `published`. `anonymize` removes all user ids
-from the corresponding `poll_ballot` objects.
+The request has two optional attributes: `publish` and `anonymize`. 
+
+`publish` sets the field `poll/state` to `published`. 
+
+`anonymize` removes the conjunction between the `poll_ballot` and
+`poll_ballot_user` collections. Ather `anonymize`, its is not possible to know,
+which `poll_ballot_user` belongs to which `poll_ballot`. To achieve this, all
+`poll_ballot` entries gets deleted and recreated in a different order. This will
+change the ids of all `poll_ballot` elements. The autoupdate-service send them
+to the client as new elements.
 
 The request can be send many times. It only creates the result the first time.
-`publish` and `anonymize` can be used on a later request.
+`publish` and `anonymize` can be used on a later request. It is not possible to
+undo `publish` or `anonymize`.
 
 To stop a poll and publish and anonymize it at the same time, the following
 request can be used:
