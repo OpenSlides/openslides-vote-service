@@ -51,7 +51,14 @@ func (Approval) Name() string {
 	return "approval"
 }
 
-func approvalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
+type approvalConfig struct {
+	AllowAbstain          *bool   `json:"allow_abstain"`
+	OneHundredPercentBase *string `json:"onehundred_percent_base"`
+}
+
+func createApprovalConfigFromCreate
+
+func approvalConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
 	a, err := ApprovalFromRequest(config)
 	if err != nil {
 		return "", fmt.Errorf("load config: %w", err)
@@ -75,6 +82,10 @@ func approvalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) 
 	}
 
 	return fmt.Sprintf("poll_config_approval/%d", configID), nil
+}
+
+func approvalConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
+	return fmt.Errorf("TODO")
 }
 
 func (a *Approval) ValidateBallot(ballot json.RawMessage) error {

@@ -62,7 +62,7 @@ func (s Selection) Name() string {
 	return "selection"
 }
 
-func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
+func selectionConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
 	s, err := SelectionFromRequest(config)
 	if err != nil {
 		return "", fmt.Errorf("load config: %w", err)
@@ -100,6 +100,10 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 	}
 
 	return fmt.Sprintf("poll_config_selection/%d", configID), nil
+}
+
+func selectionConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
+	return fmt.Errorf("TODO")
 }
 
 func (s Selection) ValidateBallot(vote json.RawMessage) error {

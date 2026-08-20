@@ -118,7 +118,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	configID, err := method.SaveConfig(ctx, tx, ci.Method, ci.MethodConfig)
+	configID, err := method.ConfigCreate(ctx, tx, ci.Method, ci.MethodConfig)
 	if err != nil {
 		return 0, fmt.Errorf("save poll config: %w", err)
 	}
@@ -339,27 +339,29 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if ui.Method != "" || ui.MethodConfig != nil {
-		m, err := pollMethod(poll)
+		oldMethod, err := method.MethodFromConfigID(poll.ConfigID)
 		if err != nil {
 			return fmt.Errorf("getting poll method for poll %d: %w", poll.ID, err)
 		}
 
-		if ui.Method != "" {
-			m = ui.Method
-		}
+		if ui.Method == "" || ui.Method == oldMethod {
+			if err := method.ConfigUpdate(ctx, tx, poll.ConfigID, poll.State, ui.MethodConfig); err != nil {
+				return fmt.Errorf("Update poll method for poll %d: %w", pollID, err)
+			}
+		} else {
+			if err := method.ConfigDelete(ctx, tx, poll.ConfigID); err != nil {
+				return fmt.Errorf("delete old config: %w", err)
+			}
 
-		if err := method.DeleteConfig(ctx, tx, pollID, poll.ConfigID); err != nil {
-			return fmt.Errorf("delete old config: %w", err)
-		}
+			newConfigID, err := method.ConfigCreate(ctx, tx, ui.Method, ui.MethodConfig)
+			if err != nil {
+				return fmt.Errorf("save poll config: %w", err)
+			}
 
-		newConfigID, err := method.SaveConfig(ctx, tx, m, ui.MethodConfig)
-		if err != nil {
-			return fmt.Errorf("save poll config: %w", err)
-		}
-
-		sql := `UPDATE poll_t SET config_id = $1 WHERE id = $2`
-		if _, err := tx.Exec(ctx, sql, newConfigID, pollID); err != nil {
-			return fmt.Errorf("update poll.config_id: %w", err)
+			sql := `UPDATE poll_t SET config_id = $1 WHERE id = $2`
+			if _, err := tx.Exec(ctx, sql, newConfigID, pollID); err != nil {
+				return fmt.Errorf("update poll.config_id: %w", err)
+			}
 		}
 	}
 
@@ -546,7 +548,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 	defer tx.Rollback(ctx)
 
-	if err := method.DeleteConfig(ctx, tx, pollID, poll.ConfigID); err != nil {
+	if err := method.ConfigDelete(ctx, tx, poll.ConfigID); err != nil {
 		return fmt.Errorf("delete method: %w", err)
 	}
 
@@ -1086,7 +1088,7 @@ func fetchMeetingUserEvents(ctx context.Context, tx pgx.Tx, pollID int) ([]meeti
 	return events, nil
 }
 
-// Reset removes all votes from a poll and sets its state to created.
+// Reset removes all ballots from a poll and sets its state to created.
 func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
@@ -1331,19 +1333,6 @@ func (v *Vote) resolveMethod(ctx context.Context, poll dsmodels.Poll) (method.Me
 		return nil, fmt.Errorf("method.ResolveMethod: %w", err)
 	}
 	return method, nil
-}
-
-func pollMethod(poll dsmodels.Poll) (string, error) {
-	configCollection, _, found := strings.Cut(poll.ConfigID, "/")
-	if !found {
-		return "", fmt.Errorf("poll %d has an invalid config_id: %s", poll.ID, poll.ConfigID)
-	}
-
-	m, found := strings.CutPrefix(configCollection, "poll_config_")
-	if !found {
-		return "", fmt.Errorf("poll %d has an unknown poll config: %s", poll.ID, poll.ConfigID)
-	}
-	return m, nil
 }
 
 // split split sa vote and valides the weight

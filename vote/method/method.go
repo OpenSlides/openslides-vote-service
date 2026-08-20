@@ -83,49 +83,68 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 	}
 }
 
-// SaveConfig saves the configuration for a given vote method.
-func SaveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+// ConfigCreate saves the configuration for a given vote method.
+func ConfigCreate(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
 	switch method {
 	case Approval{}.Name():
-		return approvalSaveConfig(ctx, tx, config)
+		return approvalConfigCreate(ctx, tx, config)
 	case Selection{}.Name():
-		return selectionSaveConfig(ctx, tx, config)
+		return selectionConfigCreate(ctx, tx, config)
 	case RatingScore{}.Name():
-		return ratingScoreSaveConfig(ctx, tx, config)
+		return ratingScoreConfigCreate(ctx, tx, config)
 	case RatingApproval{}.Name():
-		return ratingApprovalSaveConfig(ctx, tx, config)
+		return ratingApprovalConfigCreate(ctx, tx, config)
 	default:
 		return "", fmt.Errorf("unknown method: %s", method)
 	}
 }
 
-// DeleteConfig deletes the configuration for a given vote method.
-func DeleteConfig(ctx context.Context, tx pgx.Tx, pollID int, configID string) error {
-	parts := strings.SplitN(configID, "/", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid config_id: %s", configID)
+func ConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
+	method, err := MethodFromConfigID(configID)
+	if err != nil {
+		return fmt.Errorf("getting method from config_id: %w", err)
 	}
-	configType, configIDStr := parts[0], parts[1]
+
+	switch method {
+	case Approval{}.Name():
+		return approvalConfigUpdate(ctx, tx, configID, pollState, config)
+	case Selection{}.Name():
+		return selectionConfigUpdate(ctx, tx, configID, pollState, config)
+	case RatingScore{}.Name():
+		return ratingScoreConfigUpdate(ctx, tx, configID, pollState, config)
+	case RatingApproval{}.Name():
+		return ratingApprovalConfigUpdate(ctx, tx, configID, pollState, config)
+	default:
+		return fmt.Errorf("unknown method: %s", method)
+	}
+}
+
+// ConfigDelete deletes the configuration for a given vote method.
+func ConfigDelete(ctx context.Context, tx pgx.Tx, configID string) error {
+	method, err := MethodFromConfigID(configID)
+	if err != nil {
+		return fmt.Errorf("getting method from config_id: %w", err)
+	}
 
 	var configTable string
-	switch configType {
-	case "poll_config_approval":
+	switch method {
+	case Approval{}.Name():
 		configTable = "poll_config_approval_t"
-	case "poll_config_selection":
+	case Selection{}.Name():
 		configTable = "poll_config_selection_t"
-	case "poll_config_rating_score":
+	case RatingScore{}.Name():
 		configTable = "poll_config_rating_score_t"
-	case "poll_config_rating_approval":
+	case RatingApproval{}.Name():
 		configTable = "poll_config_rating_approval_t"
 	default:
-		return fmt.Errorf("unknown config type: %s", configType)
+		return fmt.Errorf("unknown config type: %s", method)
 	}
 
 	if _, err := tx.Exec(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, configTable),
-		configIDStr,
+		configID,
 	); err != nil {
-		return fmt.Errorf("delete table %s from postgres: %w", configTable, err)
+		return fmt.Errorf("delete from table %s: %w", configTable, err)
 	}
 
 	return nil
@@ -280,4 +299,18 @@ func (err InvalidBallotError) Error() string {
 
 func invalidVote(msg string, a ...any) InvalidBallotError {
 	return InvalidBallotError{msg: fmt.Sprintf(msg, a...)}
+}
+
+// MethodFromConfigID returns the method from a config ID.
+func MethodFromConfigID(configID string) (string, error) {
+	configCollection, _, found := strings.Cut(configID, "/")
+	if !found {
+		return "", fmt.Errorf("poll has an invalid config_id: %s", configID)
+	}
+
+	m, found := strings.CutPrefix(configCollection, "poll_config_")
+	if !found {
+		return "", fmt.Errorf("poll has an unknown poll config: %s", configID)
+	}
+	return m, nil
 }

@@ -70,7 +70,7 @@ func (ra RatingApproval) Name() string {
 	return "rating_approval"
 }
 
-func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
+func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
 	ra, err := RatingApprovalFromRequest(config)
 	if err != nil {
 		return "", fmt.Errorf("load config: %w", err)
@@ -105,6 +105,10 @@ func ratingApprovalSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMes
 	}
 
 	return fmt.Sprintf("poll_config_rating_approval/%d", configID), nil
+}
+
+func ratingApprovalConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
+	return fmt.Errorf("TODO")
 }
 
 func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {

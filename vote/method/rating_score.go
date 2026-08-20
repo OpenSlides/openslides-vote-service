@@ -68,7 +68,7 @@ func (rs RatingScore) Name() string {
 	return "rating_score"
 }
 
-func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
+func ratingScoreConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
 	rs, err := RatingScoreFromRequest(config)
 	if err != nil {
 		return "", fmt.Errorf("load config: %w", err)
@@ -104,6 +104,10 @@ func ratingScoreSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessag
 	}
 
 	return fmt.Sprintf("poll_config_rating_score/%d", configID), nil
+}
+
+func ratingScoreConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
+	return fmt.Errorf("TODO")
 }
 
 func (rs RatingScore) ValidateBallot(vote json.RawMessage) error {
