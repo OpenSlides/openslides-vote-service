@@ -1737,7 +1737,7 @@ func TestDeleteWithOtherCollections(t *testing.T) {
 
 	poll_option/31:
 		poll_id: 5
-		meeting_user_id: 300
+		user_id: 30
 
 	poll_ballot:
 		501:
