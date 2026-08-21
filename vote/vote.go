@@ -1072,18 +1072,32 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 			WHERE poll_id = $1 AND represented_meeting_user_id = $5
 		),
 		insert_ballot_user AS (
-	        INSERT INTO poll_ballot_user (poll_id, acting_meeting_user_id, represented_meeting_user_id)
-	        SELECT  $1, $4, $5
-	        FROM poll_check p, ballot_check b
-	        WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
-	        RETURNING id
-	    ),
+			INSERT INTO poll_ballot_user (
+				poll_id,
+				acting_meeting_user_id,
+				represented_meeting_user_id,
+				acting_user_id,
+				represented_user_id
+			)
+			SELECT
+				$1,
+				$4,
+				$5,
+				amu.user_id,
+				rmu.user_id
+			FROM poll_check p
+			CROSS JOIN ballot_check b
+			LEFT JOIN meeting_user_t amu ON amu.id = $4
+			LEFT JOIN meeting_user_t rmu ON rmu.id = $5
+			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
+			RETURNING id
+		),
 		insert_ballot AS (
-	        INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
-	        SELECT $1, $2, $3, bu.id
-        	FROM insert_ballot_user bu
-	        RETURNING id
-	    )
+			INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
+			SELECT $1, $2, $3, bu.id
+			FROM insert_ballot_user bu
+			RETURNING id
+		)
 		SELECT
 			CASE
 				WHEN i.id IS NOT NULL THEN 'VALID'
