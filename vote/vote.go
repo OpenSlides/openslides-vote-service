@@ -172,7 +172,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", newID), ci.MeetingID, "created"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, ci.ContentObjectID, ci.MeetingID, "poll created"); err != nil {
 		return 0, fmt.Errorf("write history: %w", err)
 	}
 
@@ -395,7 +395,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "updated"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll updated"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -560,14 +560,8 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "deleted"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll deleted"); err != nil {
 		return fmt.Errorf("write history: %w", err)
-	}
-
-	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
-	sql := `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
-	if _, err := tx.Exec(ctx, sql, fmt.Sprintf("poll/%d", pollID)); err != nil {
-		return fmt.Errorf("update old history entries: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -613,7 +607,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("poll %d not found or not in 'created' state", pollID)
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "started"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll started"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -665,7 +659,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	historyMessages := make([]string, 0, 4)
-	historyMessages = append(historyMessages, "finalized")
+	historyMessages = append(historyMessages, "poll finalized")
 
 	if poll.State == `started` {
 		if err := v.pollStop(ctx, tx, poll, ballots); err != nil {
@@ -688,7 +682,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		historyMessages = append(historyMessages, "anonymized")
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, historyMessages...); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, historyMessages...); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -964,7 +958,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "reset"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll reset"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
