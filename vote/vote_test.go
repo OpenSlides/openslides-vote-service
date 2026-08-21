@@ -3,6 +3,7 @@ package vote_test
 import (
 	"errors"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -1070,6 +1071,334 @@ func TestFinalize(t *testing.T) {
 
 				if poll.State != "finished" {
 					t.Errorf("Poll state is %s, expected finished", poll.State)
+				}
+			})
+		},
+	)
+}
+
+func TestSaveEntitledUsers(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Postgres Test")
+	}
+
+	ctx := t.Context()
+
+	pg, err := pgtest.NewPostgresTest(t)
+	if err != nil {
+		t.Fatalf("Error starting postgres: %v", err)
+	}
+
+	data := `---
+	meeting/1:
+		users_enable_vote_delegations: false
+		users_forbid_delegator_to_vote: false
+		present_user_ids: [1, 2]
+
+	meeting/2:
+		users_enable_vote_delegations: true
+		users_forbid_delegator_to_vote: true
+		present_user_ids: [1, 2]
+		default_group_id: 20
+		motions_default_workflow_id: 2
+		motions_default_amendment_workflow_id: 2
+		committee_id: 1
+		reference_projector_id: 2
+
+	meeting/3:
+		users_enable_vote_delegations: true
+		users_forbid_delegator_to_vote: false
+		present_user_ids: [1, 2]
+		default_group_id: 30
+		motions_default_workflow_id: 3
+		motions_default_amendment_workflow_id: 3
+		committee_id: 1
+		reference_projector_id: 3
+
+	motion_workflow:
+		2:
+			name: simple
+			first_state_id: 200
+			meeting_id: 2
+		3:
+			name: simple
+			first_state_id: 300
+			meeting_id: 3
+
+	motion_state:
+		200:
+			name: state
+			weight: 1
+			workflow_id: 2
+			meeting_id: 2
+			allow_create_poll: true
+			allow_support: true
+			set_workflow_timestamp: true
+			recommendation_label: state
+			css_class: grey
+			merge_amendment_into_final: do_not_merge
+		300:
+			name: state
+			weight: 1
+			workflow_id: 3
+			meeting_id: 3
+			allow_create_poll: true
+			allow_support: true
+			set_workflow_timestamp: true
+			recommendation_label: state
+			css_class: grey
+			merge_amendment_into_final: do_not_merge
+	projector:
+		2:
+			name: p
+			meeting_id: 2
+			used_as_default_projector_for_agenda_item_list_in_meeting_id: 2
+			used_as_default_projector_for_topic_in_meeting_id: 2
+			used_as_default_projector_for_list_of_speakers_in_meeting_id: 2
+			used_as_default_projector_for_current_los_in_meeting_id: 2
+			used_as_default_projector_for_motion_in_meeting_id: 2
+			used_as_default_projector_for_amendment_in_meeting_id: 2
+			used_as_default_projector_for_motion_block_in_meeting_id: 2
+			used_as_default_projector_for_assignment_in_meeting_id: 2
+			used_as_default_projector_for_mediafile_in_meeting_id: 2
+			used_as_default_projector_for_message_in_meeting_id: 2
+			used_as_default_projector_for_countdown_in_meeting_id: 2
+			used_as_default_projector_for_assignment_poll_in_meeting_id: 2
+			used_as_default_projector_for_motion_poll_in_meeting_id: 2
+			used_as_default_projector_for_topic_poll_in_meeting_id: 2
+		3:
+			name: p
+			meeting_id: 3
+			used_as_default_projector_for_agenda_item_list_in_meeting_id: 3
+			used_as_default_projector_for_topic_in_meeting_id: 3
+			used_as_default_projector_for_list_of_speakers_in_meeting_id: 3
+			used_as_default_projector_for_current_los_in_meeting_id: 3
+			used_as_default_projector_for_motion_in_meeting_id: 3
+			used_as_default_projector_for_amendment_in_meeting_id: 3
+			used_as_default_projector_for_motion_block_in_meeting_id: 3
+			used_as_default_projector_for_assignment_in_meeting_id: 3
+			used_as_default_projector_for_mediafile_in_meeting_id: 3
+			used_as_default_projector_for_message_in_meeting_id: 3
+			used_as_default_projector_for_countdown_in_meeting_id: 3
+			used_as_default_projector_for_assignment_poll_in_meeting_id: 3
+			used_as_default_projector_for_motion_poll_in_meeting_id: 3
+			used_as_default_projector_for_topic_poll_in_meeting_id: 3
+
+	user:
+		1:
+			username: user_a
+		2:
+			username: user_b
+		3:
+			username: user_c
+		5:
+			username: admin
+			organization_management_level: superadmin
+
+	meeting_user:
+		11:
+			group_ids: [101]
+			user_id: 1
+			meeting_id: 1
+		21:
+			group_ids: [101]
+			user_id: 2
+			meeting_id: 1
+		31:
+			group_ids: [101]
+			user_id: 3
+			meeting_id: 1
+			vote_delegated_to_ids: [21]
+		12:
+			group_ids: [102]
+			user_id: 1
+			meeting_id: 2
+		22:
+			group_ids: [102]
+			user_id: 2
+			meeting_id: 2
+		32:
+			group_ids: [102]
+			user_id: 3
+			meeting_id: 2
+			vote_delegated_to_ids: [22]
+		13:
+			group_ids: [103]
+			user_id: 1
+			meeting_id: 3
+		23:
+			group_ids: [103]
+			user_id: 2
+			meeting_id: 3
+		33:
+			group_ids: [103]
+			user_id: 3
+			meeting_id: 3
+			vote_delegated_to_ids: [23]
+
+	group:
+		20:
+			name: d2
+			meeting_id: 2
+		30:
+			name: d3
+			meeting_id: 3
+		101:
+			name: delegates
+			meeting_id: 1
+		102:
+			name: delegates
+			meeting_id: 2
+		103:
+			name: delegates
+			meeting_id: 3
+
+	# Poll 1: Delegation deactivated (Meeting 1)
+	poll/1:
+		title: No delegation
+		meeting_id: 1
+		entitled_group_ids: [101]
+		config_id: poll_config_approval/77
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/51
+		state: started
+
+	# Poll 2: delegation activated, users cannot vote for themselm (Meeting 2)
+	poll/2:
+		title: No self voting
+		meeting_id: 2
+		entitled_group_ids: [102]
+		config_id: poll_config_approval/78
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/52
+		state: started
+
+
+	# Poll 3: delegation and self voting activated (Meeting 3)
+	poll/3:
+		title: self voting allowed
+		meeting_id: 3
+		entitled_group_ids: [103]
+		config_id: poll_config_approval/79
+		visibility: open
+		sequential_number: 1
+		content_object_id: motion/53
+		state: started
+
+	poll_config_approval:
+		77:
+			allow_abstain: true
+			onehundred_percent_base: valid
+		78:
+			allow_abstain: true
+			onehundred_percent_base: valid
+		79:
+			allow_abstain: true
+			onehundred_percent_base: valid
+
+	poll_ballot_user:
+		1:
+			poll_id: 1
+			represented_meeting_user_id: 11
+			acting_meeting_user_id: 11
+		2:
+			poll_id: 2
+			represented_meeting_user_id: 12
+			acting_meeting_user_id: 12
+		3:
+			poll_id: 3
+			represented_meeting_user_id: 13
+			acting_meeting_user_id: 13
+
+	motion:
+		51:
+			meeting_id: 1
+			sequential_number: 1
+			title: my motion
+			state_id: 1
+		52:
+			meeting_id: 2
+			sequential_number: 1
+			title: my motion
+			state_id: 200
+		53:
+			meeting_id: 3
+			sequential_number: 1
+			title: my motion
+			state_id: 300
+
+	list_of_speakers:
+		71:
+			content_object_id: motion/51
+			sequential_number: 1
+			meeting_id: 1
+		72:
+			content_object_id: motion/52
+			sequential_number: 1
+			meeting_id: 2
+		73:
+			content_object_id: motion/53
+			sequential_number: 1
+			meeting_id: 3
+	`
+
+	withData(
+		t,
+		pg,
+		data,
+		func(service *vote.Vote, flow flow.Flow) {
+			t.Run("Delegation deactivated", func(t *testing.T) {
+				if err := service.Finalize(ctx, 1, 5, false, false); err != nil {
+					t.Fatalf("Finalize poll 1: %v", err)
+				}
+
+				ds := dsfetch.New(flow)
+				got, err := ds.Poll_EntitledMeetingUserIDs(1).Value(ctx)
+				if err != nil {
+					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
+				}
+
+				want := []int{11, 21}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			})
+
+			t.Run("no vote for self", func(t *testing.T) {
+				if err := service.Finalize(ctx, 2, 5, false, false); err != nil {
+					t.Fatalf("Finalize poll 2: %v", err)
+				}
+
+				ds := dsfetch.New(flow)
+				got, err := ds.Poll_EntitledMeetingUserIDs(2).Value(ctx)
+				if err != nil {
+					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
+				}
+
+				want := []int{12, 32}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("got %v, want %v", got, want)
+				}
+			})
+
+			t.Run("vote for self", func(t *testing.T) {
+				if err := service.Finalize(ctx, 3, 5, false, false); err != nil {
+					t.Fatalf("Finalize poll 3: %v", err)
+				}
+
+				ds := dsfetch.New(flow)
+				got, err := ds.Poll_EntitledMeetingUserIDs(3).Value(ctx)
+				if err != nil {
+					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
+				}
+
+				want := []int{13, 23, 33}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("got %v, want %v", got, want)
 				}
 			})
 		},

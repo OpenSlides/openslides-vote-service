@@ -11,8 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
-	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -24,9 +22,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-go/history"
-	"github.com/OpenSlides/openslides-go/oslog"
 	"github.com/OpenSlides/openslides-go/perm"
-	"github.com/OpenSlides/openslides-go/set"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -633,7 +629,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 // - If in the started state, it creates poll/result.
 // - Sets the state to `finished`.
 // - Sets the `published` flag.
-// - With the flag `anonymize`, clears all user_ids from the coresponding votes.
+// - With the flag `anonymize`, clears the connection between poll_ballot and poll_ballot_user
 func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
@@ -826,264 +822,99 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 	return nil
 }
 
+// generateEntitledUsers fills in the field poll/entitled_meeting_user_ids
+//
+// It uses a set from all represented users, that have voted and all users in
+// one of the entitled_group, that are currently allowed to vote.
 func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
-	// Find out if there are delegations. Returns false, if there are no ballots.
-	usedDelegationQuery := `
-		SELECT EXISTS (
-		    SELECT 1
-		    FROM poll_ballot_user_t
-		    WHERE poll_id = $1
-		      AND acting_meeting_user_id <> represented_meeting_user_id
-		) AS used_delegation;`
-	var usedDelegation bool
-	if err := tx.QueryRow(ctx, usedDelegationQuery, pollID).Scan(&usedDelegation); err != nil {
-		return fmt.Errorf("check for delegation: %w", err)
-	}
-	if usedDelegation {
-		return nil
+	var meetingConfig struct {
+		delegationActivated  bool
+		forbidDelegateToVote bool
 	}
 
-	var entitledGroupIDs []int
-	rows, err := tx.Query(ctx, `SELECT group_id FROM nm_group_poll_ids_poll_t WHERE poll_id = $1`, pollID)
-	if err != nil {
-		return fmt.Errorf("executing query: %w", err)
-	}
-	entitledGroupIDs, err = pgx.CollectRows(rows, pgx.RowTo[int])
-	if err != nil {
-		return fmt.Errorf("fetching entitled group ids: %w", err)
-	}
+	configSQL := `
+		SELECT
+			COALESCE(m.users_enable_vote_delegations, false),
+	        COALESCE(m.users_forbid_delegator_to_vote, false)
+		FROM meeting_t m
+		JOIN poll_t p ON p.meeting_id = m.id
+		WHERE p.id = $1`
 
-	// Fetch meeting_user_ids, that have voted.
-	rows, err = tx.Query(ctx, `SELECT represented_meeting_user_id FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching represented users: %w", err)
-	}
-	defer rows.Close()
-
-	representedMeetingUserIDs, err := pgx.CollectRows(rows, pgx.RowTo[int])
-	if err != nil {
-		return fmt.Errorf("read represented_meeting_user ids: %w", err)
+	if err := tx.QueryRow(ctx, configSQL, pollID).Scan(&meetingConfig.delegationActivated, &meetingConfig.forbidDelegateToVote); err != nil {
+		return fmt.Errorf("getting meeting config: %w", err)
 	}
 
-	entitledUsers := set.New(representedMeetingUserIDs...)
+	baseInsertSQL := `
+		INSERT INTO nm_meeting_user_entitled_at_poll_ids_poll_t (meeting_user_id, poll_id)
+		SELECT meeting_user_id, $1 FROM (
+			SELECT represented_meeting_user_id AS meeting_user_id
+			FROM poll_ballot_user_t
+			WHERE poll_id = $1
 
-	// Fetch present and not present meetingUsers
-	presentMeetingUserIDs, notPresentMeetingUserIDs, err := meetingUserPresent(ctx, tx, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching present and not present meeting users: %w", err)
+			UNION
+	`
+
+	var conditionSQL string
+	switch {
+	case !meetingConfig.delegationActivated:
+		// Only check users in an entitled group
+		conditionSQL = `
+			SELECT mu.id
+			FROM meeting_user_t mu
+			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
+			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
+			JOIN nm_meeting_present_user_ids_user_t pu ON pu.meeting_id = mu.meeting_id AND pu.user_id = mu.user_id
+			WHERE gpol.poll_id = $1
+		`
+
+	case meetingConfig.forbidDelegateToVote:
+		// Only check delegation from users in group
+		conditionSQL = `
+			SELECT mu.id
+			FROM meeting_user_t mu
+			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
+			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
+			JOIN nm_meeting_user_vote_delegated_to_ids_meeting_user_t del ON del.vote_delegations_from_id = mu.id
+			JOIN meeting_user_t delegate_mu ON delegate_mu.id = del.vote_delegated_to_id
+			JOIN nm_meeting_present_user_ids_user_t pu ON pu.meeting_id = delegate_mu.meeting_id AND pu.user_id = delegate_mu.user_id
+			WHERE gpol.poll_id = $1
+		`
+
+	default:
+		// Check users and there delegations
+		conditionSQL = `
+			SELECT mu.id
+			FROM meeting_user_t mu
+			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
+			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
+			WHERE gpol.poll_id = $1
+			  AND (
+			      EXISTS (
+			          SELECT 1 FROM nm_meeting_present_user_ids_user_t pu
+			          WHERE pu.meeting_id = mu.meeting_id AND pu.user_id = mu.user_id
+			      )
+			      OR
+			      EXISTS (
+			          SELECT 1
+			          FROM nm_meeting_user_vote_delegated_to_ids_meeting_user_t del
+			          JOIN meeting_user_t delegate_mu ON delegate_mu.id = del.vote_delegated_to_id
+			          JOIN nm_meeting_present_user_ids_user_t pu_del ON pu_del.meeting_id = delegate_mu.meeting_id AND pu_del.user_id = delegate_mu.user_id
+			          WHERE del.vote_delegations_from_id = mu.id
+			      )
+			  )
+		`
 	}
 
-	// Remove users, that have voted, from the not-present-list. Add the present
-	// users to the entitled users.
-	maps.DeleteFunc(notPresentMeetingUserIDs, func(key int, _ int) bool {
-		return entitledUsers.Has(key)
-	})
-	entitledUsers.Add(presentMeetingUserIDs...)
+	finalSQL := baseInsertSQL + conditionSQL + `
+		) AS entitled_users
+		ON CONFLICT DO NOTHING; -- Verhindert Fehler, falls Zeilen bereits existieren
+	`
 
-	type posrange [2]int
-	// map from meeting_user_id to a list of position ranges
-	maybeEndtitledUsers := make(map[int][]posrange, len(notPresentMeetingUserIDs))
-
-	// add all not present users to an entitled group until the end of time.
-	for _, id := range notPresentMeetingUserIDs {
-		maybeEndtitledUsers[id] = append(maybeEndtitledUsers[id], posrange{0, math.MaxInt})
-	}
-
-	events, err := fetchMeetingUserEvents(ctx, tx, pollID)
-	if err != nil {
-		return fmt.Errorf("fetching meeting user events: %w", err)
-	}
-
-	// Go though all group change events.
-	for _, event := range events {
-		if entitledUsers.Has(event.meetingUserID) {
-			continue
-		}
-
-		var cg struct {
-			GroupIDs struct {
-				Added   []int `json:"added"`
-				Removed []int `json:"removed"`
-			} `json:"group_ids"`
-		}
-		if err := json.Unmarshal(event.information, &cg); err != nil {
-			// Skip events, that can not be parsed
-			oslog.Debug("Can not parse event `%s`: %v", event.information, err)
-			continue
-		}
-
-		for _, removedGroup := range cg.GroupIDs.Removed {
-			if !slices.Contains(entitledGroupIDs, removedGroup) {
-				continue
-			}
-
-			if notPresentMeetingUserIDs[event.meetingUserID] == 0 {
-				maybeEndtitledUsers[event.meetingUserID] = append(maybeEndtitledUsers[event.meetingUserID], posrange{0, event.position})
-			}
-			notPresentMeetingUserIDs[event.meetingUserID]++
-		}
-
-		for _, addedGroup := range cg.GroupIDs.Added {
-			if !slices.Contains(entitledGroupIDs, addedGroup) {
-				continue
-			}
-
-			notPresentMeetingUserIDs[event.meetingUserID]--
-			if notPresentMeetingUserIDs[event.meetingUserID] == 0 {
-				lastIndex := len(maybeEndtitledUsers[event.meetingUserID]) - 1
-				maybeEndtitledUsers[event.meetingUserID][lastIndex][0] = event.position
-			}
-		}
-	}
-
-	// Go though all set present events for maybeEndtitledUsers
-	for _, event := range events {
-		if _, ok := maybeEndtitledUsers[event.meetingUserID]; !ok {
-			continue
-		}
-
-		var ev struct {
-			IsPresent bool `json:"is_present"`
-		}
-		if err := json.Unmarshal(event.information, &ev); err != nil {
-			// Skip events, that can not be parsed
-			oslog.Debug("Can not parse event `%s`: %v", event.information, err)
-			continue
-		}
-		// The value of the event is not relevant. Only, that the event is a
-		// "set present" event. So we know, the present state changed for the
-		// user in a specific position.
-		for _, r := range maybeEndtitledUsers[event.meetingUserID] {
-			if event.position >= r[0] || event.position <= r[1] {
-				entitledUsers.Add(event.meetingUserID)
-			}
-		}
-	}
-
-	placeholders := make([]string, entitledUsers.Len())
-	args := make([]any, entitledUsers.Len()*2)
-
-	for i, meeting_user_id := range entitledUsers.List() {
-		placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-		args[i*2] = meeting_user_id
-		args[i*2+1] = pollID
-	}
-
-	groupSQL := fmt.Sprintf(
-		"INSERT INTO nm_meeting_user_entitled_at_poll_ids_poll_t (meeting_user_id, poll_id) VALUES %s",
-		strings.Join(placeholders, ", "),
-	)
-
-	if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
-		return fmt.Errorf("insert entitled users relations: %w", err)
+	if _, err := tx.Exec(ctx, finalSQL, pollID); err != nil {
+		return fmt.Errorf("inserting entitled users: %w", err)
 	}
 
 	return nil
-}
-
-// meetingUserPresent returns the meeting_user_ids that are present in the first slice.
-// The second return value maps meeting_user_id -> count of entitled groups for non-present users.
-func meetingUserPresent(ctx context.Context, tx pgx.Tx, pollID int) ([]int, map[int]int, error) {
-	query := `
-    SELECT
-        mu.id AS meeting_user_id,
-        CASE WHEN pu.user_id IS NOT NULL THEN true ELSE false END AS present,
-        COUNT(DISTINCT gp.group_id) AS group_count
-    FROM meeting_user_t mu
-    JOIN nm_group_meeting_user_ids_meeting_user_t gmu
-        ON gmu.meeting_user_id = mu.id
-    JOIN nm_group_poll_ids_poll_t gp
-        ON gp.group_id = gmu.group_id AND gp.poll_id = $1
-    LEFT JOIN nm_meeting_present_user_ids_user_t pu
-        ON pu.meeting_id = mu.meeting_id
-       AND pu.user_id = mu.user_id
-    WHERE mu.meeting_id = (SELECT meeting_id FROM poll_t WHERE id = $1)
-    GROUP BY mu.id, pu.user_id;`
-
-	rows, err := tx.Query(ctx, query, pollID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("query failed: %w", err)
-	}
-	defer rows.Close()
-
-	var presentUsers []int
-	notPresentGroupCount := make(map[int]int)
-
-	for rows.Next() {
-		var meetingUserID int
-		var present bool
-		var groupCount int
-
-		if err := rows.Scan(&meetingUserID, &present, &groupCount); err != nil {
-			return nil, nil, fmt.Errorf("scan row: %w", err)
-		}
-
-		if present {
-			presentUsers = append(presentUsers, meetingUserID)
-			continue
-		}
-		notPresentGroupCount[meetingUserID] = groupCount
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("rows error: %w", err)
-	}
-
-	return presentUsers, notPresentGroupCount, nil
-}
-
-type meetingUserEvent struct {
-	position      int
-	meetingUserID int
-	information   json.RawMessage
-}
-
-// fetchMeetingUserEvents returns all meeting_user related events since
-// poll-start in reverse order.
-func fetchMeetingUserEvents(ctx context.Context, tx pgx.Tx, pollID int) ([]meetingUserEvent, error) {
-	eventsQuery := `
-	WITH poll_start AS (
-	    SELECT he.position_id
-	    FROM history_entry_t he
-	    WHERE he.model_id_poll_id = $1
-	      AND 'started' = ANY(he.entries)
-	    ORDER BY he.position_id DESC
-	    LIMIT 1
-	),
-	target_meeting AS (
-	    SELECT meeting_id
-	    FROM poll_t
-	    WHERE id = $1
-	)
-	SELECT he.structured_information,
-		he.position_id,
-		he.model_id_meeting_user_id
-	FROM history_entry_t he
-	JOIN target_meeting tm ON he.meeting_id = tm.meeting_id
-	JOIN poll_start ps ON he.position_id >= ps.position_id
-	WHERE he.model_id_meeting_user_id IS NOT NULL
-	ORDER BY he.position_id DESC;`
-
-	rows, err := tx.Query(ctx, eventsQuery, pollID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch events: %w", err)
-	}
-	defer rows.Close()
-
-	var events []meetingUserEvent
-	for rows.Next() {
-		var event meetingUserEvent
-		if err := rows.Scan(&event.information, &event.position, &event.meetingUserID); err != nil {
-			return nil, fmt.Errorf("scan event: %w", err)
-		}
-		events = append(events, event)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
-	}
-
-	return events, nil
 }
 
 // Reset removes all votes from a poll and sets its state to created.
