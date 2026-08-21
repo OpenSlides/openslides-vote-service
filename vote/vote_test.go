@@ -1309,14 +1309,20 @@ func TestSaveEntitledUsers(t *testing.T) {
 			poll_id: 1
 			represented_meeting_user_id: 11
 			acting_meeting_user_id: 11
+			acting_user_id: 1
+			represented_user_id: 1
 		2:
 			poll_id: 2
 			represented_meeting_user_id: 12
 			acting_meeting_user_id: 12
+			acting_user_id: 2
+			represented_user_id: 2
 		3:
 			poll_id: 3
 			represented_meeting_user_id: 13
 			acting_meeting_user_id: 13
+			acting_user_id: 3
+			represented_user_id: 3
 
 	motion:
 		51:
@@ -2086,10 +2092,14 @@ func TestDeleteWithOtherCollections(t *testing.T) {
 			poll_id: 5
 			acting_meeting_user_id: 300
 			represented_meeting_user_id: 300
+			acting_user_id: 30
+			represented_user_id: 30
 		5020:
 			poll_id: 5
 			acting_meeting_user_id: 50
 			represented_meeting_user_id: 50
+			acting_user_id: 5
+			represented_user_id: 5
 
 	projection/33:
 		content_object_id: poll/5
