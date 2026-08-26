@@ -114,8 +114,8 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 {
   poll_id: poll_ballot.poll_id,
   poll_ballot_id: poll_ballot.id,
-  acting_meeting_user_id: meeting_user_id from old_vote.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old_vote.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_vote.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_vote.user_id and poll.meeting
 }
 ```
 
@@ -204,8 +204,8 @@ via `old_poll.option_ids[0].vote_ids`. For each old vote a new
       - N -> no
       - A -> abstain
       - else @panic(impossible value)
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -299,8 +299,8 @@ Calculation:
   weight: old.weight,
   split: false,
   value: old.value -> Replace old options ids with corresponding new poll_options ids,
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -473,8 +473,8 @@ Calculation (one `poll_ballot` per each `user_token`):
   weight: old.weight (must be same for all),
   split: false,
   value: see below,
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -653,10 +653,10 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * vote/option_id: replaced with the direct relation to the poll. Needs
   migration: vote.option_id/poll_id -> poll_ballot_user/poll_id.
-* vote/user_id -> poll_ballot_user/represented_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
-* vote/delegated_user_id -> poll_ballot_user/acting_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
+* vote/user_id -> poll_ballot_user/represented_meeting_user_id (only if user is
+  in meeting, needs to be generated from user_id and meeting_id).
+* vote/delegated_user_id -> poll_ballot_user/acting_meeting_user_id (only if
+  user is in meeting, needs to be generated from user_id and meeting_id).
 * poll_ballot_user/poll_ballot_id: id of the poll_ballot instance generated
   from the same vote.
 
