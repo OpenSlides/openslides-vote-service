@@ -231,7 +231,7 @@ a `poll_option`:
   poll_id: new_poll.id,
   weight: old.weight,
   text: NULL,
-  meeting_user_id: meeting_user_id from old.user_id and old.meeting_id
+  content_object_id: fqid from "user" and old.user_id
 }
 ```
 
@@ -264,7 +264,7 @@ be found via `old_poll.option_ids`.
   poll_id: new_poll.id,
   weight: old.weight,
   text: old.text,
-  meeting_user_id: None
+  content_object_id: None
 }
 ```
 
@@ -308,7 +308,7 @@ Calculation:
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
 function almost like the topic polls: with `poll_config_selection` but with
-`meeting_user_id`s instead of the `text` in `poll_option`.
+`content_object_id`s instead of the `text` in `poll_option`.
 
 Migrate poll this way if:
 
@@ -421,16 +421,15 @@ Calculation:
 #### poll_option
 
 For each old option ("old"), the option.content_object_id value has to be a
-`user` collection. Otherwise, @panic. The user_id has to be retrieved from this
-field, and the meeting_user_id associated with it is then looked up in the
-corresponding meeting.
+`user` collection. Otherwise, @panic. Old content_object_id gets directly
+transfered to the poll_option/content_object_id field.
 
 ```
 {
   poll_id: new_poll.id,
   weight: old.weight,
   text: NULL,
-  meeting_user_id: meeting_user_id from old.user_id and old.meeting_id
+  content_object_id: old.content_object_id
 }
 ```
 
@@ -623,11 +622,9 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll_option/text:
     * option/text
     * None
-  * poll_option/meeting_user_id:
-    * if collection of content_object_id == "user" -> meeting_user from
-      option/content_object_id and option/meeting_id
-    * meeting_user from poll_candidate/user_id and
-      poll_candidate.option_id.meeting_id
+  * poll_option/content_object_id:
+    * if collection of content_object_id == "user" -> option/content_object_id
+    * fqid from "user" and poll_candidate/user_id
 
 ### Option -> other collections
 
@@ -666,6 +663,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * user/poll_voted_ids
 * Direct relation between `user` and `poll`, `option` and `vote` was replaced
 with relation through the `meeting_user`:
-  * user/option_ids + user/poll_candidate_ids -> meeting_user/poll_option_ids
+  * user/option_ids + user/poll_candidate_ids -> user/poll_option_ids
   * user/vote_ids -> meeting_user/represented_ballot_ids
   * user/delegated_vote_ids -> meeting_user/acting_ballot_ids
