@@ -74,11 +74,22 @@ NOTE: there parts are still in dicsussion and may change:
 
 The following information is relevant for all the poll types.
 
-#### poll, poll_config_X and poll_option
+#### poll, poll_config_X, poll_entitled_user and poll_option
 
 Regardless of the type, for each old poll 2 models have to be created: a new
-`poll` and a related `poll_config_X`. Additionally for some poll types
+`poll` and a related `poll_config_X`. If `entitled_users_at_stop` are written for the poll, its content has to be transformed into entries of `poll_entitled_user`. Additionally for some poll types
 `poll_option` models should be generated.
+
+`entitled_users_at_stop` should be processed the same way for all the
+polls. For each item in `entitled_users_at_stop` an entry of
+`poll_entitled_user` has to be created:
+
+```
+{
+  poll_id: new_poll.id,
+  meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_item.user_id and poll.meeting,
+}
+```
 
 How the data should be migrated depends on whether it is a motion, assignment
 or a topic poll. When it comes to assignement polls, there are 3 possibilities
@@ -494,8 +505,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * poll/backend: long or short
 * poll/description: was not used
-* poll/entitled_users_at_stop: only sata about the actual poll results is
-  being migrated, but not who was entitled to vote
 * For cumulative polls: poll.max_votes_per_option
 * Global options are no longer listed separately, but are included in the result.
 * poll/valid was previously counted separately. In future, it should be
@@ -568,7 +577,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll/description
   * poll/backend
   * poll/live_votes
-  * poll/entitled_users_at_stop
   * poll/votesvalid
 * poll/is_pseudoanonymized -> poll/anonymized.
 * poll/type -> poll/visibility and the values have changed:
@@ -605,6 +613,8 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll/global_option_id
   * poll/votescast
   * poll/votesinvalid
+* poll/entitled_users_at_stop: json-field was replaced with a relation to the
+  new collection `poll_entitled_user`
 
 ### Poll_candidate_list
 
