@@ -552,6 +552,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		`DELETE FROM poll_ballot WHERE poll_id = $1`,
 		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
 		`DELETE FROM projection WHERE content_object_id_poll_id = $1`,
+		`DELETE FROM poll_entitled_user_t WHERE poll_id = $1`,
 		`DELETE FROM poll WHERE id = $1`,
 	}
 	for _, sql := range deleteStatements {
@@ -839,7 +840,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 	}
 
 	baseInsertSQL := `
-		INSERT INTO nm_meeting_user_entitled_at_poll_ids_poll_t (meeting_user_id, poll_id)
+		INSERT INTO poll_entitled_user_t (meeting_user_id, poll_id)
 		SELECT meeting_user_id, $1 FROM (
 			SELECT represented_meeting_user_id AS meeting_user_id
 			FROM poll_ballot_user_t
@@ -901,7 +902,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 
 	finalSQL := baseInsertSQL + conditionSQL + `
 		) AS entitled_users
-		ON CONFLICT DO NOTHING; -- Verhindert Fehler, falls Zeilen bereits existieren
+		ON CONFLICT DO NOTHING;
 	`
 
 	if _, err := tx.Exec(ctx, finalSQL, pollID); err != nil {
@@ -1075,16 +1076,12 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 			INSERT INTO poll_ballot_user (
 				poll_id,
 				acting_meeting_user_id,
-				represented_meeting_user_id,
-				acting_user_id,
-				represented_user_id
+				represented_meeting_user_id
 			)
 			SELECT
 				$1,
 				$4,
-				$5,
-				amu.user_id,
-				rmu.user_id
+				$5
 			FROM poll_check p
 			CROSS JOIN ballot_check b
 			LEFT JOIN meeting_user_t amu ON amu.id = $4
