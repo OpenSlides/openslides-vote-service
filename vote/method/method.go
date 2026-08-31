@@ -85,23 +85,23 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 }
 
 // ConfigCreate saves the configuration for a given vote method.
-func ConfigCreate(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+func ConfigCreate(ctx context.Context, tx pgx.Tx, method string, optionAmount int, config json.RawMessage) (string, error) {
 	switch method {
 	case Approval{}.Name():
 		return approvalConfigCreate(ctx, tx, config)
 	case Selection{}.Name():
-		return selectionConfigCreate(ctx, tx, config)
+		return selectionConfigCreate(ctx, tx, optionAmount, config)
 	case RatingScore{}.Name():
-		return ratingScoreConfigCreate(ctx, tx, config)
+		return ratingScoreConfigCreate(ctx, tx, optionAmount, config)
 	case RatingApproval{}.Name():
-		return ratingApprovalConfigCreate(ctx, tx, config)
+		return ratingApprovalConfigCreate(ctx, tx, optionAmount, config)
 	default:
 		return "", fmt.Errorf("unknown method: %s", method)
 	}
 }
 
 // ConfigUpdate updates the configuration for a given vote method.
-func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID string, pollState dstypes.Poll_State, config json.RawMessage) error {
+func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID string, pollState dstypes.Poll_State, optionAmount int, config json.RawMessage) error {
 	method, id, err := SprilConfigID(configID)
 	if err != nil {
 		return fmt.Errorf("getting method from config_id: %w", err)
@@ -111,11 +111,11 @@ func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID strin
 	case Approval{}.Name():
 		return approvalConfigUpdate(ctx, tx, id, pollState, config)
 	case Selection{}.Name():
-		return selectionConfigUpdate(ctx, ds, tx, id, pollState, config)
+		return selectionConfigUpdate(ctx, ds, tx, id, pollState, optionAmount, config)
 	case RatingScore{}.Name():
-		return ratingScoreConfigUpdate(ctx, ds, tx, id, pollState, config)
+		return ratingScoreConfigUpdate(ctx, ds, tx, id, pollState, optionAmount, config)
 	case RatingApproval{}.Name():
-		return ratingApprovalConfigUpdate(ctx, ds, tx, id, pollState, config)
+		return ratingApprovalConfigUpdate(ctx, ds, tx, id, pollState, optionAmount, config)
 	default:
 		return fmt.Errorf("unknown method: %s", method)
 	}
@@ -159,6 +159,36 @@ func RequireOptions(methodStr string) (bool, error) {
 	}
 
 	return method.RequireOptions(), nil
+}
+
+// MaxOptionsAmount returns the max options amout of the poll config or 0 if not set.
+func MaxOptionsAmount(ctx context.Context, ds flow.Getter, configID string) (int, error) {
+	method, id, err := SprilConfigID(configID)
+	if err != nil {
+		return 0, fmt.Errorf("getting method from config_id: %w", err)
+	}
+
+	fetch := dsfetch.New(ds)
+
+	var fn func(int) *dsfetch.ValueInt
+	switch method {
+	case Approval{}.Name():
+		return 0, nil
+	case Selection{}.Name():
+		fn = fetch.PollConfigSelection_MaxOptionsAmount
+	case RatingScore{}.Name():
+		fn = fetch.PollConfigRatingScore_MaxOptionsAmount
+	case RatingApproval{}.Name():
+		fn = fetch.PollConfigRatingApproval_MaxOptionsAmount
+	default:
+		return 0, fmt.Errorf("unknown config type: %s", method)
+	}
+
+	v, err := fn(id).Value(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("getting max options amount: %w", err)
+	}
+	return v, nil
 }
 
 func methodFromString(methodStr string) (Method, error) {
