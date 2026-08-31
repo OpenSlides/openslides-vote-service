@@ -140,7 +140,7 @@ func TestRatingScoreValidateVote(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			a, err := method.RatingScoreFromRequest([]byte(tt.config))
+			a, err := method.RatingScoreFromJson(tt.config)
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}
@@ -203,7 +203,7 @@ func TestRatingScoreCreateResult(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			a, err := method.RatingScoreFromRequest([]byte(tt.config))
+			a, err := method.RatingScoreFromJson(tt.config)
 			if err != nil {
 				t.Fatalf("Error: %v", err)
 			}

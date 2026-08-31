@@ -10,6 +10,7 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
+	"github.com/OpenSlides/openslides-go/datastore/dstypes"
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
@@ -52,7 +53,7 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 			return nil, fmt.Errorf("fetching poll_config_approval: %w", err)
 		}
 
-		return ApprovalFromDB(configDB), nil
+		return ApprovalFromDsModels(configDB), nil
 
 	case "poll_config_selection":
 		configDB, err := dsm.PollConfigSelection(configID).First(ctx)
@@ -60,7 +61,7 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 			return nil, fmt.Errorf("fetching poll_config_selection: %w", err)
 		}
 
-		return SelectionFromDB(configDB, optionIDs), nil
+		return SelectionFromDsModels(configDB, optionIDs), nil
 
 	case "poll_config_rating_score":
 		configDB, err := dsm.PollConfigRatingScore(configID).First(ctx)
@@ -68,7 +69,7 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 			return nil, fmt.Errorf("fetching poll_config_rating_score: %w", err)
 		}
 
-		return RatingScoreFromDB(configDB, optionIDs), nil
+		return RatingScoreFromDsModels(configDB, optionIDs), nil
 
 	case "poll_config_rating_approval":
 		configDB, err := dsm.PollConfigRatingApproval(configID).First(ctx)
@@ -76,56 +77,76 @@ func ResolveMethod(ctx context.Context, getter flow.Getter, configStr string, op
 			return nil, fmt.Errorf("fetching poll_config_rating_approval: %w", err)
 		}
 
-		return RatingApprovalFromDB(configDB, optionIDs), nil
+		return RatingApprovalFromDsModels(configDB, optionIDs), nil
 
 	default:
 		return nil, fmt.Errorf("unknown poll config: %s", configStr)
 	}
 }
 
-// SaveConfig saves the configuration for a given vote method.
-func SaveConfig(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
+// ConfigCreate saves the configuration for a given vote method.
+func ConfigCreate(ctx context.Context, tx pgx.Tx, method string, config json.RawMessage) (string, error) {
 	switch method {
 	case Approval{}.Name():
-		return approvalSaveConfig(ctx, tx, config)
+		return approvalConfigCreate(ctx, tx, config)
 	case Selection{}.Name():
-		return selectionSaveConfig(ctx, tx, config)
+		return selectionConfigCreate(ctx, tx, config)
 	case RatingScore{}.Name():
-		return ratingScoreSaveConfig(ctx, tx, config)
+		return ratingScoreConfigCreate(ctx, tx, config)
 	case RatingApproval{}.Name():
-		return ratingApprovalSaveConfig(ctx, tx, config)
+		return ratingApprovalConfigCreate(ctx, tx, config)
 	default:
 		return "", fmt.Errorf("unknown method: %s", method)
 	}
 }
 
-// DeleteConfig deletes the configuration for a given vote method.
-func DeleteConfig(ctx context.Context, tx pgx.Tx, pollID int, configID string) error {
-	parts := strings.SplitN(configID, "/", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid config_id: %s", configID)
+// ConfigUpdate updates the configuration for a given vote method.
+func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID string, pollState dstypes.Poll_State, config json.RawMessage) error {
+	method, id, err := SprilConfigID(configID)
+	if err != nil {
+		return fmt.Errorf("getting method from config_id: %w", err)
 	}
-	configType, configIDStr := parts[0], parts[1]
+
+	switch method {
+	case Approval{}.Name():
+		return approvalConfigUpdate(ctx, tx, id, pollState, config)
+	case Selection{}.Name():
+		return selectionConfigUpdate(ctx, ds, tx, id, pollState, config)
+	case RatingScore{}.Name():
+		return ratingScoreConfigUpdate(ctx, ds, tx, id, pollState, config)
+	case RatingApproval{}.Name():
+		return ratingApprovalConfigUpdate(ctx, ds, tx, id, pollState, config)
+	default:
+		return fmt.Errorf("unknown method: %s", method)
+	}
+}
+
+// ConfigDelete deletes the configuration for a given vote method.
+func ConfigDelete(ctx context.Context, tx pgx.Tx, configID string) error {
+	method, id, err := SprilConfigID(configID)
+	if err != nil {
+		return fmt.Errorf("getting method from config_id: %w", err)
+	}
 
 	var configTable string
-	switch configType {
-	case "poll_config_approval":
+	switch method {
+	case Approval{}.Name():
 		configTable = "poll_config_approval_t"
-	case "poll_config_selection":
+	case Selection{}.Name():
 		configTable = "poll_config_selection_t"
-	case "poll_config_rating_score":
+	case RatingScore{}.Name():
 		configTable = "poll_config_rating_score_t"
-	case "poll_config_rating_approval":
+	case RatingApproval{}.Name():
 		configTable = "poll_config_rating_approval_t"
 	default:
-		return fmt.Errorf("unknown config type: %s", configType)
+		return fmt.Errorf("unknown config type: %s", method)
 	}
 
 	if _, err := tx.Exec(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, configTable),
-		configIDStr,
+		id,
 	); err != nil {
-		return fmt.Errorf("delete table %s from postgres: %w", configTable, err)
+		return fmt.Errorf("delete from table %s: %w", configTable, err)
 	}
 
 	return nil
@@ -280,4 +301,23 @@ func (err InvalidBallotError) Error() string {
 
 func invalidVote(msg string, a ...any) InvalidBallotError {
 	return InvalidBallotError{msg: fmt.Sprintf(msg, a...)}
+}
+
+// SprilConfigID returns the method from a config ID.
+func SprilConfigID(configID string) (string, int, error) {
+	configCollection, rawID, found := strings.Cut(configID, "/")
+	if !found {
+		return "", 0, fmt.Errorf("poll has an invalid config_id: %s", configID)
+	}
+
+	id, err := strconv.Atoi(rawID)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid config id: %s", rawID)
+	}
+
+	m, found := strings.CutPrefix(configCollection, "poll_config_")
+	if !found {
+		return "", 0, fmt.Errorf("poll has an unknown poll config: %s", configID)
+	}
+	return m, id, nil
 }

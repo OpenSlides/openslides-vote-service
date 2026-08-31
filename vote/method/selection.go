@@ -11,10 +11,13 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
+	"github.com/OpenSlides/openslides-go/datastore/dstypes"
+	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
+// Selection represents a selection vote method configuration.
 type Selection struct {
 	Options          []int              `json:"options"`
 	MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
@@ -22,11 +25,27 @@ type Selection struct {
 	AllowNota        bool               `json:"allow_nota"`
 }
 
+// SelectionFromJson parses the given JSON config into a Selection struct.
+func SelectionFromJson(config string) (*Selection, error) {
+	var cfg Selection
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &cfg, nil
+}
+
+// Name returns the name of the selection method.
+func (s Selection) Name() string {
+	return "selection"
+}
+
+// RequireOptions returns true, as selection requires options.
 func (Selection) RequireOptions() bool {
 	return true
 }
 
-func SelectionFromDB(configDB dsmodels.PollConfigSelection, optionIDs []int) Selection {
+// SelectionFromDsModels converts a dsmodels.PollConfigSelection into a Selection struct.
+func SelectionFromDsModels(configDB dsmodels.PollConfigSelection, optionIDs []int) Selection {
 	return Selection{
 		Options:          optionIDs,
 		MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
@@ -35,66 +54,105 @@ func SelectionFromDB(configDB dsmodels.PollConfigSelection, optionIDs []int) Sel
 	}
 }
 
-func SelectionFromRequest(config json.RawMessage) (*Selection, error) {
-	var cfg struct {
-		MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int] `json:"min_options_amount"`
-		AllowNota        bool               `json:"allow_nota"`
-	}
+type selectionConfig struct {
+	AllowNota             *bool   `json:"allow_nota"`
+	DisplayChart          *string `json:"display_chart"`
+	StrikeOut             *bool   `json:"strike_out"`
+	MaxOptionsAmount      *int    `json:"max_options_amount"`
+	MinOptionsAmount      *int    `json:"min_options_amount"`
+	OneHundredPercentBase *string `json:"onehundred_percent_base"`
+	RequiredMajority      *string `json:"required_majority"`
+}
+
+func selectionConfigForCreate(config json.RawMessage) (*selectionConfig, error) {
+	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfigError{}
+		return nil, invalidConfig("method_config has to be valid json")
 	}
 
-	valueMaxOption, setMaxOption := cfg.MaxOptionsAmount.Value()
-	valueMinOption, setMinOption := cfg.MinOptionsAmount.Value()
-	if setMaxOption && setMinOption && valueMinOption > valueMaxOption {
+	if cfg.AllowNota == nil {
+		cfg.AllowNota = new(bool)
+	}
+	if cfg.DisplayChart == nil {
+		cfg.DisplayChart = new(string)
+	}
+	if cfg.StrikeOut == nil {
+		cfg.StrikeOut = new(bool)
+	}
+	if cfg.MaxOptionsAmount == nil {
+		cfg.MaxOptionsAmount = new(int)
+	}
+	if cfg.MinOptionsAmount == nil {
+		cfg.MinOptionsAmount = new(int)
+	}
+	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
 		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
 	}
-
-	return &Selection{
-		MaxOptionsAmount: cfg.MaxOptionsAmount,
-		MinOptionsAmount: cfg.MinOptionsAmount,
-		AllowNota:        cfg.AllowNota,
-	}, nil
-}
-
-func (s Selection) Name() string {
-	return "selection"
-}
-
-func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
-	s, err := SelectionFromRequest(config)
-	if err != nil {
-		return "", fmt.Errorf("load config: %w", err)
+	if cfg.OneHundredPercentBase == nil {
+		return nil, invalidConfig("field onehundred_percent_base is required")
+	}
+	if cfg.RequiredMajority == nil {
+		v := "no_majority"
+		cfg.RequiredMajority = &v
 	}
 
-	var cfg struct {
-		StrikeOut             bool   `json:"strike_out"`
-		OneHundredPercentBase string `json:"onehundred_percent_base"`
-		DisplayChart          string `json:"display_chart"`
-	}
+	return &cfg, nil
+}
+
+func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, oldConfig dsmodels.PollConfigSelection) (*selectionConfig, error) {
+	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return "", fmt.Errorf("load additional config: %w", err)
+		return nil, invalidConfig("method_config has to be valid json")
 	}
 
-	if cfg.OneHundredPercentBase == "" {
-		return "", invalidConfig("field onehundred_percent_base is required.")
+	if state != dstypes.Poll_StateCreated {
+		if cfg.AllowNota != nil {
+			return nil, invalidConfig("field allow_nota is not allowed to update in poll state %s", state)
+		}
+		if cfg.MaxOptionsAmount != nil {
+			return nil, invalidConfig("field max_options_amount is not allowed to update in poll state %s", state)
+		}
+		if cfg.MinOptionsAmount != nil {
+			return nil, invalidConfig("field min_options_amount is not allowed to update in poll state %s", state)
+		}
+	}
+
+	min := oldConfig.MinOptionsAmount
+	if cfg.MinOptionsAmount != nil {
+		min = *cfg.MinOptionsAmount
+	}
+	max := oldConfig.MaxOptionsAmount
+	if cfg.MaxOptionsAmount != nil {
+		max = *cfg.MaxOptionsAmount
+	}
+	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
+		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
+	}
+
+	return &cfg, nil
+}
+
+func selectionConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
+	cfg, err := selectionConfigForCreate(config)
+	if err != nil {
+		return "", fmt.Errorf("parse config: %w", err)
 	}
 
 	var configID int
 	sql := `INSERT INTO poll_config_selection
-	(max_options_amount, min_options_amount, allow_nota, strike_out, onehundred_percent_base, display_chart)
-	VALUES ($1, $2, $3, $4, $5, $6)
+	(allow_nota, display_chart, strike_out, max_options_amount, min_options_amount, onehundred_percent_base, required_majority)
+	VALUES ($1, $2, $3, $4, $5, $6, $7)
 	RETURNING id;`
 	if err := tx.QueryRow(
 		ctx,
 		sql,
-		maybeNullIsNil(s.MaxOptionsAmount),
-		maybeNullIsNil(s.MinOptionsAmount),
-		s.AllowNota,
-		cfg.StrikeOut,
-		cfg.OneHundredPercentBase,
+		cfg.AllowNota,
 		cfg.DisplayChart,
+		cfg.StrikeOut,
+		cfg.MaxOptionsAmount,
+		cfg.MinOptionsAmount,
+		cfg.OneHundredPercentBase,
+		cfg.RequiredMajority,
 	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save selection config: %w", err)
 	}
@@ -102,6 +160,37 @@ func selectionSaveConfig(ctx context.Context, tx pgx.Tx, config json.RawMessage)
 	return fmt.Sprintf("poll_config_selection/%d", configID), nil
 }
 
+func selectionConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, config json.RawMessage) error {
+	oldConfig, err := dsmodels.New(ds).PollConfigSelection(id).First(ctx)
+	cfg, err := selectionConfigForUpdate(config, pollState, oldConfig)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	sql := `
+	UPDATE poll_config_selection
+	SET
+		allow_nota = COALESCE($2, allow_nota),
+		display_chart = COALESCE($3, display_chart),
+		strike_out = COALESCE($4, strike_out),
+		max_options_amount = COALESCE($5, max_options_amount),
+		min_options_amount = COALESCE($6, min_options_amount),
+		onehundred_percent_base = COALESCE($7, onehundred_percent_base),
+		required_majority = COALESCE($8, required_majority)
+	WHERE id = $1;`
+
+	res, err := tx.Exec(ctx, sql, id, cfg.AllowNota, cfg.DisplayChart, cfg.StrikeOut, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.OneHundredPercentBase, cfg.RequiredMajority)
+	if err != nil {
+		return fmt.Errorf("update approval config: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("approval config %d not found", id)
+	}
+
+	return nil
+}
+
+// ValidateBallot validates a ballot.
 func (s Selection) ValidateBallot(vote json.RawMessage) error {
 	var choice []int
 	if err := json.Unmarshal(vote, &choice); err != nil {
@@ -131,6 +220,7 @@ func (s Selection) ValidateBallot(vote json.RawMessage) error {
 	return nil
 }
 
+// Result calculates the result.
 func (s Selection) Result(votes []Ballot) (string, error) {
 	return iterateValues(s, votes, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions []int

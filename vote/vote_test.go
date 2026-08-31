@@ -431,7 +431,28 @@ func TestUpdate(t *testing.T) {
 			}
 		})
 
-		t.Run("Update method", func(t *testing.T) {
+		t.Run("Update method with same method", func(t *testing.T) {
+			body := `{
+				"method": "approval",
+				"method_config": {
+					"allow_abstain": false
+				}
+			}`
+
+			if err := service.Update(t.Context(), 3, 5, strings.NewReader(body)); err != nil {
+				t.Fatalf("Error updating poll: %v", err)
+			}
+
+			pollConfig, err := dsmodels.New(flow).PollConfigApproval(77).First(t.Context())
+			if err != nil {
+				t.Fatalf("Error getting poll: %v", err)
+			}
+			if pollConfig.AllowAbstain {
+				t.Fatalf("pollConfigAllowAbstain == true, expected false")
+			}
+		})
+
+		t.Run("Update method with other method", func(t *testing.T) {
 			body := `{
 				"method": "selection",
 				"method_config": {
