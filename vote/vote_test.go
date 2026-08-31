@@ -170,8 +170,8 @@ func TestAll(t *testing.T) {
 					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if ballotUser.ActingMeetingUserID != 300 {
-					t.Errorf("Expected acting meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
+				if v, ok := ballotUser.ActingMeetingUserID.Value(); ok && v != 300 {
+					t.Errorf("Expected acting meeting_user ID to be 300, got %d", v)
 				}
 
 				if ballot.Value != `"Yes"` {
@@ -658,8 +658,8 @@ func TestVote(t *testing.T) {
 					t.Fatalf("Error: Getting ballot_user: %v", err)
 				}
 
-				if ballotUser.ActingMeetingUserID != 300 {
-					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", ballotUser.ActingMeetingUserID)
+				if v, ok := ballotUser.ActingMeetingUserID.Value(); ok && v != 300 {
+					t.Errorf("Expected acting_meeting_user ID to be 300, got %d", v)
 				}
 
 				if ballot.Value != `"Yes"` {
@@ -1356,11 +1356,20 @@ func TestSaveEntitledUsers(t *testing.T) {
 					t.Fatalf("Finalize poll 1: %v", err)
 				}
 
-				ds := dsfetch.New(flow)
-				got, err := ds.Poll_EntitledMeetingUserIDs(1).Value(ctx)
+				ds := dsmodels.New(flow)
+				q := ds.Poll(1)
+				q = q.Preload(q.EntitledUserList())
+				poll, err := q.First(ctx)
 				if err != nil {
 					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
 				}
+				var got []int
+				for _, entitledUser := range poll.EntitledUserList {
+					if id, ok := entitledUser.MeetingUserID.Value(); ok {
+						got = append(got, id)
+					}
+				}
+				slices.Sort(got)
 
 				want := []int{11, 21}
 				if !reflect.DeepEqual(got, want) {
@@ -1373,11 +1382,20 @@ func TestSaveEntitledUsers(t *testing.T) {
 					t.Fatalf("Finalize poll 2: %v", err)
 				}
 
-				ds := dsfetch.New(flow)
-				got, err := ds.Poll_EntitledMeetingUserIDs(2).Value(ctx)
+				ds := dsmodels.New(flow)
+				q := ds.Poll(2)
+				q = q.Preload(q.EntitledUserList())
+				poll, err := q.First(ctx)
 				if err != nil {
 					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
 				}
+				var got []int
+				for _, entitledUser := range poll.EntitledUserList {
+					if id, ok := entitledUser.MeetingUserID.Value(); ok {
+						got = append(got, id)
+					}
+				}
+				slices.Sort(got)
 
 				want := []int{12, 32}
 				if !reflect.DeepEqual(got, want) {
@@ -1390,11 +1408,20 @@ func TestSaveEntitledUsers(t *testing.T) {
 					t.Fatalf("Finalize poll 3: %v", err)
 				}
 
-				ds := dsfetch.New(flow)
-				got, err := ds.Poll_EntitledMeetingUserIDs(3).Value(ctx)
+				ds := dsmodels.New(flow)
+				q := ds.Poll(3)
+				q = q.Preload(q.EntitledUserList())
+				poll, err := q.First(ctx)
 				if err != nil {
 					t.Fatalf("Fetch entitled_meeting_user_ids: %v", err)
 				}
+				var got []int
+				for _, entitledUser := range poll.EntitledUserList {
+					if id, ok := entitledUser.MeetingUserID.Value(); ok {
+						got = append(got, id)
+					}
+				}
+				slices.Sort(got)
 
 				want := []int{13, 23, 33}
 				if !reflect.DeepEqual(got, want) {
@@ -1983,7 +2010,8 @@ func TestVoteDelegationAndGroup(t *testing.T) {
 							t.Fatalf("Error: Getting votes from poll: %v", err)
 						}
 						found := slices.ContainsFunc(poll.BallotUserList, func(ballotUser dsmodels.PollBallotUser) bool {
-							return ballotUser.RepresentedMeetingUserID == tt.expectRepresentedMeetingUserID
+							v, ok := ballotUser.RepresentedMeetingUserID.Value()
+							return ok && v == tt.expectRepresentedMeetingUserID
 						})
 
 						if !found {
@@ -2066,7 +2094,7 @@ func TestDeleteWithOtherCollections(t *testing.T) {
 
 	poll_option/31:
 		poll_id: 5
-		meeting_user_id: 300
+		content_object_id: user/30
 
 	poll_ballot:
 		501:

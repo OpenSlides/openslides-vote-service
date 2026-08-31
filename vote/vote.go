@@ -172,7 +172,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", newID), ci.MeetingID, "created"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, ci.ContentObjectID, ci.MeetingID, "poll created"); err != nil {
 		return 0, fmt.Errorf("write history: %w", err)
 	}
 
@@ -395,7 +395,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "updated"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll updated"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -552,6 +552,7 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		`DELETE FROM poll_ballot WHERE poll_id = $1`,
 		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
 		`DELETE FROM projection WHERE content_object_id_poll_id = $1`,
+		`DELETE FROM poll_entitled_user_t WHERE poll_id = $1`,
 		`DELETE FROM poll WHERE id = $1`,
 	}
 	for _, sql := range deleteStatements {
@@ -560,14 +561,8 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		}
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "deleted"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll deleted"); err != nil {
 		return fmt.Errorf("write history: %w", err)
-	}
-
-	// Can be removed after https://github.com/OpenSlides/openslides-meta/issues/220
-	sql := `UPDATE history_entry_t set model_id=NULL WHERE model_id = $1;`
-	if _, err := tx.Exec(ctx, sql, fmt.Sprintf("poll/%d", pollID)); err != nil {
-		return fmt.Errorf("update old history entries: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -613,7 +608,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("poll %d not found or not in 'created' state", pollID)
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "started"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll started"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -665,7 +660,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	historyMessages := make([]string, 0, 4)
-	historyMessages = append(historyMessages, "finalized")
+	historyMessages = append(historyMessages, "poll finalized")
 
 	if poll.State == `started` {
 		if err := v.pollStop(ctx, tx, poll, ballots); err != nil {
@@ -688,7 +683,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		historyMessages = append(historyMessages, "anonymized")
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, historyMessages...); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, historyMessages...); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -845,7 +840,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 	}
 
 	baseInsertSQL := `
-		INSERT INTO nm_meeting_user_entitled_at_poll_ids_poll_t (meeting_user_id, poll_id)
+		INSERT INTO poll_entitled_user_t (meeting_user_id, poll_id)
 		SELECT meeting_user_id, $1 FROM (
 			SELECT represented_meeting_user_id AS meeting_user_id
 			FROM poll_ballot_user_t
@@ -907,7 +902,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 
 	finalSQL := baseInsertSQL + conditionSQL + `
 		) AS entitled_users
-		ON CONFLICT DO NOTHING; -- Verhindert Fehler, falls Zeilen bereits existieren
+		ON CONFLICT DO NOTHING;
 	`
 
 	if _, err := tx.Exec(ctx, finalSQL, pollID); err != nil {
@@ -964,7 +959,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
 
-	if err := history.OneEntry(ctx, tx, requestUserID, fmt.Sprintf("poll/%d", pollID), poll.MeetingID, "reset"); err != nil {
+	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll reset"); err != nil {
 		return fmt.Errorf("write history: %w", err)
 	}
 
@@ -1078,18 +1073,28 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 			WHERE poll_id = $1 AND represented_meeting_user_id = $5
 		),
 		insert_ballot_user AS (
-	        INSERT INTO poll_ballot_user (poll_id, acting_meeting_user_id, represented_meeting_user_id)
-	        SELECT  $1, $4, $5
-	        FROM poll_check p, ballot_check b
-	        WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
-	        RETURNING id
-	    ),
+			INSERT INTO poll_ballot_user (
+				poll_id,
+				acting_meeting_user_id,
+				represented_meeting_user_id
+			)
+			SELECT
+				$1,
+				$4,
+				$5
+			FROM poll_check p
+			CROSS JOIN ballot_check b
+			LEFT JOIN meeting_user_t amu ON amu.id = $4
+			LEFT JOIN meeting_user_t rmu ON rmu.id = $5
+			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
+			RETURNING id
+		),
 		insert_ballot AS (
-	        INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
-	        SELECT $1, $2, $3, bu.id
-        	FROM insert_ballot_user bu
-	        RETURNING id
-	    )
+			INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
+			SELECT $1, $2, $3, bu.id
+			FROM insert_ballot_user bu
+			RETURNING id
+		)
 		SELECT
 			CASE
 				WHEN i.id IS NOT NULL THEN 'VALID'
