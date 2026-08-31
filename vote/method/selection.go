@@ -74,7 +74,7 @@ func selectionConfigForCreate(config json.RawMessage) (*selectionConfig, error) 
 		cfg.AllowNota = new(bool)
 	}
 	if cfg.DisplayChart == nil {
-		return nil, invalidConfig("display_chart is required")
+		cfg.DisplayChart = new(string)
 	}
 	if cfg.StrikeOut == nil {
 		cfg.StrikeOut = new(bool)
@@ -140,7 +140,7 @@ func selectionConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessag
 
 	var configID int
 	sql := `INSERT INTO poll_config_selection
-	(allowNota, display_chart, strike_out, max_options_amount, min_options_amount, onehundred_percent_base, required_majority)
+	(allow_nota, display_chart, strike_out, max_options_amount, min_options_amount, onehundred_percent_base, required_majority)
 	VALUES ($1, $2, $3, $4, $5, $6, $7)
 	RETURNING id;`
 	if err := tx.QueryRow(

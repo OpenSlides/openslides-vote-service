@@ -351,7 +351,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 
 			newConfigID, err := method.ConfigCreate(ctx, tx, ui.Method, ui.MethodConfig)
 			if err != nil {
-				return fmt.Errorf("save poll config: %w", err)
+				return fmt.Errorf("replace poll config: %w", err)
 			}
 
 			sql := `UPDATE poll_t SET config_id = $1 WHERE id = $2`
