@@ -206,10 +206,10 @@ func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optio
 			}
 
 			sql := `INSERT INTO poll_option
-			(poll_id, weight, meeting_user_id)
+			(poll_id, weight, content_object_id)
 			VALUES ($1, $2, $3);`
 
-			if _, err := tx.Exec(ctx, sql, pollID, i+1, meetingUserOption); err != nil {
+			if _, err := tx.Exec(ctx, sql, pollID, i+1, fmt.Sprintf("meeting_user/%d", meetingUserOption)); err != nil {
 				return fmt.Errorf("insert options: %w", err)
 			}
 		default:
