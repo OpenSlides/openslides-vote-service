@@ -28,6 +28,7 @@ type RatingApproval struct {
 // RatingApprovalFromJson parses the given JSON config into a RatingApproval struct.
 func RatingApprovalFromJson(config string) (*RatingApproval, error) {
 	var cfg RatingApproval
+	cfg.AllowAbstain = true
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}

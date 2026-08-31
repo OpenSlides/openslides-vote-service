@@ -20,6 +20,10 @@ type Approval struct {
 // ApprovalFromJson parses the given JSON config into an Approval struct.
 func ApprovalFromJson(config string) (*Approval, error) {
 	var cfg Approval
+	cfg.AllowAbstain = true
+	if config == "" {
+		return &cfg, nil
+	}
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
