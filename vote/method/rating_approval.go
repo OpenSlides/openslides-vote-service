@@ -10,10 +10,13 @@ import (
 
 	"github.com/OpenSlides/openslides-go/datastore/dsfetch"
 	"github.com/OpenSlides/openslides-go/datastore/dsmodels"
+	"github.com/OpenSlides/openslides-go/datastore/dstypes"
+	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 )
 
+// RatingApproval represents the poll method rating_approval.
 type RatingApproval struct {
 	Options          []int              `json:"options"`
 	MaxOptionsAmount dsfetch.Maybe[int] `json:"max_options_amount"`
@@ -22,11 +25,27 @@ type RatingApproval struct {
 	AllowAbstain     bool               `json:"allow_abstain"`
 }
 
+// RatingApprovalFromJson parses the given JSON config into a RatingApproval struct.
+func RatingApprovalFromJson(config string) (*RatingApproval, error) {
+	var cfg RatingApproval
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &cfg, nil
+}
+
+// Name returns the name of the rating approval method.
+func (ra RatingApproval) Name() string {
+	return "rating_approval"
+}
+
+// RequireOptions returns true, as rating approval requires options.
 func (RatingApproval) RequireOptions() bool {
 	return true
 }
 
-func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval, optionIDs []int) *RatingApproval {
+// RatingApprovalFromDsModels converts a PollConfigRatingApproval to a RatingApproval struct.
+func RatingApprovalFromDsModels(configDB dsmodels.PollConfigRatingApproval, optionIDs []int) *RatingApproval {
 	return &RatingApproval{
 		Options:          optionIDs,
 		MaxOptionsAmount: maybeZeroIsNull(configDB.MaxOptionsAmount),
@@ -36,81 +55,132 @@ func RatingApprovalFromDB(configDB dsmodels.PollConfigRatingApproval, optionIDs 
 	}
 }
 
-func RatingApprovalFromRequest(config json.RawMessage) (*RatingApproval, error) {
-	var cfg struct {
-		MaxOptionsAmount dsfetch.Maybe[int]  `json:"max_options_amount"`
-		MinOptionsAmount dsfetch.Maybe[int]  `json:"min_options_amount"`
-		MaxYesAmount     dsfetch.Maybe[int]  `json:"max_yes_amount"`
-		AllowAbstain     dsfetch.Maybe[bool] `json:"allow_abstain"`
-	}
+type ratingApprovalConfig struct {
+	MaxOptionsAmount      *int    `json:"max_options_amount"`
+	MinOptionsAmount      *int    `json:"min_options_amount"`
+	MaxYesAmount          *int    `json:"max_yes_amount"`
+	AllowAbstain          *bool   `json:"allow_abstain"`
+	OneHundredPercentBase *string `json:"onehundred_percent_base"`
+	RequiredMajority      *string `json:"required_majority"`
+}
+
+func ratingApprovalConfigForCreate(config json.RawMessage) (*ratingApprovalConfig, error) {
+	var cfg ratingApprovalConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
 	}
 
-	valueMaxOption, setMaxOption := cfg.MaxOptionsAmount.Value()
-	valueMinOption, setMinOption := cfg.MinOptionsAmount.Value()
-	if setMaxOption && setMinOption && valueMinOption > valueMaxOption {
+	if cfg.MaxOptionsAmount == nil {
+		cfg.MaxOptionsAmount = new(int)
+	}
+	if cfg.MinOptionsAmount == nil {
+		cfg.MinOptionsAmount = new(int)
+	}
+	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
 		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
 	}
-
-	allowAbstain, set := cfg.AllowAbstain.Value()
-	if !set {
-		allowAbstain = true
+	if cfg.MaxYesAmount == nil {
+		cfg.MaxYesAmount = new(int)
 	}
-
-	return &RatingApproval{
-		MaxOptionsAmount: cfg.MaxOptionsAmount,
-		MinOptionsAmount: cfg.MinOptionsAmount,
-		MaxYesAmount:     cfg.MaxYesAmount,
-		AllowAbstain:     allowAbstain,
-	}, nil
+	if cfg.AllowAbstain == nil {
+		t := true
+		cfg.AllowAbstain = &t
+	}
+	if cfg.OneHundredPercentBase == nil {
+		return nil, invalidConfig("field onehundred_percent_base is required")
+	}
+	if cfg.RequiredMajority == nil {
+		v := "no_majority"
+		cfg.RequiredMajority = &v
+	}
+	return &cfg, nil
 }
 
-func (ra RatingApproval) Name() string {
-	return "rating_approval"
+func ratingApprovalConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, oldConfig dsmodels.PollConfigRatingApproval) (*ratingApprovalConfig, error) {
+	var cfg ratingApprovalConfig
+	if err := json.Unmarshal(config, &cfg); err != nil {
+		return nil, invalidConfig("method_config has to be valid json")
+	}
+
+	if state != dstypes.Poll_StateCreated {
+		if cfg.AllowAbstain != nil {
+			return nil, invalidConfig("field allow_abstain is not allowed to update in poll state %s", state)
+		}
+		if cfg.MaxOptionsAmount != nil {
+			return nil, invalidConfig("field max_options_amount is not allowed to update in poll state %s", state)
+		}
+		if cfg.MinOptionsAmount != nil {
+			return nil, invalidConfig("field min_options_amount is not allowed to update in poll state %s", state)
+		}
+		if cfg.MaxYesAmount != nil {
+			return nil, invalidConfig("field max_yes_amount is not allowed to update in poll state %s", state)
+		}
+	}
+
+	min := oldConfig.MinOptionsAmount
+	if cfg.MinOptionsAmount != nil {
+		min = *cfg.MinOptionsAmount
+	}
+	max := oldConfig.MaxOptionsAmount
+	if cfg.MaxOptionsAmount != nil {
+		max = *cfg.MaxOptionsAmount
+	}
+	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
+		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
+	}
+
+	return &cfg, nil
 }
 
 func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
-	ra, err := RatingApprovalFromRequest(config)
+	cfg, err := ratingApprovalConfigForCreate(config)
 	if err != nil {
-		return "", fmt.Errorf("load config: %w", err)
-	}
-
-	var cfg struct {
-		OneHundredPercentBase string `json:"onehundred_percent_base"`
-	}
-	if err := json.Unmarshal(config, &cfg); err != nil {
-		return "", fmt.Errorf("load additional config: %w", err)
-	}
-
-	if cfg.OneHundredPercentBase == "" {
-		return "", invalidConfig("field onehundred_percent_base is required.")
+		return "", fmt.Errorf("parse config: %w", err)
 	}
 
 	var configID int
-	sql := `INSERT INTO poll_config_rating_approval
-	(max_options_amount, min_options_amount, max_yes_amount, allow_abstain, onehundred_percent_base)
-	VALUES ($1, $2, $3, $4, $5)
+	sql := `
+	INSERT INTO poll_config_rating_approval
+	(max_options_amount, min_options_amount, max_yes_amount, allow_abstain, onehundred_percent_base, required_majority)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id;`
-	if err := tx.QueryRow(
-		ctx,
-		sql,
-		maybeNullIsNil(ra.MaxOptionsAmount),
-		maybeNullIsNil(ra.MinOptionsAmount),
-		maybeNullIsNil(ra.MaxYesAmount),
-		ra.AllowAbstain,
-		cfg.OneHundredPercentBase,
-	).Scan(&configID); err != nil {
-		return "", fmt.Errorf("save rating_approval config: %w", err)
+	if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.MaxYesAmount, cfg.AllowAbstain, cfg.OneHundredPercentBase, cfg.RequiredMajority).Scan(&configID); err != nil {
+		return "", fmt.Errorf("save ratingApproval config: %w", err)
 	}
 
 	return fmt.Sprintf("poll_config_rating_approval/%d", configID), nil
 }
 
-func ratingApprovalConfigUpdate(ctx context.Context, tx pgx.Tx, configID string, pollState string, config json.RawMessage) error {
-	return fmt.Errorf("TODO")
+func ratingApprovalConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, config json.RawMessage) error {
+	oldConfig, err := dsmodels.New(ds).PollConfigRatingApproval(id).First(ctx)
+	cfg, err := ratingApprovalConfigForUpdate(config, pollState, oldConfig)
+	if err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	sql := `
+	UPDATE poll_config_rating_approval
+	SET
+		max_options_amount = COALESCE($2, max_options_amount),
+		min_options_amount = COALESCE($3, min_options_amount),
+		max_yes_amount = COALESCE($4, max_yes_amount),
+		allow_abstain = COALESCE($5, allow_abstain),
+		onehundred_percent_base = COALESCE($6, onehundred_percent_base),
+		required_majority = COALESCE($7, required_majority)
+	WHERE id = $1;`
+
+	res, err := tx.Exec(ctx, sql, id, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.MaxYesAmount, cfg.AllowAbstain, cfg.OneHundredPercentBase, cfg.RequiredMajority)
+	if err != nil {
+		return fmt.Errorf("update approval config: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("approval config %d not found", id)
+	}
+
+	return nil
 }
 
+// ValidateBallot validates the given ballot.
 func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {
 	var choice map[int]json.RawMessage
 	if err := json.Unmarshal(vote, &choice); err != nil {
@@ -150,6 +220,7 @@ func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {
 	return nil
 }
 
+// Result calculates the result.
 func (ra RatingApproval) Result(votes []Ballot) (string, error) {
 	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0

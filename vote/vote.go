@@ -335,13 +335,13 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if ui.Method != "" || ui.MethodConfig != nil {
-		oldMethod, err := method.MethodFromConfigID(poll.ConfigID)
+		oldMethod, _, err := method.SprilConfigID(poll.ConfigID)
 		if err != nil {
 			return fmt.Errorf("getting poll method for poll %d: %w", poll.ID, err)
 		}
 
 		if ui.Method == "" || ui.Method == oldMethod {
-			if err := method.ConfigUpdate(ctx, tx, poll.ConfigID, poll.State, ui.MethodConfig); err != nil {
+			if err := method.ConfigUpdate(ctx, v.flow, tx, poll.ConfigID, poll.State, ui.MethodConfig); err != nil {
 				return fmt.Errorf("Update poll method for poll %d: %w", pollID, err)
 			}
 		} else {
