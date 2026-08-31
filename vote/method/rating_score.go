@@ -66,7 +66,7 @@ type ratingScoreConfig struct {
 	RequiredMajority      *string `json:"required_majority"`
 }
 
-func ratingScoreForCreate(config json.RawMessage) (*ratingScoreConfig, error) {
+func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScoreConfig, error) {
 	var cfg ratingScoreConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -80,6 +80,9 @@ func ratingScoreForCreate(config json.RawMessage) (*ratingScoreConfig, error) {
 	}
 	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
 		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
+	}
+	if *cfg.MaxOptionsAmount < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
 	}
 	if cfg.MaxVotesPerOption == nil {
 		cfg.MaxVotesPerOption = new(int)
@@ -103,7 +106,7 @@ func ratingScoreForCreate(config json.RawMessage) (*ratingScoreConfig, error) {
 	return &cfg, nil
 }
 
-func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, oldConfig dsmodels.PollConfigRatingScore) (*ratingScoreConfig, error) {
+func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, optionAmount int, oldConfig dsmodels.PollConfigRatingScore) (*ratingScoreConfig, error) {
 	var cfg ratingScoreConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -138,6 +141,9 @@ func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
 		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
 	}
+	if max < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+	}
 
 	min = oldConfig.MinVoteSum
 	if cfg.MinVoteSum != nil {
@@ -154,8 +160,8 @@ func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State
 	return &cfg, nil
 }
 
-func ratingScoreConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
-	cfg, err := ratingScoreForCreate(config)
+func ratingScoreConfigCreate(ctx context.Context, tx pgx.Tx, optionAmount int, config json.RawMessage) (string, error) {
+	cfg, err := ratingScoreForCreate(config, optionAmount)
 	if err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
@@ -182,9 +188,9 @@ func ratingScoreConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMess
 	return fmt.Sprintf("poll_config_rating_score/%d", configID), nil
 }
 
-func ratingScoreConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, config json.RawMessage) error {
+func ratingScoreConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, optionAmount int, config json.RawMessage) error {
 	oldConfig, err := dsmodels.New(ds).PollConfigRatingScore(id).First(ctx)
-	cfg, err := ratingScoreConfigForUpdate(config, pollState, oldConfig)
+	cfg, err := ratingScoreConfigForUpdate(config, pollState, optionAmount, oldConfig)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}

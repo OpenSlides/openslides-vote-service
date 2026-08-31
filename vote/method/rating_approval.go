@@ -65,7 +65,7 @@ type ratingApprovalConfig struct {
 	RequiredMajority      *string `json:"required_majority"`
 }
 
-func ratingApprovalConfigForCreate(config json.RawMessage) (*ratingApprovalConfig, error) {
+func ratingApprovalConfigForCreate(config json.RawMessage, optionAmount int) (*ratingApprovalConfig, error) {
 	var cfg ratingApprovalConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -79,6 +79,9 @@ func ratingApprovalConfigForCreate(config json.RawMessage) (*ratingApprovalConfi
 	}
 	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
 		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
+	}
+	if *cfg.MaxOptionsAmount < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
 	}
 	if cfg.MaxYesAmount == nil {
 		cfg.MaxYesAmount = new(int)
@@ -97,7 +100,7 @@ func ratingApprovalConfigForCreate(config json.RawMessage) (*ratingApprovalConfi
 	return &cfg, nil
 }
 
-func ratingApprovalConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, oldConfig dsmodels.PollConfigRatingApproval) (*ratingApprovalConfig, error) {
+func ratingApprovalConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, optionAmount int, oldConfig dsmodels.PollConfigRatingApproval) (*ratingApprovalConfig, error) {
 	var cfg ratingApprovalConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -129,12 +132,15 @@ func ratingApprovalConfigForUpdate(config json.RawMessage, state dstypes.Poll_St
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
 		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
 	}
+	if max < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+	}
 
 	return &cfg, nil
 }
 
-func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
-	cfg, err := ratingApprovalConfigForCreate(config)
+func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, optionAmount int, config json.RawMessage) (string, error) {
+	cfg, err := ratingApprovalConfigForCreate(config, optionAmount)
 	if err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
@@ -152,9 +158,9 @@ func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawM
 	return fmt.Sprintf("poll_config_rating_approval/%d", configID), nil
 }
 
-func ratingApprovalConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, config json.RawMessage) error {
+func ratingApprovalConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, optionAmount int, config json.RawMessage) error {
 	oldConfig, err := dsmodels.New(ds).PollConfigRatingApproval(id).First(ctx)
-	cfg, err := ratingApprovalConfigForUpdate(config, pollState, oldConfig)
+	cfg, err := ratingApprovalConfigForUpdate(config, pollState, optionAmount, oldConfig)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
