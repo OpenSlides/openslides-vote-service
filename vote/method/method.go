@@ -102,7 +102,7 @@ func ConfigCreate(ctx context.Context, tx pgx.Tx, method string, config json.Raw
 
 // ConfigUpdate updates the configuration for a given vote method.
 func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID string, pollState dstypes.Poll_State, config json.RawMessage) error {
-	method, id, err := SprilConfigID(configID)
+	method, id, err := SplitConfigID(configID)
 	if err != nil {
 		return fmt.Errorf("getting method from config_id: %w", err)
 	}
@@ -123,7 +123,7 @@ func ConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, configID strin
 
 // ConfigDelete deletes the configuration for a given vote method.
 func ConfigDelete(ctx context.Context, tx pgx.Tx, configID string) error {
-	method, id, err := SprilConfigID(configID)
+	method, id, err := SplitConfigID(configID)
 	if err != nil {
 		return fmt.Errorf("getting method from config_id: %w", err)
 	}
@@ -303,8 +303,8 @@ func invalidVote(msg string, a ...any) InvalidBallotError {
 	return InvalidBallotError{msg: fmt.Sprintf(msg, a...)}
 }
 
-// SprilConfigID returns the method from a config ID.
-func SprilConfigID(configID string) (string, int, error) {
+// SplitConfigID returns the method from a config ID.
+func SplitConfigID(configID string) (string, int, error) {
 	configCollection, rawID, found := strings.Cut(configID, "/")
 	if !found {
 		return "", 0, fmt.Errorf("poll has an invalid config_id: %s", configID)

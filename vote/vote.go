@@ -124,7 +124,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		state = "finished"
 	}
 
-	sql := `INSERT INTO poll
+	sql := `INSERT INTO poll_t
 		(title, config_id, visibility, state, content_object_id, meeting_id, result, live_voting_enabled, allow_vote_split)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id;`
@@ -153,21 +153,11 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	if len(ci.EntitledGroupIDs) > 0 {
-		placeholders := make([]string, len(ci.EntitledGroupIDs))
-		args := make([]any, len(ci.EntitledGroupIDs)*2)
+		groupSQL := `
+        INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id)
+        SELECT unnest($1::int[]), $2`
 
-		for i, groupID := range ci.EntitledGroupIDs {
-			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-			args[i*2] = groupID
-			args[i*2+1] = newID
-		}
-
-		groupSQL := fmt.Sprintf(
-			"INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id) VALUES %s",
-			strings.Join(placeholders, ", "),
-		)
-
-		if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+		if _, err := tx.Exec(ctx, groupSQL, ci.EntitledGroupIDs, newID); err != nil {
 			return 0, fmt.Errorf("insert group-poll relations: %w", err)
 		}
 	}
@@ -192,7 +182,7 @@ func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optio
 				return errors.Join(fmt.Errorf("decode text option: %w", err), MessageError(ErrInvalid, "Invalid option"))
 			}
 
-			sql := `INSERT INTO poll_option
+			sql := `INSERT INTO poll_option_t
 				(poll_id, weight, text)
 				VALUES ($1, $2, $3);`
 
@@ -205,7 +195,7 @@ func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optio
 				return errors.Join(fmt.Errorf("decode meeting_user option: %w", err), MessageError(ErrInvalid, "Invalid option"))
 			}
 
-			sql := `INSERT INTO poll_option
+			sql := `INSERT INTO poll_option_t
 			(poll_id, weight, meeting_user_id)
 			VALUES ($1, $2, $3);`
 
@@ -335,7 +325,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if ui.Method != "" || ui.MethodConfig != nil {
-		oldMethod, _, err := method.SprilConfigID(poll.ConfigID)
+		oldMethod, _, err := method.SplitConfigID(poll.ConfigID)
 		if err != nil {
 			return fmt.Errorf("getting poll method for poll %d: %w", poll.ID, err)
 		}
@@ -362,7 +352,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if ui.OptionType != "" && len(ui.Options) > 0 {
-		sql := "DELETE FROM poll_option WHERE poll_id = $1"
+		sql := "DELETE FROM poll_option_t WHERE poll_id = $1"
 		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
 			return fmt.Errorf("deleting existing poll options: %w", err)
 		}
@@ -373,26 +363,17 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if len(ui.EntitledGroupIDs) > 0 {
-		sql := "DELETE FROM nm_group_poll_ids_poll_t WHERE poll_id = $1"
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
+		deleteSQL := "DELETE FROM nm_group_poll_ids_poll_t WHERE poll_id = $1"
+		if _, err := tx.Exec(ctx, deleteSQL, pollID); err != nil {
 			return fmt.Errorf("deleting existing group associations: %w", err)
 		}
 
-		placeholders := make([]string, len(ui.EntitledGroupIDs))
-		args := make([]any, len(ui.EntitledGroupIDs)*2)
+		groupSQL := `
+        INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id)
+        SELECT unnest($1::int[]), $2
+    `
 
-		for i, groupID := range ui.EntitledGroupIDs {
-			placeholders[i] = fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2)
-			args[i*2] = groupID
-			args[i*2+1] = poll.ID
-		}
-
-		groupSQL := fmt.Sprintf(
-			"INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id) VALUES %s",
-			strings.Join(placeholders, ", "),
-		)
-
-		if _, err := tx.Exec(ctx, groupSQL, args...); err != nil {
+		if _, err := tx.Exec(ctx, groupSQL, ui.EntitledGroupIDs, poll.ID); err != nil {
 			return fmt.Errorf("insert group-poll relations: %w", err)
 		}
 	}
@@ -518,7 +499,7 @@ func (ui updateInput) query(pollID int) (string, []any) {
 		return "", nil
 	}
 
-	query := fmt.Sprintf("UPDATE poll SET %s WHERE id = $%d",
+	query := fmt.Sprintf("UPDATE poll_t SET %s WHERE id = $%d",
 		strings.Join(setParts, ", "),
 		argIndex)
 
@@ -549,13 +530,12 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 	}
 
 	deleteStatements := []string{
-		`DELETE FROM poll_ballot WHERE poll_id = $1`,
-		`DELETE FROM poll_option WHERE poll_id = $1`,
-		`DELETE FROM poll_ballot WHERE poll_id = $1`,
-		`DELETE FROM poll_ballot_user WHERE poll_id = $1`,
-		`DELETE FROM projection WHERE content_object_id_poll_id = $1`,
+		`DELETE FROM poll_option_t WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot_t WHERE poll_id = $1`,
+		`DELETE FROM poll_ballot_user_t WHERE poll_id = $1`,
+		`DELETE FROM projection_t WHERE content_object_id_poll_id = $1`,
 		`DELETE FROM poll_entitled_user_t WHERE poll_id = $1`,
-		`DELETE FROM poll WHERE id = $1`,
+		`DELETE FROM poll_t WHERE id = $1`,
 	}
 	for _, sql := range deleteStatements {
 		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
@@ -600,7 +580,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 	defer tx.Rollback(ctx)
 
 	// Set published, if live voting is enabled.
-	sql := `UPDATE poll SET state = 'started', published = $2 WHERE id = $1 AND state != 'finished';`
+	sql := `UPDATE poll_t SET state = 'started', published = $2 WHERE id = $1 AND state != 'finished';`
 	commandTag, err := tx.Exec(ctx, sql, pollID, poll.LiveVotingEnabled)
 	if err != nil {
 		return fmt.Errorf("set poll %d to started: %w", pollID, err)
@@ -651,7 +631,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	// Set a lock on first query. Postgres creates the repeatable read snapshot
 	// on the first query. So the lock and the snapshot are created at the same
 	// time.
-	sql := `SELECT id FROM poll WHERE id = $1 FOR NO KEY UPDATE`
+	sql := `SELECT id FROM poll_t WHERE id = $1 FOR NO KEY UPDATE`
 	if _, err := tx.Exec(ctx, sql, pollID); err != nil {
 		return fmt.Errorf("select poll %d: %w", pollID, err)
 	}
@@ -697,7 +677,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 }
 
 func fetchBallots(ctx context.Context, tx pgx.Tx, pollID int) ([]method.Ballot, error) {
-	raws, err := tx.Query(ctx, "SELECT weight, split, value FROM poll_ballot WHERE poll_id = $1", pollID)
+	raws, err := tx.Query(ctx, "SELECT weight, split, value FROM poll_ballot_t WHERE poll_id = $1", pollID)
 	if err != nil {
 		return nil, fmt.Errorf("select ballots: %w", err)
 	}
@@ -748,7 +728,7 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ball
 		return fmt.Errorf("create poll result: %w", err)
 	}
 
-	sql := `UPDATE poll SET result = $1, state = 'finished' WHERE id = $2;`
+	sql := `UPDATE poll_t SET result = $1, state = 'finished' WHERE id = $2;`
 	if _, err := tx.Exec(ctx, sql, result, poll.ID); err != nil {
 		return fmt.Errorf("set result of poll %d: %w", poll.ID, err)
 	}
@@ -757,7 +737,7 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ball
 }
 
 func (v *Vote) pollPublish(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
-	sql := `UPDATE poll SET published = TRUE WHERE id = $1;`
+	sql := `UPDATE poll_t SET published = TRUE WHERE id = $1;`
 	if _, err := tx.Exec(ctx, sql, poll.ID); err != nil {
 		return fmt.Errorf("set poll %d to published: %w", poll.ID, err)
 	}
@@ -777,9 +757,12 @@ func (v *Vote) pollAnonymize(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll,
 
 // rewriteBallots rewrites all ballots in a different order to the database, so
 // all references to the original ballots are removed.
+//
+// Its sorts the ballots by its encrypted value. This is deterministic, so
+// the same order will be used every time.
 func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
 	var anonymized bool
-	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll WHERE id = $1", poll.ID).Scan(&anonymized); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll_t WHERE id = $1", poll.ID).Scan(&anonymized); err != nil {
 		return fmt.Errorf("get anonymized status: %w", err)
 	}
 	if anonymized {
@@ -792,7 +775,7 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 		return ballots[i].Value < ballots[j].Value
 	})
 
-	if _, err := tx.Exec(ctx, "DELETE FROM poll_ballot WHERE poll_id = $1", poll.ID); err != nil {
+	if _, err := tx.Exec(ctx, "DELETE FROM poll_ballot_t WHERE poll_id = $1", poll.ID); err != nil {
 		return fmt.Errorf("deleting old ballots: %w", err)
 	}
 
@@ -812,7 +795,7 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 		return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE poll SET anonymized = TRUE WHERE id = $1`, poll.ID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE poll_t SET anonymized = TRUE WHERE id = $1`, poll.ID); err != nil {
 		return fmt.Errorf("set anonymize on poll: %w", err)
 	}
 
@@ -932,7 +915,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	defer tx.Rollback(ctx)
 
 	var exists bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM poll WHERE id = $1)`, pollID).Scan(&exists)
+	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM poll_t WHERE id = $1)`, pollID).Scan(&exists)
 	if err != nil {
 		return fmt.Errorf("check poll existence: %w", err)
 	}
@@ -941,12 +924,12 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
 	}
 
-	deleteBallotQuery := `DELETE FROM poll_ballot WHERE poll_id = $1`
+	deleteBallotQuery := `DELETE FROM poll_ballot_t WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteBallotQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
 
-	deleteBallotUserQuery := `DELETE FROM poll_ballot_user WHERE poll_id = $1`
+	deleteBallotUserQuery := `DELETE FROM poll_ballot_user_t WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteBallotUserQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
@@ -956,7 +939,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		state = "finished"
 	}
 
-	updateQuery := `UPDATE poll SET state = $1, published = false, result = '', anonymized = FALSE WHERE id = $2`
+	updateQuery := `UPDATE poll_t SET state = $1, published = false, result = '', anonymized = FALSE WHERE id = $2`
 	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
@@ -1060,9 +1043,9 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					WHEN state != 'started' THEN 'POLL_NOT_STARTED'
 					ELSE 'POLL_VALID'
 				END as poll_status
-			FROM poll
+			FROM poll_t
 			WHERE id = $1
-			FOR SHARE
+			FOR KEY SHARE
 		),
 		ballot_check AS (
 			SELECT
@@ -1071,11 +1054,11 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 					WHEN COUNT(*) > 0 THEN 'USER_HAS_VOTED_BEFORE'
 					ELSE 'BALLOT_OK'
 				END as ballot_status
-			FROM poll_ballot_user
+			FROM poll_ballot_user_t
 			WHERE poll_id = $1 AND represented_meeting_user_id = $5
 		),
 		insert_ballot_user AS (
-			INSERT INTO poll_ballot_user (
+			INSERT INTO poll_ballot_user_t (
 				poll_id,
 				acting_meeting_user_id,
 				represented_meeting_user_id
@@ -1092,7 +1075,7 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 			RETURNING id
 		),
 		insert_ballot AS (
-			INSERT INTO poll_ballot (poll_id, value, weight, poll_ballot_user_id)
+			INSERT INTO poll_ballot_t (poll_id, value, weight, poll_ballot_user_id)
 			SELECT $1, $2, $3, bu.id
 			FROM insert_ballot_user bu
 			RETURNING id
@@ -1502,12 +1485,4 @@ type DBQuerier interface {
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-}
-
-func valueOrZero(n dsfetch.Maybe[int]) int {
-	value, set := n.Value()
-	if set {
-		return value
-	}
-	return 0
 }
