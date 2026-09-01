@@ -164,7 +164,7 @@ func TestVoteNoRequests(t *testing.T) {
 				t.Fatalf("Error: Inserting data: %v", err)
 			}
 
-			flow, err := pg.Flow()
+			flow, err := pg.Flow(ctx)
 			if err != nil {
 				t.Fatalf("Error getting flow: %v", err)
 			}
