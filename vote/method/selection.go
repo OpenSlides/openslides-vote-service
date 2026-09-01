@@ -64,7 +64,7 @@ type selectionConfig struct {
 	RequiredMajority      *string `json:"required_majority"`
 }
 
-func selectionConfigForCreate(config json.RawMessage) (*selectionConfig, error) {
+func selectionConfigForCreate(config json.RawMessage, optionAmount int) (*selectionConfig, error) {
 	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -81,6 +81,9 @@ func selectionConfigForCreate(config json.RawMessage) (*selectionConfig, error) 
 	}
 	if cfg.MaxOptionsAmount == nil {
 		cfg.MaxOptionsAmount = new(int)
+	}
+	if *cfg.MaxOptionsAmount < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
 	}
 	if cfg.MinOptionsAmount == nil {
 		cfg.MinOptionsAmount = new(int)
@@ -99,7 +102,7 @@ func selectionConfigForCreate(config json.RawMessage) (*selectionConfig, error) 
 	return &cfg, nil
 }
 
-func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, oldConfig dsmodels.PollConfigSelection) (*selectionConfig, error) {
+func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, optionAmount int, oldConfig dsmodels.PollConfigSelection) (*selectionConfig, error) {
 	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
 		return nil, invalidConfig("method_config has to be valid json")
@@ -128,12 +131,15 @@ func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, 
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
 		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
 	}
+	if max < optionAmount {
+		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+	}
 
 	return &cfg, nil
 }
 
-func selectionConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessage) (string, error) {
-	cfg, err := selectionConfigForCreate(config)
+func selectionConfigCreate(ctx context.Context, tx pgx.Tx, optionAmount int, config json.RawMessage) (string, error) {
+	cfg, err := selectionConfigForCreate(config, optionAmount)
 	if err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
@@ -160,9 +166,9 @@ func selectionConfigCreate(ctx context.Context, tx pgx.Tx, config json.RawMessag
 	return fmt.Sprintf("poll_config_selection/%d", configID), nil
 }
 
-func selectionConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, config json.RawMessage) error {
+func selectionConfigUpdate(ctx context.Context, ds flow.Getter, tx pgx.Tx, id int, pollState dstypes.Poll_State, optionAmount int, config json.RawMessage) error {
 	oldConfig, err := dsmodels.New(ds).PollConfigSelection(id).First(ctx)
-	cfg, err := selectionConfigForUpdate(config, pollState, oldConfig)
+	cfg, err := selectionConfigForUpdate(config, pollState, optionAmount, oldConfig)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}

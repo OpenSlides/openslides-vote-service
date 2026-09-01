@@ -114,7 +114,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 	defer tx.Rollback(ctx)
 
-	configID, err := method.ConfigCreate(ctx, tx, ci.Method, ci.MethodConfig)
+	configID, err := method.ConfigCreate(ctx, tx, ci.Method, len(ci.Options), ci.MethodConfig)
 	if err != nil {
 		return 0, fmt.Errorf("save poll config: %w", err)
 	}
@@ -196,10 +196,10 @@ func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optio
 			}
 
 			sql := `INSERT INTO poll_option_t
-			(poll_id, weight, meeting_user_id)
+			(poll_id, weight, content_object_id)
 			VALUES ($1, $2, $3);`
 
-			if _, err := tx.Exec(ctx, sql, pollID, i+1, meetingUserOption); err != nil {
+			if _, err := tx.Exec(ctx, sql, pollID, i+1, fmt.Sprintf("meeting_user/%d", meetingUserOption)); err != nil {
 				return fmt.Errorf("insert options: %w", err)
 			}
 		default:
@@ -330,8 +330,13 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 			return fmt.Errorf("getting poll method for poll %d: %w", poll.ID, err)
 		}
 
+		optionAmount := len(poll.OptionIDs)
+		if ui.Options != nil {
+			optionAmount = len(ui.Options)
+		}
+
 		if ui.Method == "" || ui.Method == oldMethod {
-			if err := method.ConfigUpdate(ctx, v.flow, tx, poll.ConfigID, poll.State, ui.MethodConfig); err != nil {
+			if err := method.ConfigUpdate(ctx, v.flow, tx, poll.ConfigID, poll.State, optionAmount, ui.MethodConfig); err != nil {
 				return fmt.Errorf("Update poll method for poll %d: %w", pollID, err)
 			}
 		} else {
@@ -339,7 +344,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 				return fmt.Errorf("delete old config: %w", err)
 			}
 
-			newConfigID, err := method.ConfigCreate(ctx, tx, ui.Method, ui.MethodConfig)
+			newConfigID, err := method.ConfigCreate(ctx, tx, ui.Method, optionAmount, ui.MethodConfig)
 			if err != nil {
 				return fmt.Errorf("replace poll config: %w", err)
 			}
@@ -352,6 +357,14 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 
 	if ui.OptionType != "" && len(ui.Options) > 0 {
+		maxOptions, err := method.MaxOptionsAmount(ctx, v.flow, poll.ConfigID)
+		if err != nil {
+			return fmt.Errorf("getting max options amount: %w", err)
+		}
+		if len(ui.Options) < maxOptions {
+			return MessageError(ErrInvalid, "Value of max_options_amount can not be lower the the amount of available options")
+		}
+
 		sql := "DELETE FROM poll_option_t WHERE poll_id = $1"
 		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
 			return fmt.Errorf("deleting existing poll options: %w", err)
