@@ -708,6 +708,15 @@ func fetchBallots(ctx context.Context, tx pgx.Tx, pollID int) ([]method.Ballot, 
 }
 
 func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
+	var state string
+	if err := tx.QueryRow(ctx, "SELECT state FROM poll_t WHERE id = $1", poll.ID).Scan(&state); err != nil {
+		return fmt.Errorf("get anonymized status: %w", err)
+	}
+	if state != "started" {
+		// Only stop started polls. This check is necessary, since pg_notify can be laggy.
+		return nil
+	}
+
 	ballots, err := fetchBallots(ctx, tx, poll.ID)
 	if err != nil {
 		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
