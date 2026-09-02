@@ -1094,6 +1094,32 @@ func TestFinalize(t *testing.T) {
 					t.Errorf("Poll state is %s, expected finished", poll.State)
 				}
 			})
+
+			t.Run("anonymize", func(t *testing.T) {
+				if err := service.Finalize(ctx, 5, 5, false, true); err != nil {
+					t.Fatalf("Stop returned unexpected error: %v", err)
+				}
+
+				ds := dsmodels.New(flow)
+				q := ds.Poll(5)
+				q = q.Preload(q.BallotList())
+				poll, err := q.First(t.Context())
+				if err != nil {
+					t.Fatalf("Error: Getting poll with ballot: %v", err)
+				}
+
+				if len(poll.BallotList) == 0 {
+					t.Fatalf("poll has no ballots")
+				}
+
+				if poll.BallotList[0].Value != `"no"` {
+					t.Errorf("first ballots value is %s, expected \"no\"", poll.BallotList[0].Value)
+				}
+
+				if !poll.Anonymized {
+					t.Errorf("Poll anonymized flag is not set")
+				}
+			})
 		},
 	)
 }

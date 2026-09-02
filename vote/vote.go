@@ -649,16 +649,11 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return fmt.Errorf("select poll %d: %w", pollID, err)
 	}
 
-	ballots, err := fetchBallots(ctx, tx, pollID)
-	if err != nil {
-		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
-	}
-
 	historyMessages := make([]string, 0, 4)
 	historyMessages = append(historyMessages, "poll finalized")
 
 	if poll.State == `started` {
-		if err := v.pollStop(ctx, tx, poll, ballots); err != nil {
+		if err := v.pollStop(ctx, tx, poll); err != nil {
 			return fmt.Errorf("stop poll: %w", err)
 		}
 		historyMessages = append(historyMessages, "stopped")
@@ -672,7 +667,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if anonymize && !poll.Anonymized {
-		if err := v.pollAnonymize(ctx, tx, poll, ballots); err != nil {
+		if err := v.pollAnonymize(ctx, tx, poll); err != nil {
 			return fmt.Errorf("anonymize poll: %w", err)
 		}
 		historyMessages = append(historyMessages, "anonymized")
@@ -712,7 +707,12 @@ func fetchBallots(ctx context.Context, tx pgx.Tx, pollID int) ([]method.Ballot, 
 	return ballots, nil
 }
 
-func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
+	ballots, err := fetchBallots(ctx, tx, poll.ID)
+	if err != nil {
+		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
+	}
+
 	if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
 		return fmt.Errorf("generate entitled meeting users: %w", err)
 	}
@@ -726,7 +726,7 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ball
 			ballots[i].Value = decrypted
 		}
 
-		if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+		if err := rewriteBallots(ctx, tx, poll.ID, ballots); err != nil {
 			return fmt.Errorf("rewrite ballots: %w", err)
 		}
 	}
@@ -757,12 +757,12 @@ func (v *Vote) pollPublish(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) e
 	return nil
 }
 
-func (v *Vote) pollAnonymize(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+func (v *Vote) pollAnonymize(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
 	if poll.Visibility == "named" {
 		return MessageError(ErrNotAllowed, "A named-poll can not be anonymized.")
 	}
 
-	if err := rewriteBallots(ctx, tx, poll, ballots); err != nil {
+	if err := rewriteBallotsPostgres(ctx, tx, poll.ID); err != nil {
 		return fmt.Errorf("rewrite ballots: %w", err)
 	}
 	return nil
@@ -773,9 +773,9 @@ func (v *Vote) pollAnonymize(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll,
 //
 // Its sorts the ballots by its encrypted value. This is deterministic, so
 // the same order will be used every time.
-func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots []method.Ballot) error {
+func rewriteBallots(ctx context.Context, tx pgx.Tx, pollID int, ballots []method.Ballot) error {
 	var anonymized bool
-	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll_t WHERE id = $1", poll.ID).Scan(&anonymized); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll_t WHERE id = $1", pollID).Scan(&anonymized); err != nil {
 		return fmt.Errorf("get anonymized status: %w", err)
 	}
 	if anonymized {
@@ -788,7 +788,7 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 		return ballots[i].Value < ballots[j].Value
 	})
 
-	if _, err := tx.Exec(ctx, "DELETE FROM poll_ballot_t WHERE poll_id = $1", poll.ID); err != nil {
+	if _, err := tx.Exec(ctx, "DELETE FROM poll_ballot_t WHERE poll_id = $1", pollID); err != nil {
 		return fmt.Errorf("deleting old ballots: %w", err)
 	}
 
@@ -801,14 +801,49 @@ func rewriteBallots(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll, ballots 
 				ballots[i].Weight,
 				ballots[i].Split,
 				ballots[i].Value,
-				poll.ID,
+				pollID,
 			}, nil
 		}),
 	); err != nil {
 		return fmt.Errorf("bulk inserting anonymized ballots: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE poll_t SET anonymized = TRUE WHERE id = $1`, poll.ID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE poll_t SET anonymized = TRUE WHERE id = $1`, pollID); err != nil {
+		return fmt.Errorf("set anonymize on poll: %w", err)
+	}
+
+	return nil
+}
+
+// rewriteBallotsPostgres is simular then rewirteBallots, but does the rewrite
+// in postgres.
+func rewriteBallotsPostgres(ctx context.Context, tx pgx.Tx, pollID int) error {
+	var anonymized bool
+	if err := tx.QueryRow(ctx, "SELECT anonymized FROM poll_t WHERE id = $1", pollID).Scan(&anonymized); err != nil {
+		return fmt.Errorf("get anonymized status: %w", err)
+	}
+	if anonymized {
+		// Do not anonymize a poll twice. This can happen, when a secret poll
+		// gets finalized with the anonymize flag.
+		return nil
+	}
+
+	query := `
+		WITH deleted_ballots AS (
+			DELETE FROM poll_ballot_t
+			WHERE poll_id = $1
+			RETURNING weight, split, value, poll_id
+		)
+		INSERT INTO poll_ballot_t (weight, split, value, poll_id)
+		SELECT weight, split, value, poll_id
+		FROM deleted_ballots
+		ORDER BY value ASC;`
+
+	if _, err := tx.Exec(ctx, query, pollID); err != nil {
+		return fmt.Errorf("rewrite and anonymize ballots: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE poll_t SET anonymized = TRUE WHERE id = $1`, pollID); err != nil {
 		return fmt.Errorf("set anonymize on poll: %w", err)
 	}
 
