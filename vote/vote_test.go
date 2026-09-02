@@ -2162,7 +2162,7 @@ func withData(t *testing.T, pg *pgtest.PostgresTest, data string, fn func(servic
 		t.Fatalf("Error: inserting data: %v", err)
 	}
 
-	flow, err := pg.Flow()
+	flow, err := pg.Flow(ctx)
 	if err != nil {
 		t.Fatalf("Error getting flow: %v", err)
 	}

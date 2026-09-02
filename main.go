@@ -92,7 +92,7 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	messageBus := messageBusRedis.New(lookup)
 
 	// Datastore Service.
-	database, dbPool, err := vote.Flow(lookup)
+	database, initVote, dbPool, err := vote.Flow(lookup)
 	if err != nil {
 		return nil, fmt.Errorf("init database: %w", err)
 	}
@@ -111,6 +111,10 @@ func initService(lookup environment.Environmenter) (func(context.Context) error,
 	backgroundTasks = append(backgroundTasks, voteBackground)
 
 	service := func(ctx context.Context) error {
+		if err := initVote(ctx); err != nil {
+			return fmt.Errorf("init vote service: %w", err)
+		}
+
 		for _, bg := range backgroundTasks {
 			go bg(ctx, handleError)
 		}
