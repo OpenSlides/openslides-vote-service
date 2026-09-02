@@ -174,38 +174,50 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 }
 
 func saveOptions(ctx context.Context, tx pgx.Tx, pollID int, oType string, optionList []json.RawMessage) error {
-	for i, option := range optionList {
-		switch oType {
-		case "text":
-			var textOption string
-			if err := json.Unmarshal(option, &textOption); err != nil {
+	if len(optionList) == 0 {
+		return nil
+	}
+
+	weights := make([]int, len(optionList))
+	for i := range optionList {
+		weights[i] = i + 1
+	}
+
+	switch oType {
+	case "text":
+		textOptions := make([]string, len(optionList))
+		for i, option := range optionList {
+			if err := json.Unmarshal(option, &textOptions[i]); err != nil {
 				return errors.Join(fmt.Errorf("decode text option: %w", err), MessageError(ErrInvalid, "Invalid option"))
 			}
+		}
 
-			sql := `INSERT INTO poll_option_t
-				(poll_id, weight, text)
-				VALUES ($1, $2, $3);`
+		sql := `INSERT INTO poll_option_t (poll_id, weight, text)
+				SELECT $1, unnest($2::int[]), unnest($3::text[]);`
+		if _, err := tx.Exec(ctx, sql, pollID, weights, textOptions); err != nil {
+			return fmt.Errorf("insert text options: %w", err)
+		}
 
-			if _, err := tx.Exec(ctx, sql, pollID, i+1, textOption); err != nil {
-				return fmt.Errorf("insert options: %w", err)
-			}
-		case "meeting_user":
+	case "meeting_user":
+		contentObjectIDs := make([]string, len(optionList))
+		for i, option := range optionList {
 			var meetingUserOption int
 			if err := json.Unmarshal(option, &meetingUserOption); err != nil {
 				return errors.Join(fmt.Errorf("decode meeting_user option: %w", err), MessageError(ErrInvalid, "Invalid option"))
 			}
-
-			sql := `INSERT INTO poll_option_t
-			(poll_id, weight, content_object_id)
-			VALUES ($1, $2, $3);`
-
-			if _, err := tx.Exec(ctx, sql, pollID, i+1, fmt.Sprintf("meeting_user/%d", meetingUserOption)); err != nil {
-				return fmt.Errorf("insert options: %w", err)
-			}
-		default:
-			return MessageErrorf(ErrInvalid, "Invalid option_type %s", oType)
+			contentObjectIDs[i] = fmt.Sprintf("meeting_user/%d", meetingUserOption)
 		}
+
+		sql := `INSERT INTO poll_option_t (poll_id, weight, content_object_id)
+				SELECT $1, unnest($2::int[]), unnest($3::text[]);`
+		if _, err := tx.Exec(ctx, sql, pollID, weights, contentObjectIDs); err != nil {
+			return fmt.Errorf("insert meeting_user options: %w", err)
+		}
+
+	default:
+		return MessageErrorf(ErrInvalid, "Invalid option_type %s", oType)
 	}
+
 	return nil
 }
 
@@ -317,11 +329,47 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 	}
 	defer tx.Rollback(ctx)
 
-	sql, values := ui.query(pollID)
-	if len(values) > 0 {
-		if _, err := tx.Exec(ctx, sql, values...); err != nil {
-			return fmt.Errorf("update poll: %w", err)
-		}
+	var title *string
+	if ui.Title != "" {
+		title = &ui.Title
+	}
+
+	var visibility *string
+	if ui.Visibility != "" {
+		visibility = &ui.Visibility
+	}
+
+	var liveVotingEnabled *bool
+	if v, ok := ui.LiveVotingEnabled.Value(); ok {
+		liveVotingEnabled = &v
+	}
+
+	var result *string
+	if ui.Result != nil {
+		v := string(ui.Result)
+		result = &v
+	}
+
+	var allowVoteSplit *bool
+	if v, ok := ui.AllowVoteSplit.Value(); ok {
+		allowVoteSplit = &v
+	}
+
+	sql := `
+	UPDATE poll_t
+	SET
+		title = COALESCE($2, title),
+		visibility = COALESCE($3, visibility),
+		live_voting_enabled = COALESCE($4, live_voting_enabled),
+		result = COALESCE($5, result),
+		allow_vote_split = COALESCE($6, allow_vote_split)
+	WHERE id = $1;`
+	res, err := tx.Exec(ctx, sql, pollID, title, visibility, liveVotingEnabled, result, allowVoteSplit)
+	if err != nil {
+		return fmt.Errorf("update poll: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("poll %d not found", pollID)
 	}
 
 	if ui.Method != "" || ui.MethodConfig != nil {
@@ -383,8 +431,7 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 
 		groupSQL := `
         INSERT INTO nm_group_poll_ids_poll_t (group_id, poll_id)
-        SELECT unnest($1::int[]), $2
-    `
+        SELECT unnest($1::int[]), $2`
 
 		if _, err := tx.Exec(ctx, groupSQL, ui.EntitledGroupIDs, poll.ID); err != nil {
 			return fmt.Errorf("insert group-poll relations: %w", err)
@@ -473,54 +520,6 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 	return ui, nil
 }
 
-func (ui updateInput) query(pollID int) (string, []any) {
-	var setParts []string
-	var args []any
-	argIndex := 1
-
-	if ui.Title != "" {
-		setParts = append(setParts, fmt.Sprintf("title = $%d", argIndex))
-		args = append(args, ui.Title)
-		argIndex++
-	}
-
-	if ui.Visibility != "" {
-		setParts = append(setParts, fmt.Sprintf("visibility = $%d", argIndex))
-		args = append(args, ui.Visibility)
-		argIndex++
-	}
-
-	if liveVoting, hasValue := ui.LiveVotingEnabled.Value(); hasValue {
-		setParts = append(setParts, fmt.Sprintf("live_voting_enabled = $%d", argIndex))
-		args = append(args, liveVoting)
-		argIndex++
-	}
-
-	if ui.Result != nil {
-		setParts = append(setParts, fmt.Sprintf("result = $%d", argIndex))
-		args = append(args, string(ui.Result))
-		argIndex++
-	}
-
-	if allowVoteSplit, hasValue := ui.AllowVoteSplit.Value(); hasValue {
-		setParts = append(setParts, fmt.Sprintf("allow_vote_split = $%d", argIndex))
-		args = append(args, allowVoteSplit)
-		argIndex++
-	}
-
-	if len(setParts) == 0 {
-		return "", nil
-	}
-
-	query := fmt.Sprintf("UPDATE poll_t SET %s WHERE id = $%d",
-		strings.Join(setParts, ", "),
-		argIndex)
-
-	args = append(args, pollID)
-
-	return query, args
-}
-
 // Delete removes a poll.
 func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error {
 	poll, err := fetchPoll(ctx, v.flow, pollID)
@@ -542,18 +541,19 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 		return fmt.Errorf("delete method: %w", err)
 	}
 
-	deleteStatements := []string{
-		`DELETE FROM poll_option_t WHERE poll_id = $1`,
-		`DELETE FROM poll_ballot_t WHERE poll_id = $1`,
-		`DELETE FROM poll_ballot_user_t WHERE poll_id = $1`,
-		`DELETE FROM projection_t WHERE content_object_id_poll_id = $1`,
-		`DELETE FROM poll_entitled_user_t WHERE poll_id = $1`,
-		`DELETE FROM poll_t WHERE id = $1`,
-	}
-	for _, sql := range deleteStatements {
-		if _, err := tx.Exec(ctx, sql, pollID); err != nil {
-			return fmt.Errorf("delete related data with %s: %w", sql, err)
-		}
+	// TODO: This should be done in the schma with on_delete: CASCASE
+	// See https://github.com/OpenSlides/openslides-meta/issues/220
+	batch := &pgx.Batch{}
+	batch.Queue(`DELETE FROM poll_option_t WHERE poll_id = $1`, pollID)
+	batch.Queue(`DELETE FROM poll_ballot_t WHERE poll_id = $1`, pollID)
+	batch.Queue(`DELETE FROM poll_ballot_user_t WHERE poll_id = $1`, pollID)
+	batch.Queue(`DELETE FROM projection_t WHERE content_object_id_poll_id = $1`, pollID)
+	batch.Queue(`DELETE FROM poll_entitled_user_t WHERE poll_id = $1`, pollID)
+	batch.Queue(`DELETE FROM poll_t WHERE id = $1`, pollID)
+
+	results := tx.SendBatch(ctx, batch)
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("deleting poll related enties: %w", err)
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll deleted"); err != nil {
@@ -600,7 +600,7 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 	}
 
 	if commandTag.RowsAffected() != 1 {
-		return fmt.Errorf("poll %d not found or not in 'created' state", pollID)
+		return fmt.Errorf("poll %d not found or already in 'finished' state", pollID)
 	}
 
 	if err := history.OneEntry(ctx, tx, requestUserID, poll.ContentObjectID, poll.MeetingID, "poll started"); err != nil {
@@ -927,16 +927,6 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 	}
 	defer tx.Rollback(ctx)
 
-	var exists bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM poll_t WHERE id = $1)`, pollID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("check poll existence: %w", err)
-	}
-
-	if !exists {
-		return MessageErrorf(ErrInvalid, "Poll with id %d not found", pollID)
-	}
-
 	deleteBallotQuery := `DELETE FROM poll_ballot_t WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteBallotQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
@@ -952,7 +942,8 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		state = "finished"
 	}
 
-	updateQuery := `UPDATE poll_t SET state = $1, published = false, result = '', anonymized = FALSE WHERE id = $2`
+	// Reset state, published and result. published is always false on started, even on live_voting.
+	updateQuery := `UPDATE poll_t SET state = $1, published = FALSE, result = '', anonymized = FALSE WHERE id = $2`
 	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
 		return fmt.Errorf("reset poll state: %w", err)
 	}
@@ -1046,82 +1037,51 @@ func (v *Vote) Vote(ctx context.Context, pollID, requestUserID int, r io.Reader)
 		}
 	}
 
-	sql := `WITH
-		poll_check AS (
-			SELECT
-				id,
-				state,
-				CASE
-					WHEN id IS NULL THEN 'POLL_NOT_FOUND'
-					WHEN state != 'started' THEN 'POLL_NOT_STARTED'
-					ELSE 'POLL_VALID'
-				END as poll_status
-			FROM poll_t
-			WHERE id = $1
-			FOR KEY SHARE
-		),
-		ballot_check AS (
-			SELECT
-				COUNT(*) as existing_ballots,
-				CASE
-					WHEN COUNT(*) > 0 THEN 'USER_HAS_VOTED_BEFORE'
-					ELSE 'BALLOT_OK'
-				END as ballot_status
-			FROM poll_ballot_user_t
-			WHERE poll_id = $1 AND represented_meeting_user_id = $5
-		),
-		insert_ballot_user AS (
-			INSERT INTO poll_ballot_user_t (
-				poll_id,
-				acting_meeting_user_id,
-				represented_meeting_user_id
-			)
-			SELECT
-				$1,
-				$4,
-				$5
-			FROM poll_check p
-			CROSS JOIN ballot_check b
-			LEFT JOIN meeting_user_t amu ON amu.id = $4
-			LEFT JOIN meeting_user_t rmu ON rmu.id = $5
-			WHERE p.poll_status = 'POLL_VALID' AND b.ballot_status = 'BALLOT_OK'
-			RETURNING id
-		),
-		insert_ballot AS (
-			INSERT INTO poll_ballot_t (poll_id, value, weight, poll_ballot_user_id)
-			SELECT $1, $2, $3, bu.id
-			FROM insert_ballot_user bu
-			RETURNING id
-		)
-		SELECT
-			CASE
-				WHEN i.id IS NOT NULL THEN 'VALID'
-				WHEN p.poll_status != 'POLL_VALID' THEN p.poll_status
-				WHEN b.ballot_status != 'BALLOT_OK' THEN b.ballot_status
-				ELSE 'UNKNOWN_ERROR'
-			END as status
-		FROM poll_check p, ballot_check b
-		LEFT JOIN insert_ballot i ON true;`
+	tx, err := v.querier.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	var status string
-	if err := v.querier.QueryRow(ctx, sql, pollID, ballotValue, weight, actingMeetingUserID, representedMeetingUserID).Scan(
-		&status,
+	var state string
+	if err := tx.QueryRow(ctx, "SELECT state FROM poll_t WHERE id = $1 FOR KEY SHARE", pollID).Scan(&state); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
+		}
+		return fmt.Errorf("get poll state: %w", err)
+	}
+
+	if state != "started" {
+		return MessageErrorf(ErrNotStarted, "Poll %d is not started", pollID)
+	}
+
+	// On the poll_ballot_user_t table, there is a constrain
+	// UNIQUE (poll_id, represented_meeting_user_id)
+	insertBallotUserSQL := `
+    INSERT INTO poll_ballot_user_t (poll_id, acting_meeting_user_id, represented_meeting_user_id)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (poll_id, represented_meeting_user_id) DO NOTHING
+    RETURNING id`
+	var ballotUserID int
+	if err := tx.QueryRow(ctx, insertBallotUserSQL, pollID, actingMeetingUserID, representedMeetingUserID).Scan(&ballotUserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MessageErrorf(ErrDoubleVote, "You can not vote again on poll %d", pollID)
+		}
+		return fmt.Errorf("insert ballot user: %w", err)
+	}
+
+	insertBallotSQL := `INSERT INTO poll_ballot_t (poll_id, value, weight, poll_ballot_user_id) VALUES ($1, $2, $3, $4)`
+	if _, err := tx.Exec(ctx, insertBallotSQL,
+		pollID, ballotValue, weight, ballotUserID,
 	); err != nil {
 		return fmt.Errorf("insert ballot: %w", err)
 	}
 
-	switch status {
-	case "VALID":
-		return nil
-	case "POLL_NOT_FOUND":
-		return MessageErrorf(ErrNotExists, "Poll %d does not exist", pollID)
-	case "POLL_NOT_STARTED":
-		return MessageErrorf(ErrNotStarted, "Poll %d is not started", pollID)
-	case "USER_HAS_VOTED_BEFORE":
-		return MessageErrorf(ErrDoubleVote, "You can not vote again on poll %d", pollID)
-	default:
-		return fmt.Errorf("unknown vote sql status %s", status)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
+
+	return nil
 }
 
 // encryptBallot encrypts the given value with AES using the key for secret polls.
