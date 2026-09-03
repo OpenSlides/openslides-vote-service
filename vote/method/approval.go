@@ -56,7 +56,7 @@ type approvalConfig struct {
 func approvalConfigForCreate(config json.RawMessage) (*approvalConfig, error) {
 	var cfg approvalConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Method_config has to be valid json")
 	}
 
 	if cfg.AllowAbstain == nil {
@@ -65,7 +65,7 @@ func approvalConfigForCreate(config json.RawMessage) (*approvalConfig, error) {
 	}
 
 	if cfg.OneHundredPercentBase == nil {
-		return nil, invalidConfig("field onehundred_percent_base is required")
+		return nil, invalidConfig("Field onehundred_percent_base is required")
 	}
 
 	if cfg.RequiredMajority == nil {
@@ -79,11 +79,11 @@ func approvalConfigForCreate(config json.RawMessage) (*approvalConfig, error) {
 func approvalConfigForUpdate(config json.RawMessage, state dstypes.Poll_State) (*approvalConfig, error) {
 	var cfg approvalConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Method_config has to be valid json")
 	}
 
 	if state != dstypes.Poll_StateCreated && cfg.AllowAbstain != nil {
-		return nil, invalidConfig("field allow_abstain is not allowed to update in poll state %s", state)
+		return nil, invalidConfig("Field allow_abstain is not allowed to update in poll state %s", state)
 	}
 
 	return &cfg, nil

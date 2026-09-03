@@ -67,7 +67,7 @@ type selectionConfig struct {
 func selectionConfigForCreate(config json.RawMessage, optionAmount int) (*selectionConfig, error) {
 	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Method_config has to be valid json")
 	}
 
 	if cfg.AllowNota == nil {
@@ -83,16 +83,16 @@ func selectionConfigForCreate(config json.RawMessage, optionAmount int) (*select
 		cfg.MaxOptionsAmount = new(int)
 	}
 	if *cfg.MaxOptionsAmount != 0 && *cfg.MaxOptionsAmount < optionAmount {
-		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
 	}
 	if cfg.MinOptionsAmount == nil {
 		cfg.MinOptionsAmount = new(int)
 	}
 	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
-		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
+		return nil, invalidConfig("Value of min_options_amount has to be lower then max_options_amount")
 	}
 	if cfg.OneHundredPercentBase == nil {
-		return nil, invalidConfig("field onehundred_percent_base is required")
+		return nil, invalidConfig("Field onehundred_percent_base is required")
 	}
 	if cfg.RequiredMajority == nil {
 		v := "no_majority"
@@ -105,18 +105,18 @@ func selectionConfigForCreate(config json.RawMessage, optionAmount int) (*select
 func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, optionAmount int, oldConfig dsmodels.PollConfigSelection) (*selectionConfig, error) {
 	var cfg selectionConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Method_config has to be valid json")
 	}
 
 	if state != dstypes.Poll_StateCreated {
 		if cfg.AllowNota != nil {
-			return nil, invalidConfig("field allow_nota is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field allow_nota is not allowed to update in poll state %s", state)
 		}
 		if cfg.MaxOptionsAmount != nil {
-			return nil, invalidConfig("field max_options_amount is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field max_options_amount is not allowed to update in poll state %s", state)
 		}
 		if cfg.MinOptionsAmount != nil {
-			return nil, invalidConfig("field min_options_amount is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field min_options_amount is not allowed to update in poll state %s", state)
 		}
 	}
 
@@ -129,10 +129,10 @@ func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, 
 		max = *cfg.MaxOptionsAmount
 	}
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
-		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
+		return nil, invalidConfig("Field min_options_amount must be less than or equal to max_options_amount")
 	}
 	if max != 0 && max < optionAmount {
-		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
 	}
 
 	return &cfg, nil

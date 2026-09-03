@@ -69,7 +69,7 @@ type ratingScoreConfig struct {
 func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScoreConfig, error) {
 	var cfg ratingScoreConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Field method_config has to be valid json")
 	}
 
 	if cfg.MaxOptionsAmount == nil {
@@ -79,10 +79,10 @@ func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScor
 		cfg.MinOptionsAmount = new(int)
 	}
 	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
-		return nil, invalidConfig("value of min_options_amount has to be lower then max_options_amount")
+		return nil, invalidConfig("Value of min_options_amount has to be lower then max_options_amount")
 	}
 	if *cfg.MaxOptionsAmount < optionAmount {
-		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
 	}
 	if cfg.MaxVotesPerOption == nil {
 		cfg.MaxVotesPerOption = new(int)
@@ -94,10 +94,10 @@ func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScor
 		cfg.MinVoteSum = new(int)
 	}
 	if *cfg.MinVoteSum > *cfg.MaxVoteSum {
-		return nil, invalidConfig("value of min_vote_sum has to be lower then max_vote_sum")
+		return nil, invalidConfig("Value of min_vote_sum has to be lower then max_vote_sum")
 	}
 	if cfg.OneHundredPercentBase == nil {
-		return nil, invalidConfig("field onehundred_percent_base is required")
+		return nil, invalidConfig("Field onehundred_percent_base is required")
 	}
 	if cfg.RequiredMajority == nil {
 		v := "no_majority"
@@ -109,24 +109,24 @@ func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScor
 func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, optionAmount int, oldConfig dsmodels.PollConfigRatingScore) (*ratingScoreConfig, error) {
 	var cfg ratingScoreConfig
 	if err := json.Unmarshal(config, &cfg); err != nil {
-		return nil, invalidConfig("method_config has to be valid json")
+		return nil, invalidConfig("Method_config has to be valid json")
 	}
 
 	if state != dstypes.Poll_StateCreated {
 		if cfg.MaxOptionsAmount != nil {
-			return nil, invalidConfig("field max_options_amount is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field max_options_amount is not allowed to update in poll state %s", state)
 		}
 		if cfg.MinOptionsAmount != nil {
-			return nil, invalidConfig("field min_options_amount is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field min_options_amount is not allowed to update in poll state %s", state)
 		}
 		if cfg.MaxVotesPerOption != nil {
-			return nil, invalidConfig("field max_votes_per_option is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field max_votes_per_option is not allowed to update in poll state %s", state)
 		}
 		if cfg.MaxVoteSum != nil {
-			return nil, invalidConfig("field max_vote_sum is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field max_vote_sum is not allowed to update in poll state %s", state)
 		}
 		if cfg.MinVoteSum != nil {
-			return nil, invalidConfig("field min_vote_sum is not allowed to update in poll state %s", state)
+			return nil, invalidConfig("Field min_vote_sum is not allowed to update in poll state %s", state)
 		}
 	}
 
@@ -139,10 +139,10 @@ func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State
 		max = *cfg.MaxOptionsAmount
 	}
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
-		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
+		return nil, invalidConfig("Field min_options_amount must be less than or equal to max_options_amount")
 	}
 	if max < optionAmount {
-		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
+		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
 	}
 
 	min = oldConfig.MinVoteSum
@@ -154,7 +154,7 @@ func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State
 		max = *cfg.MaxVoteSum
 	}
 	if (cfg.MinVoteSum != nil || cfg.MaxVoteSum != nil) && min > max {
-		return nil, invalidConfig("field min_vote_sum must be less than or equal to max_vote_sum")
+		return nil, invalidConfig("Field min_vote_sum must be less than or equal to max_vote_sum")
 	}
 
 	return &cfg, nil
