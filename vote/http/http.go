@@ -9,26 +9,25 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/OpenSlides/openslides-go/environment"
-	"github.com/OpenSlides/openslides-vote-service/log"
 	"github.com/OpenSlides/openslides-vote-service/vote"
 )
 
-var envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which the service listen on.")
+var envVotePort = environment.NewVariable("VOTE_PORT", "9013", "Port on which the service listens on.")
 
 // Server can start the service on a port.
 type Server struct {
-	Addr string
-	lst  net.Listener
+	Addr   string
+	lst    net.Listener
+	logger logger
 }
 
 // New initializes a new Server.
-func New(lookup environment.Environmenter) Server {
+func New(lookup environment.Environmenter, logger logger) Server {
 	return Server{
-		Addr: ":" + envVotePort.Value(lookup),
+		Addr:   ":" + envVotePort.Value(lookup),
+		logger: logger,
 	}
 }
 
@@ -48,12 +47,7 @@ func (s *Server) StartListener() error {
 
 // Run starts the http service.
 func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote) error {
-	ticketProvider := func() (<-chan time.Time, func()) {
-		ticker := time.NewTicker(time.Second)
-		return ticker.C, ticker.Stop
-	}
-
-	mux := registerHandlers(service, auth, ticketProvider)
+	mux := registerHandlers(service, auth, s.logger)
 
 	srv := &http.Server{
 		Handler:     mux,
@@ -77,22 +71,22 @@ func (s *Server) Run(ctx context.Context, auth authenticater, service *vote.Vote
 		}
 	}
 
-	log.Info("Listen on %s\n", s.Addr)
+	s.logger("Listen on %s\n", s.Addr)
 	if err := srv.Serve(s.lst); err != http.ErrServerClosed {
-		return fmt.Errorf("HTTP Server failed: %v", err)
+		return fmt.Errorf("HTTP Server failed: %w", err)
 	}
 
 	return <-wait
 }
 
 type voteService interface {
+	creater
+	updater
+	deleter
 	starter
-	stopper
-	clearer
-	clearAller
-	allLiveVotes
+	finalizer
+	reseter
 	voter
-	haveIvoteder
 }
 
 type authenticater interface {
@@ -100,118 +94,163 @@ type authenticater interface {
 	FromContext(context.Context) int
 }
 
-func registerHandlers(service voteService, auth authenticater, ticketProvider func() (<-chan time.Time, func())) *http.ServeMux {
-	const (
-		internal = "/internal/vote"
-		external = "/system/vote"
-	)
+func registerHandlers(service voteService, auth authenticater, logger logger) *http.ServeMux {
+	const base = "/system/vote"
+	const basePoll = base + "/poll"
 
+	resolveError := getResolveError(logger)
 	mux := http.NewServeMux()
-
-	mux.Handle(internal+"/start", handleInternal(handleStart(service)))
-	mux.Handle(internal+"/stop", handleInternal(handleStop(service)))
-	mux.Handle(internal+"/clear", handleInternal(handleClear(service)))
-	mux.Handle(internal+"/clear_all", handleInternal(handleClearAll(service)))
-	mux.Handle(internal+"/live_votes", handleInternal(handleAllVotedIDs(service, ticketProvider)))
-	mux.Handle(external+"", handleExternal(handleVote(service, auth)))
-	mux.Handle(external+"/voted", handleExternal(handleVoted(service, auth)))
-	mux.Handle(external+"/health", handleExternal(handleHealth()))
-
+	mux.Handle("POST "+basePoll+"/", resolveError(handleCreate(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}", resolveError(handleUpdate(service, auth)))
+	mux.Handle("DELETE "+basePoll+"/{poll_id}", resolveError(handleDelete(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/start", resolveError(handleStart(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/finalize", resolveError(handleFinalize(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/reset", resolveError(handleReset(service, auth)))
+	mux.Handle("POST "+basePoll+"/{poll_id}/vote", resolveError(handleVote(service, auth)))
+	mux.Handle("GET "+base+"/health", resolveError(handleHealth()))
 	return mux
 }
 
-type starter interface {
-	Start(ctx context.Context, pollID int) error
+type creater interface {
+	Create(ctx context.Context, requestUserID int, r io.Reader) (int, error)
 }
 
-func handleStart(start starter) HandlerFunc {
+func handleCreate(create creater, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving start request")
-		w.Header().Set("Content-Type", "application/json")
-
-		id, err := pollID(r)
+		ctx, uid, err := prepareRequest(w, r, auth)
 		if err != nil {
-			return vote.WrapError(vote.ErrInvalid, err)
+			return fmt.Errorf("prepare request: %w", err)
 		}
 
-		return start.Start(r.Context(), id)
-	}
-}
-
-// stopper stops a poll. It sets the state of the poll, so that no other user
-// can vote. It writes the vote results to the writer.
-type stopper interface {
-	Stop(ctx context.Context, pollID int) (vote.StopResult, error)
-}
-
-func handleStop(stop stopper) HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving stop request")
-		w.Header().Set("Content-Type", "application/json")
-
-		id, err := pollID(r)
+		pollID, err := create.Create(ctx, uid, r.Body)
 		if err != nil {
-			return vote.WrapError(vote.ErrInvalid, err)
+			return fmt.Errorf("create: %w", err)
 		}
 
-		result, err := stop.Stop(r.Context(), id)
-		if err != nil {
-			return err
+		result := struct {
+			PollID int `json:"poll_id"`
+		}{pollID}
+
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			return fmt.Errorf("encoding and sending poll id: %w", err)
 		}
 
-		// Convert vote objects to json.RawMessage
-		encodableObjects := make([]json.RawMessage, len(result.Votes))
-		for i := range result.Votes {
-			encodableObjects[i] = result.Votes[i]
-		}
-
-		if result.UserIDs == nil {
-			result.UserIDs = []int{}
-		}
-
-		out := struct {
-			Votes []json.RawMessage `json:"votes"`
-			Users []int             `json:"user_ids"`
-		}{
-			encodableObjects,
-			result.UserIDs,
-		}
-
-		if err := json.NewEncoder(w).Encode(out); err != nil {
-			return fmt.Errorf("encoding and sending objects: %w", err)
-		}
 		return nil
 	}
 }
 
-type clearer interface {
-	Clear(ctx context.Context, pollID int) error
+type updater interface {
+	Update(ctx context.Context, pollID int, requestUserID int, r io.Reader) error
 }
 
-func handleClear(clear clearer) HandlerFunc {
+func handleUpdate(update updater, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving clear request")
-		w.Header().Set("Content-Type", "application/json")
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := update.Update(ctx, pollID, uid, r.Body); err != nil {
+			return fmt.Errorf("update: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type deleter interface {
+	Delete(ctx context.Context, pollID int, requestUserID int) error
+}
+
+func handleDelete(delete deleter, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := delete.Delete(ctx, pollID, uid); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+
+		return nil
+	}
+}
+
+type starter interface {
+	Start(ctx context.Context, pollID int, requestUserID int) error
+}
+
+func handleStart(start starter, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
 
 		id, err := pollID(r)
 		if err != nil {
 			return vote.WrapError(vote.ErrInvalid, err)
 		}
 
-		return clear.Clear(r.Context(), id)
+		return start.Start(ctx, id, uid)
 	}
 }
 
-type clearAller interface {
-	ClearAll(ctx context.Context) error
+type finalizer interface {
+	Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error
 }
 
-func handleClearAll(clear clearAller) HandlerFunc {
+func handleFinalize(finalize finalizer, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving clear all request")
-		w.Header().Set("Content-Type", "application/json")
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
 
-		return clear.ClearAll(r.Context())
+		id, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		publish := r.URL.Query().Has("publish")
+		anonymize := r.URL.Query().Has("anonymize")
+
+		return finalize.Finalize(ctx, id, uid, publish, anonymize)
+	}
+}
+
+type reseter interface {
+	Reset(ctx context.Context, pollID int, requestUserID int) error
+}
+
+func handleReset(reset reseter, auth authenticater) HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ctx, uid, err := prepareRequest(w, r, auth)
+		if err != nil {
+			return fmt.Errorf("prepare request: %w", err)
+		}
+
+		pollID, err := pollID(r)
+		if err != nil {
+			return vote.WrapError(vote.ErrInvalid, err)
+		}
+
+		if err := reset.Reset(ctx, pollID, uid); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+
+		return nil
 	}
 }
 
@@ -221,17 +260,9 @@ type voter interface {
 
 func handleVote(service voter, auth authenticater) HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving vote request")
-		w.Header().Set("Content-Type", "application/json")
-
-		ctx, err := auth.Authenticate(w, r)
+		ctx, uid, err := prepareRequest(w, r, auth)
 		if err != nil {
-			return err
-		}
-
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
+			return fmt.Errorf("prepare request: %w", err)
 		}
 
 		id, err := pollID(r)
@@ -240,128 +271,6 @@ func handleVote(service voter, auth authenticater) HandlerFunc {
 		}
 
 		return service.Vote(ctx, id, uid, r.Body)
-	}
-}
-
-type haveIvoteder interface {
-	Voted(ctx context.Context, pollIDs []int, requestUser int) (map[int][]int, error)
-}
-
-func handleVoted(voted haveIvoteder, auth authenticater) HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving has voted request")
-		w.Header().Set("Content-Type", "application/json")
-
-		ctx, err := auth.Authenticate(w, r)
-		if err != nil {
-			return err
-		}
-
-		uid := auth.FromContext(ctx)
-		if uid == 0 {
-			return statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not vote"))
-		}
-
-		pollIDs, err := pollsID(r)
-		if err != nil {
-			return vote.WrapError(vote.ErrInvalid, err)
-		}
-
-		voted, err := voted.Voted(ctx, pollIDs, uid)
-		if err != nil {
-			return err
-		}
-
-		if err := json.NewEncoder(w).Encode(voted); err != nil {
-			return fmt.Errorf("encoding and sending objects: %w", err)
-		}
-
-		return nil
-	}
-}
-
-type allLiveVotes interface {
-	AllLiveVotes(ctx context.Context) map[int]map[int]*string
-}
-
-// handleAllVotedIDs opens an http connection, that the server never closes.
-//
-// When the connection is established, it returns for all active polls the votes
-// of each user.
-//
-// Every second, it checks for new votes or polls. If there is new data, it
-// returns an dictonary from poll id to user id to there vote.
-//
-// If an poll is not active anymore, it returns a `null`-value for it.
-//
-// This system can only add users. It can fail, if a poll is resettet and
-// started in less then a second.
-func handleAllVotedIDs(voteCounter allLiveVotes, eventer func() (<-chan time.Time, func())) HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) error {
-		log.Info("Receiving all voted ids")
-		w.Header().Set("Content-Type", "application/json")
-
-		encoder := json.NewEncoder(w)
-
-		event, cancel := eventer()
-		defer cancel()
-
-		var voterMemory map[int]map[int]*string
-		firstData := true
-		for {
-			newLiveVotes := voteCounter.AllLiveVotes(r.Context())
-			diff := make(map[int]map[int]*string)
-
-			if voterMemory == nil {
-				voterMemory = newLiveVotes
-				diff = newLiveVotes
-			} else {
-				for pollID, userID2Vote := range newLiveVotes {
-					if oldUserID2Vote, ok := voterMemory[pollID]; !ok {
-						voterMemory[pollID] = userID2Vote
-						diff[pollID] = userID2Vote
-					} else {
-
-						for newUserID, vote := range userID2Vote {
-							if _, contains := oldUserID2Vote[newUserID]; !contains {
-								if _, ok := diff[pollID]; !ok {
-									diff[pollID] = make(map[int]*string)
-								}
-								voterMemory[pollID][newUserID] = vote
-								diff[pollID][newUserID] = vote
-							}
-						}
-					}
-				}
-				for pollID := range voterMemory {
-					if _, ok := newLiveVotes[pollID]; !ok {
-						delete(voterMemory, pollID)
-						diff[pollID] = nil
-					}
-				}
-			}
-
-			if firstData || len(diff) > 0 {
-				firstData = false
-				if err := encoder.Encode(diff); err != nil {
-					return err
-				}
-			}
-
-			// This could be in the if(count) block, but the Flush is used
-			// in the tests and has to be called, even when there is no data
-			// to sent.
-			w.(http.Flusher).Flush()
-
-			select {
-			case _, ok := <-event:
-				if !ok {
-					return nil
-				}
-			case <-r.Context().Done():
-				return nil
-			}
-		}
 	}
 }
 
@@ -422,10 +331,7 @@ func HealthClient(ctx context.Context, useHTTPS bool, host, port string, insecur
 }
 
 func pollID(r *http.Request) (int, error) {
-	rawID := r.URL.Query().Get("id")
-	if rawID == "" {
-		return 0, fmt.Errorf("no id argument provided")
-	}
+	rawID := r.PathValue("poll_id")
 
 	id, err := strconv.Atoi(rawID)
 	if err != nil {
@@ -433,24 +339,6 @@ func pollID(r *http.Request) (int, error) {
 	}
 
 	return id, nil
-}
-
-func pollsID(r *http.Request) ([]int, error) {
-	rawIDs := strings.Split(r.URL.Query().Get("ids"), ",")
-	if len(rawIDs) == 0 {
-		return nil, fmt.Errorf("no ids argument provided")
-	}
-
-	ids := make([]int, len(rawIDs))
-	for i, rawID := range rawIDs {
-		id, err := strconv.Atoi(rawID)
-		if err != nil {
-			return nil, fmt.Errorf("%dth id invalid. Expected int, got %s", i, rawID)
-		}
-		ids[i] = id
-	}
-
-	return ids, nil
 }
 
 // Handler is like http.Handler but returns an error
@@ -463,4 +351,25 @@ type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return f(w, r)
+}
+
+// prepare Requests bundles the functionality needed for all handlers.
+//
+// - sets the header Content-Type to application/json
+// - authenticates the user
+// - returns the authenticated ctx and the request user id
+func prepareRequest(w http.ResponseWriter, r *http.Request, auth authenticater) (context.Context, int, error) {
+	w.Header().Set("Content-Type", "application/json")
+
+	ctx, err := auth.Authenticate(w, r)
+	if err != nil {
+		return nil, 0, fmt.Errorf("authenticate request user: %w", err)
+	}
+
+	uid := auth.FromContext(ctx)
+	if uid == 0 {
+		return nil, 0, statusCode(401, vote.MessageError(vote.ErrNotAllowed, "Anonymous user can not use the vote service"))
+	}
+
+	return ctx, uid, nil
 }
