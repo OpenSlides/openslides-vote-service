@@ -42,6 +42,12 @@ The votes (collection is now called `poll_ballot`) contain exactly the data
 that a user has submitted. There is therefore only one ballot object per poll
 and user.
 
+Data about who has voted for who is being stored separately in a new collection
+`poll_ballot_user`. Direct connection between the ballos and users is being
+replaced with the relation through `meeting_user`. Relation between `poll_ballot`
+and `poll_ballot_user` is optional and gets removed when poll gets anonymized.
+This allows to safely save the information about who vote for whom.
+
 ## Permissions
 
 In the old system along with the separate `can_manage_polls` for assinments and
@@ -68,11 +74,22 @@ NOTE: there parts are still in dicsussion and may change:
 
 The following information is relevant for all the poll types.
 
-#### poll, poll_config_X and poll_option
+#### poll, poll_config_X, poll_entitled_user and poll_option
 
 Regardless of the type, for each old poll 2 models have to be created: a new
-`poll` and a related `poll_config_X`. Additionally for some poll types
+`poll` and a related `poll_config_X`. If `entitled_users_at_stop` are written for the poll, its content has to be transformed into entries of `poll_entitled_user`. Additionally for some poll types
 `poll_option` models should be generated.
+
+`entitled_users_at_stop` should be processed the same way for all the
+polls. For each item in `entitled_users_at_stop` an entry of
+`poll_entitled_user` has to be created:
+
+```
+{
+  poll_id: new_poll.id,
+  meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_item.user_id and poll.meeting,
+}
+```
 
 How the data should be migrated depends on whether it is a motion, assignment
 or a topic poll. When it comes to assignement polls, there are 3 possibilities
@@ -100,6 +117,18 @@ carried over from the old poll:
 
 Old polls used to have a separate field for the valid votes: `votesvalid`. It
 should be omitted in the migration.
+
+For each poll that is not anonymized, per each `poll_ballot` an additional
+`poll_ballot_user` instance should be created:
+
+```
+{
+  poll_id: poll_ballot.poll_id,
+  poll_ballot_id: poll_ballot.id,
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_vote.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_vote.user_id and poll.meeting
+}
+```
 
 ### motion
 
@@ -141,7 +170,6 @@ should be omitted in the migration.
   live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  voted_ids: old.voted_ids -> replace each user_id with meeting_user_id in poll.meeting_id,
   entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id,
 }
@@ -187,8 +215,8 @@ via `old_poll.option_ids[0].vote_ids`. For each old vote a new
       - N -> no
       - A -> abstain
       - else @panic(impossible value)
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -214,7 +242,7 @@ a `poll_option`:
   poll_id: new_poll.id,
   weight: old.weight,
   text: NULL,
-  meeting_user_id: meeting_user_id from old.user_id and old.meeting_id
+  content_object_id: fqid from "user" and old.user_id
 }
 ```
 
@@ -247,7 +275,7 @@ be found via `old_poll.option_ids`.
   poll_id: new_poll.id,
   weight: old.weight,
   text: old.text,
-  meeting_user_id: None
+  content_object_id: None
 }
 ```
 
@@ -282,8 +310,8 @@ Calculation:
   weight: old.weight,
   split: false,
   value: old.value -> Replace old options ids with corresponding new poll_options ids,
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -291,7 +319,7 @@ Calculation:
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
 function almost like the topic polls: with `poll_config_selection` but with
-`meeting_user_id`s instead of the `text` in `poll_option`.
+`content_object_id`s instead of the `text` in `poll_option`.
 
 Migrate poll this way if:
 
@@ -396,7 +424,6 @@ Calculation:
   live_voting_enabled: old.live_voting_enabled,
   sequential_number: old.sequential_number,
   content_object_id: old.content_object_id,
-  voted_ids: for each user in old.voted_ids -> meeting_user_id in old.meeting_id,
   entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id
 }
@@ -405,16 +432,15 @@ Calculation:
 #### poll_option
 
 For each old option ("old"), the option.content_object_id value has to be a
-`user` collection. Otherwise, @panic. The user_id has to be retrieved from this
-field, and the meeting_user_id associated with it is then looked up in the
-corresponding meeting.
+`user` collection. Otherwise, @panic. Old content_object_id gets directly
+transfered to the poll_option/content_object_id field.
 
 ```
 {
   poll_id: new_poll.id,
   weight: old.weight,
   text: NULL,
-  meeting_user_id: meeting_user_id from old.user_id and old.meeting_id
+  content_object_id: old.content_object_id
 }
 ```
 
@@ -457,8 +483,8 @@ Calculation (one `poll_ballot` per each `user_token`):
   weight: old.weight (must be same for all),
   split: false,
   value: see below,
-  acting_meeting_user_id: meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id: meeting_user_id from old.user_id and poll.meeting
+  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
+  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -479,8 +505,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * poll/backend: long or short
 * poll/description: was not used
-* poll/entitled_users_at_stop: only sata about the actual poll results is
-  being migrated, but not who was entitled to vote
 * For cumulative polls: poll.max_votes_per_option
 * Global options are no longer listed separately, but are included in the result.
 * poll/valid was previously counted separately. In future, it should be
@@ -525,15 +549,22 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting_poll_default/display_chart: pie
 * meeting/assignment_poll_default_method
   * Y
-    *  meeting_poll_default/method -> selection
+    * meeting_poll_default/method -> selection
   * N
-    *  meeting_poll_default/method -> selection
-    *  meeting_poll_default/strike_out -> true
+    * meeting_poll_default/method -> selection
+    * meeting_poll_default/strike_out -> true
   * YN
     * meeting_poll_default/method -> rating_approval
   * YNA
     * meeting_poll_default/method -> rating_approval
     * meeting_poll_default/allow_abstain -> true
+
+### Meeting_user
+
+* meeting_user/vote_delegated_to_id:
+  * Field renamed to meeting_user/vote_delegated_to_ids
+  * Type changes from relation to relation-list. In backend vote_delegated_to_ids remains the writing side.
+  * Value should be transformed as: value -> list with this value as a single item
 
 ### Motion
 
@@ -546,7 +577,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll/description
   * poll/backend
   * poll/live_votes
-  * poll/entitled_users_at_stop
   * poll/votesvalid
 * poll/is_pseudoanonymized -> poll/anonymized.
 * poll/type -> poll/visibility and the values have changed:
@@ -583,6 +613,8 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll/global_option_id
   * poll/votescast
   * poll/votesinvalid
+* poll/entitled_users_at_stop: json-field was replaced with a relation to the
+  new collection `poll_entitled_user`
 
 ### Poll_candidate_list
 
@@ -600,11 +632,9 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * poll_option/text:
     * option/text
     * None
-  * poll_option/meeting_user_id:
-    * if collection of content_object_id == "user" -> meeting_user from
-      option/content_object_id and option/meeting_id
-    * meeting_user from poll_candidate/user_id and
-      poll_candidate.option_id.meeting_id
+  * poll_option/content_object_id:
+    * if collection of content_object_id == "user" -> option/content_object_id
+    * fqid from "user" and poll_candidate/user_id
 
 ### Option -> other collections
 
@@ -617,24 +647,32 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * projection/content was removed. No migration necessary.
 
-### Vote
+### Vote -> poll_ballot
 
 * The `vote` collection was renamed into `poll_ballot`.
 * Field was removed. No migration necessary:
   * vote/meeting_id
 * vote/user_token: is used to merge old votes into new ballots
-* vote/user_id -> poll_ballot/represented_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
-* vote/delegated_user_id -> poll_ballot/acting_meeting_user_id (needs to be
-  generated from user_id and meeting_id).
 * vote/option_id: replaced with the direct relation to the poll. Needs
-  migration: vote.option_id.poll_id -> poll_ballot.poll_id.
+  migration: vote.option_id/poll_id -> poll_ballot/poll_id.
+
+### Vote -> poll_ballot_user
+
+* vote/option_id: replaced with the direct relation to the poll. Needs
+  migration: vote.option_id/poll_id -> poll_ballot_user/poll_id.
+* vote/user_id -> poll_ballot_user/represented_meeting_user_id (only if user is
+  in meeting, needs to be generated from user_id and meeting_id).
+* vote/delegated_user_id -> poll_ballot_user/acting_meeting_user_id (only if
+  user is in meeting, needs to be generated from user_id and meeting_id).
+* poll_ballot_user/poll_ballot_id: id of the poll_ballot instance generated
+  from the same vote.
 
 ### User
 
+* Field was removed. No migration necessary:
+  * user/poll_voted_ids
 * Direct relation between `user` and `poll`, `option` and `vote` was replaced
 with relation through the `meeting_user`:
-  * user/poll_voted_ids -> meeting_user/poll_voted_ids
-  * user/option_ids + user/poll_candidate_ids -> meeting_user/poll_option_ids
+  * user/option_ids + user/poll_candidate_ids -> user/poll_option_ids
   * user/vote_ids -> meeting_user/represented_ballot_ids
   * user/delegated_vote_ids -> meeting_user/acting_ballot_ids
