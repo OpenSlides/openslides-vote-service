@@ -476,36 +476,28 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 	}
 
 	if ui.Visibility == "manually" {
-		return updateInput{}, MessageError(ErrNotAllowed, "A poll can not be changed manually")
+		return updateInput{}, MessageError(ErrNotAllowed, "Poll.visibility can not be changed to manually")
 	}
 
 	if poll.State != "created" {
-		if ui.Method != "" {
-			return updateInput{}, MessageError(ErrNotAllowed, "method can only be changed before the poll has started")
-		}
-
-		if ui.MethodConfig != nil {
-			return updateInput{}, MessageError(ErrNotAllowed, "config can only be changed before the poll has started")
-		}
-
 		if ui.OptionType != "" {
-			return updateInput{}, MessageError(ErrNotAllowed, "option type can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "Option type can only be changed before the poll has started")
 		}
 
 		if len(ui.Options) != 0 {
-			return updateInput{}, MessageErrorf(ErrInvalid, "options can only be changed before the poll has started")
+			return updateInput{}, MessageErrorf(ErrInvalid, "Options can only be changed before the poll has started")
 		}
 
 		if ui.Visibility != "" {
-			return updateInput{}, MessageError(ErrNotAllowed, "visibility can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "Visibility can only be changed before the poll has started")
 		}
 
 		if ui.EntitledGroupIDs != nil {
-			return updateInput{}, MessageError(ErrNotAllowed, "entitled group ids can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "Entitled group ids can only be changed before the poll has started")
 		}
 
 		if !ui.AllowVoteSplit.Null() {
-			return updateInput{}, MessageError(ErrNotAllowed, "allow vote split can only be changed before the poll has started")
+			return updateInput{}, MessageError(ErrNotAllowed, "Allow vote split can only be changed before the poll has started")
 		}
 	}
 

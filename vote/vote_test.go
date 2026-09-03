@@ -495,6 +495,77 @@ func TestUpdate(t *testing.T) {
 				t.Fatalf("Expected two options, got %d", len(poll.OptionList))
 			}
 		})
+
+		t.Run("Update after start, title", func(t *testing.T) {
+			if err := service.Start(t.Context(), 3, 5); err != nil {
+				t.Fatalf("Error starting poll: %v", err)
+			}
+
+			body := `{
+				"title": "new title"
+			}`
+
+			if err := service.Update(t.Context(), 3, 5, strings.NewReader(body)); err != nil {
+				t.Fatalf("Error updating poll: %v", err)
+			}
+
+			poll, err := dsmodels.New(flow).Poll(3).First(t.Context())
+			if err != nil {
+				t.Fatalf("Error getting poll: %v", err)
+			}
+			if poll.Title != "new title" {
+				t.Fatalf("Expected updated title, got %s", poll.Title)
+			}
+		})
+
+		t.Run("Update after start, method.onehundred_percent_base", func(t *testing.T) {
+			if err := service.Start(t.Context(), 3, 5); err != nil {
+				t.Fatalf("Error starting poll: %v", err)
+			}
+
+			body := `{
+				"method_config":{"onehundred_percent_base":"cast"}
+			}`
+
+			if err := service.Update(t.Context(), 3, 5, strings.NewReader(body)); err != nil {
+				t.Fatalf("Error updating poll: %v", err)
+			}
+
+			poll, err := dsmodels.New(flow).Poll(3).First(t.Context())
+			if err != nil {
+				t.Fatalf("Error getting poll: %v", err)
+			}
+
+			configIDRaw, ok := strings.CutPrefix(poll.ConfigID, "poll_config_selection/")
+			if !ok {
+				t.Fatalf("Expected poll config ID to start with 'poll_config_selection/', got %s", poll.ConfigID)
+			}
+
+			configID, err := strconv.Atoi(configIDRaw)
+			if err != nil {
+				t.Fatalf("Error parsing config ID: %v", err)
+			}
+
+			config, err := dsmodels.New(flow).PollConfigSelection(configID).First(t.Context())
+			if config.OnehundredPercentBase != "cast" {
+				t.Errorf("Expected onehundred_percent_base to be 'cast', got %s", config.OnehundredPercentBase)
+			}
+		})
+
+		t.Run("Update after start, method.allow_nota", func(t *testing.T) {
+			if err := service.Start(t.Context(), 3, 5); err != nil {
+				t.Fatalf("Error starting poll: %v", err)
+			}
+
+			body := `{
+				"method_config":{"allow_nota":true}
+			}`
+
+			err := service.Update(t.Context(), 3, 5, strings.NewReader(body))
+			if err == nil {
+				t.Errorf("Expected invalid config error, got none")
+			}
+		})
 	})
 }
 

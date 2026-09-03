@@ -82,7 +82,7 @@ func selectionConfigForCreate(config json.RawMessage, optionAmount int) (*select
 	if cfg.MaxOptionsAmount == nil {
 		cfg.MaxOptionsAmount = new(int)
 	}
-	if *cfg.MaxOptionsAmount < optionAmount {
+	if *cfg.MaxOptionsAmount != 0 && *cfg.MaxOptionsAmount < optionAmount {
 		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
 	}
 	if cfg.MinOptionsAmount == nil {
@@ -131,7 +131,7 @@ func selectionConfigForUpdate(config json.RawMessage, state dstypes.Poll_State, 
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
 		return nil, invalidConfig("field min_options_amount must be less than or equal to max_options_amount")
 	}
-	if max < optionAmount {
+	if max != 0 && max < optionAmount {
 		return nil, invalidConfig("value of max_options_amount can not be lower the the amount of available options")
 	}
 
