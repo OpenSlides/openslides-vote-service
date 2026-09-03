@@ -81,8 +81,8 @@ func ratingScoreForCreate(config json.RawMessage, optionAmount int) (*ratingScor
 	if *cfg.MinOptionsAmount > *cfg.MaxOptionsAmount {
 		return nil, invalidConfig("Value of min_options_amount has to be lower then max_options_amount")
 	}
-	if *cfg.MaxOptionsAmount < optionAmount {
-		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
+	if *cfg.MaxOptionsAmount > optionAmount {
+		return nil, invalidConfig("Value of max_options_amount can not be higher then the amount of available options")
 	}
 	if cfg.MaxVotesPerOption == nil {
 		cfg.MaxVotesPerOption = new(int)
@@ -141,8 +141,8 @@ func ratingScoreConfigForUpdate(config json.RawMessage, state dstypes.Poll_State
 	if (cfg.MinOptionsAmount != nil || cfg.MaxOptionsAmount != nil) && min > max {
 		return nil, invalidConfig("Field min_options_amount must be less than or equal to max_options_amount")
 	}
-	if max < optionAmount {
-		return nil, invalidConfig("Value of max_options_amount can not be lower then the amount of available options")
+	if max > optionAmount {
+		return nil, invalidConfig("Value of max_options_amount can not be higher then the amount of available options")
 	}
 
 	min = oldConfig.MinVoteSum

@@ -409,8 +409,8 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		if err != nil {
 			return fmt.Errorf("getting max options amount: %w", err)
 		}
-		if len(ui.Options) < maxOptions {
-			return MessageError(ErrInvalid, "Value of max_options_amount can not be lower then the amount of available options")
+		if maxOptions > len(ui.Options) {
+			return MessageError(ErrInvalid, "Value of max_options_amount can not be higher then the amount of available options")
 		}
 
 		sql := "DELETE FROM poll_option_t WHERE poll_id = $1"
