@@ -973,6 +973,11 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
 
+	deleteEntitledUserQuery := `DELETE FROM poll_entitled_user_t WHERE poll_id = $1`
+	if _, err := tx.Exec(ctx, deleteEntitledUserQuery, pollID); err != nil {
+		return fmt.Errorf("delete entitled users: %w", err)
+	}
+
 	state := "created"
 	if poll.Visibility == "manually" {
 		state = "finished"
