@@ -22,6 +22,7 @@ import (
 	"github.com/OpenSlides/openslides-go/datastore/flow"
 	"github.com/OpenSlides/openslides-go/environment"
 	"github.com/OpenSlides/openslides-go/history"
+	"github.com/OpenSlides/openslides-go/oslog"
 	"github.com/OpenSlides/openslides-go/perm"
 	"github.com/OpenSlides/openslides-vote-service/vote/method"
 	"github.com/jackc/pgx/v5"
@@ -561,11 +562,16 @@ func (v *Vote) Delete(ctx context.Context, pollID int, requestUserID int) error 
 
 // Start validates a poll and set its state to started.
 func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
+	oslog.Debug("in start")
+	defer oslog.Debug("out start")
+
+	oslog.Debug("fetch poll")
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching poll: %w", err)
 	}
 
+	oslog.Debug("check permissions")
 	if err := canManagePoll(ctx, v.flow, poll.MeetingID, poll.ContentObjectID, requestUserID); err != nil {
 		return fmt.Errorf("check permissions: %w", err)
 	}
@@ -574,10 +580,12 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 		return MessageErrorf(ErrInvalid, "Poll %d is already finished", pollID)
 	}
 
+	oslog.Debug("preload poll")
 	if err := Preload(ctx, dsfetch.New(v.flow), poll.ID, poll.MeetingID); err != nil {
 		return fmt.Errorf("preloading poll: %w", err)
 	}
 
+	oslog.Debug("begin transaction")
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -613,6 +621,8 @@ func (v *Vote) Start(ctx context.Context, pollID int, requestUserID int) error {
 // - Sets the `published` flag.
 // - With the flag `anonymize`, clears the connection between poll_ballot and poll_ballot_user
 func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publish bool, anonymize bool) error {
+	oslog.Debug("In Finalize")
+	defer oslog.Debug("Out of Finalize")
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching poll: %w", err)
@@ -626,6 +636,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 		return MessageErrorf(ErrInvalid, "Poll %d has not started yet.", pollID)
 	}
 
+	oslog.Debug("Start transaction")
 	// Start the transaction as repeatable read so all reads happen on the same snapshot of the db.
 	tx, err := v.querier.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
@@ -645,6 +656,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	historyMessages = append(historyMessages, "poll finalized")
 
 	if poll.State == `started` {
+		oslog.Debug("Poll stop")
 		if err := v.pollStop(ctx, tx, poll); err != nil {
 			return fmt.Errorf("stop poll: %w", err)
 		}
@@ -652,6 +664,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if publish && !poll.Published {
+		oslog.Debug("Poll publish")
 		if err := v.pollPublish(ctx, tx, poll); err != nil {
 			return fmt.Errorf("publish poll: %w", err)
 		}
@@ -659,6 +672,7 @@ func (v *Vote) Finalize(ctx context.Context, pollID int, requestUserID int, publ
 	}
 
 	if anonymize && !poll.Anonymized {
+		oslog.Debug("Poll anonymize")
 		if err := v.pollAnonymize(ctx, tx, poll); err != nil {
 			return fmt.Errorf("anonymize poll: %w", err)
 		}
@@ -700,6 +714,9 @@ func fetchBallots(ctx context.Context, tx pgx.Tx, pollID int) ([]method.Ballot, 
 }
 
 func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) error {
+	oslog.Debug("in poll stop")
+	defer oslog.Debug("out poll stop")
+
 	var state string
 	if err := tx.QueryRow(ctx, "SELECT state FROM poll_t WHERE id = $1", poll.ID).Scan(&state); err != nil {
 		return fmt.Errorf("get anonymized status: %w", err)
@@ -709,16 +726,19 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) erro
 		return nil
 	}
 
+	oslog.Debug("fetch ballots")
 	ballots, err := fetchBallots(ctx, tx, poll.ID)
 	if err != nil {
 		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
 	}
 
+	oslog.Debug("generate entitled users")
 	if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
 		return fmt.Errorf("generate entitled meeting users: %w", err)
 	}
 
 	if poll.Visibility == "secret" {
+		oslog.Debug("in secret")
 		for i := range ballots {
 			decrypted, err := decryptBallot(ballots[i].Value, v.gcmForSecretPolls)
 			if err != nil {
@@ -737,11 +757,13 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) erro
 		return fmt.Errorf("resolve poll method: %w", err)
 	}
 
+	oslog.Debug("create result")
 	result, err := CreateResult(pm, poll.AllowVoteSplit, ballots)
 	if err != nil {
 		return fmt.Errorf("create poll result: %w", err)
 	}
 
+	oslog.Debug("save result")
 	sql := `UPDATE poll_t SET result = $1, state = 'finished' WHERE id = $2;`
 	if _, err := tx.Exec(ctx, sql, result, poll.ID); err != nil {
 		return fmt.Errorf("set result of poll %d: %w", poll.ID, err)
@@ -829,6 +851,7 @@ func rewriteBallotsPostgres(ctx context.Context, tx pgx.Tx, pollID int) error {
 		return nil
 	}
 
+	oslog.Debug("rewrite ballots")
 	query := `
 		WITH deleted_ballots AS (
 			DELETE FROM poll_ballot_t
@@ -880,8 +903,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 			FROM poll_ballot_user_t
 			WHERE poll_id = $1
 
-			UNION
-	`
+			UNION`
 
 	var conditionSQL string
 	switch {
@@ -948,6 +970,9 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 
 // Reset removes all ballots from a poll and sets its state to created.
 func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
+	oslog.Debug("in reset")
+	defer oslog.Debug("out reset")
+
 	poll, err := fetchPoll(ctx, v.flow, pollID)
 	if err != nil {
 		return fmt.Errorf("fetching poll: %w", err)
@@ -957,17 +982,20 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		return fmt.Errorf("check permissions: %w", err)
 	}
 
+	oslog.Debug("begin transaction")
 	tx, err := v.querier.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
+	oslog.Debug("delete ballots")
 	deleteBallotQuery := `DELETE FROM poll_ballot_t WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteBallotQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
 	}
 
+	oslog.Debug("delete ballot users")
 	deleteBallotUserQuery := `DELETE FROM poll_ballot_user_t WHERE poll_id = $1`
 	if _, err := tx.Exec(ctx, deleteBallotUserQuery, pollID); err != nil {
 		return fmt.Errorf("delete ballots: %w", err)
@@ -983,6 +1011,7 @@ func (v *Vote) Reset(ctx context.Context, pollID int, requestUserID int) error {
 		state = "finished"
 	}
 
+	oslog.Debug("reset poll state")
 	// Reset state, published and result. published is always false on started, even on live_voting.
 	updateQuery := `UPDATE poll_t SET state = $1, published = FALSE, result = '', anonymized = FALSE WHERE id = $2`
 	if _, err := tx.Exec(ctx, updateQuery, state, pollID); err != nil {
