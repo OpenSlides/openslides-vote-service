@@ -25,8 +25,8 @@ type RatingApproval struct {
 	AllowAbstain     bool               `json:"allow_abstain"`
 }
 
-// RatingApprovalFromJson parses the given JSON config into a RatingApproval struct.
-func RatingApprovalFromJson(config string) (*RatingApproval, error) {
+// RatingApprovalFromJSON parses the given JSON config into a RatingApproval struct.
+func RatingApprovalFromJSON(config string) (*RatingApproval, error) {
 	var cfg RatingApproval
 	cfg.AllowAbstain = true
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
@@ -151,7 +151,16 @@ func ratingApprovalConfigCreate(ctx context.Context, tx pgx.Tx, optionAmount int
 	(max_options_amount, min_options_amount, max_yes_amount, allow_abstain, onehundred_percent_base, required_majority)
 	VALUES ($1, $2, $3, $4, $5, $6)
 	RETURNING id;`
-	if err := tx.QueryRow(ctx, sql, cfg.MaxOptionsAmount, cfg.MinOptionsAmount, cfg.MaxYesAmount, cfg.AllowAbstain, cfg.OneHundredPercentBase, cfg.RequiredMajority).Scan(&configID); err != nil {
+	if err := tx.QueryRow(
+		ctx,
+		sql,
+		cfg.MaxOptionsAmount,
+		cfg.MinOptionsAmount,
+		cfg.MaxYesAmount,
+		cfg.AllowAbstain,
+		cfg.OneHundredPercentBase,
+		cfg.RequiredMajority,
+	).Scan(&configID); err != nil {
 		return "", fmt.Errorf("save ratingApproval config: %w", err)
 	}
 
@@ -216,7 +225,7 @@ func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {
 		}
 
 		if maxYesSet && strings.ToLower(string(choice)) == `"yes"` {
-			countYes += 1
+			countYes++
 		}
 	}
 
