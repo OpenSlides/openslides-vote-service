@@ -175,6 +175,17 @@ valid json.
 vote-requests are not possible. A finalize-request is possible, but only to set
 the `poll/published` field. A reset-request sets/leaves the state at `finished`.
 
+Referencing to options in the result should be done by using the fqid as a key.
+For text options the djb2 hash should be used in the form `text-{hash}`.
+
+```json
+{
+  "meeting_user/2": "1",
+  "text-17785": "3",
+  "abstain": "7",
+  "total_ballots": 80
+}
+```
 
 ### named and open
 
