@@ -172,11 +172,9 @@ Manual polls behave differently. When created, the field `poll/state` is set to
 update request. The server only makes sure, that the field `poll/result` is
 valid json.
 
-vote-requests are not possible. A finalize-request is possible, but only to set
-the `poll/published` field. A reset-request sets/leaves the state at `finished`.
-
 Referencing to options in the result should be done by using the fqid as a key.
-For text options the djb2 hash should be used in the form `text-{hash}`.
+For text options the djb2 hash should be used in the form `text-{hash}`. Note
+that this is just convention and not verified by the service.
 
 ```json
 {
@@ -186,6 +184,9 @@ For text options the djb2 hash should be used in the form `text-{hash}`.
   "total_ballots": 80
 }
 ```
+
+vote-requests are not possible. A finalize-request is possible, but only to set
+the `poll/published` field. A reset-request sets/leaves the state at `finished`.
 
 ### named and open
 
