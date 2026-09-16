@@ -1,6 +1,7 @@
 package vote
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/OpenSlides/openslides-go/datastore"
@@ -10,18 +11,13 @@ import (
 )
 
 // Flow initializes a cached connection to postgres.
-func Flow(lookup environment.Environmenter, messageBus flow.Updater) (flow.Flow, error) {
-	err := datastore.WaitPostgresAvailable(lookup)
+func Flow(lookup environment.Environmenter, messageBus flow.Updater) (flow.Flow, func(context.Context) error, error) {
+	postgres, init, err := datastore.NewFlowPostgres(lookup)
 	if err != nil {
-		return nil, fmt.Errorf("waiting for postgres: %w", err)
-	}
-
-	postgres, err := datastore.NewFlowPostgres(lookup)
-	if err != nil {
-		return nil, fmt.Errorf("init postgres: %w", err)
+		return nil, nil, fmt.Errorf("init postgres: %w", err)
 	}
 
 	cache := cache.New(postgres)
 
-	return cache, nil
+	return cache, init, nil
 }
