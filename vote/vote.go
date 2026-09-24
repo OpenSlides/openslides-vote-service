@@ -867,10 +867,24 @@ func rewriteBallotsPostgres(ctx context.Context, tx pgx.Tx, pollID int) error {
 	return nil
 }
 
-// generateEntitledUsers fills in the field poll/entitled_meeting_user_ids
+// generateEntitledUsers populates the poll_entitled_user_t table for a given poll.
 //
-// It uses a set from all represented users that have voted and all users in
-// one of the entitled_groups, setting the present flag accordingly.
+// Algorithm:
+// 1. Fetch the meeting delegation configuration (delegationActivated, forbidDelegateToVote).
+// 2. Identify candidate users:
+//   - Any user who submitted a ballot (represented in poll_ballot_user_t).
+//   - Any user belonging to one of the poll's entitled groups.
+//
+// 3. Determine the 'present' flag for each candidate user:
+//   - Always set 'present = true' if the user voted (or was represented in a voted ballot).
+//   - Otherwise, for users in an entitled group who did not vote, 'present' depends on the delegation mode:
+//     a) Delegations deactivated: true if the user itself is currently present in the meeting.
+//     b) Delegations activated & delegators forbidden to vote:
+//   - If the user delegated their vote: true if at least one delegate is present.
+//   - If the user did NOT delegate their vote: true if the user itself is present.
+//     c) Delegations activated & delegators allowed to vote: true if the user itself OR at least one of its delegates is present.
+//
+// 4. Insert the candidate users into poll_entitled_user_t.
 func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 	var meetingConfig struct {
 		delegationActivated  bool
@@ -889,73 +903,75 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		return fmt.Errorf("getting meeting config: %w", err)
 	}
 
-	var conditionSQL string
+	selfPresentSQL := `
+		EXISTS (
+			SELECT 1 FROM nm_meeting_present_user_ids_user_t pu
+			WHERE pu.meeting_id = mu.meeting_id AND pu.user_id = mu.user_id
+		)`
+
+	delegatePresentSQL := `
+		EXISTS (
+			SELECT 1
+			FROM nm_meeting_user_vote_delegated_to_ids_meeting_user_t del
+			JOIN meeting_user_t delegate_mu ON delegate_mu.id = del.vote_delegated_to_id
+			JOIN nm_meeting_present_user_ids_user_t pu_del ON pu_del.meeting_id = delegate_mu.meeting_id AND pu_del.user_id = delegate_mu.user_id
+			WHERE del.vote_delegations_from_id = mu.id
+		)`
+
+	hasDelegatedSQL := `
+		EXISTS (
+			SELECT 1
+			FROM nm_meeting_user_vote_delegated_to_ids_meeting_user_t del
+			WHERE del.vote_delegations_from_id = mu.id
+		)`
+
+	var presenceConditionSQL string
 	switch {
 	case !meetingConfig.delegationActivated:
-		// Only check users in an entitled group
-		conditionSQL = `
-			SELECT mu.id
-			FROM meeting_user_t mu
-			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
-			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
-			WHERE gpol.poll_id = $1
-		`
+		presenceConditionSQL = selfPresentSQL
 
 	case meetingConfig.forbidDelegateToVote:
-		// Only check delegation from users in group
-		conditionSQL = `
-			SELECT mu.id
-			FROM meeting_user_t mu
-			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
-			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
-			JOIN nm_meeting_user_vote_delegated_to_ids_meeting_user_t del ON del.vote_delegations_from_id = mu.id
-			WHERE gpol.poll_id = $1
-		`
+		presenceConditionSQL = fmt.Sprintf(`(
+			(%s AND %s)
+			OR
+			(NOT (%s) AND %s)
+		)`, hasDelegatedSQL, delegatePresentSQL, hasDelegatedSQL, selfPresentSQL)
 
 	default:
-		// Check users and there delegations
-		conditionSQL = `
-			SELECT mu.id
+		presenceConditionSQL = fmt.Sprintf(`(%s OR %s)`, selfPresentSQL, delegatePresentSQL)
+	}
+
+	finalSQL := `
+		WITH voted_users AS (
+			SELECT DISTINCT represented_meeting_user_id AS meeting_user_id
+			FROM poll_ballot_user_t
+			WHERE poll_id = $1
+		),
+		group_users AS (
+			SELECT DISTINCT
+				mu.id AS meeting_user_id,
+				` + presenceConditionSQL + ` AS is_present_by_mode
 			FROM meeting_user_t mu
 			JOIN nm_group_meeting_user_ids_meeting_user_t gmu ON gmu.meeting_user_id = mu.id
 			JOIN nm_group_poll_ids_poll_t gpol ON gpol.group_id = gmu.group_id
 			WHERE gpol.poll_id = $1
-		`
-	}
-
-	// Wraps the candidate users and determines 'present' status:
-	// True if the user is currently present OR has submitted a ballot for this poll.
-	insertSQL := `
-		WITH candidate_users AS (
-			SELECT represented_meeting_user_id AS meeting_user_id
-			FROM poll_ballot_user_t
-			WHERE poll_id = $1
-
+		),
+		all_candidates AS (
+			SELECT meeting_user_id FROM voted_users
 			UNION
-
-			` + conditionSQL + `
+			SELECT meeting_user_id FROM group_users
 		)
 		INSERT INTO poll_entitled_user_t (meeting_user_id, poll_id, present)
 		SELECT
-			cu.meeting_user_id,
+			c.meeting_user_id,
 			$1,
-			(
-				EXISTS (
-					SELECT 1
-					FROM nm_meeting_present_user_ids_user_t pu
-					JOIN meeting_user_t mu ON mu.meeting_id = pu.meeting_id AND mu.user_id = pu.user_id
-					WHERE mu.id = cu.meeting_user_id
-				)
-				OR EXISTS (
-					SELECT 1
-					FROM poll_ballot_user_t pbu
-					WHERE pbu.poll_id = $1 AND pbu.represented_meeting_user_id = cu.meeting_user_id
-				)
-			) AS present
-		FROM candidate_users cu
-		ON CONFLICT DO NOTHING;`
+			(v.meeting_user_id IS NOT NULL OR COALESCE(g.is_present_by_mode, false)) AS present
+		FROM all_candidates c
+		LEFT JOIN voted_users v ON v.meeting_user_id = c.meeting_user_id
+		LEFT JOIN group_users g ON g.meeting_user_id = c.meeting_user_id;
+	`
 
-	if _, err := tx.Exec(ctx, insertSQL, pollID); err != nil {
+	if _, err := tx.Exec(ctx, finalSQL, pollID); err != nil {
 		return fmt.Errorf("inserting entitled users: %w", err)
 	}
 

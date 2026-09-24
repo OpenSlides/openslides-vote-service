@@ -1125,12 +1125,12 @@ func TestSaveEntitledUsers(t *testing.T) {
 	meeting/1:
 		users_enable_vote_delegations: false
 		users_forbid_delegator_to_vote: false
-		present_user_ids: [1, 2]
+		present_user_ids: [2]
 
 	meeting/2:
 		users_enable_vote_delegations: true
 		users_forbid_delegator_to_vote: true
-		present_user_ids: [1, 2]
+		present_user_ids: [2]
 		default_group_id: 20
 		motions_default_workflow_id: 2
 		motions_default_amendment_workflow_id: 2
@@ -1140,7 +1140,7 @@ func TestSaveEntitledUsers(t *testing.T) {
 	meeting/3:
 		users_enable_vote_delegations: true
 		users_forbid_delegator_to_vote: false
-		present_user_ids: [1, 2]
+		present_user_ids: [2]
 		default_group_id: 30
 		motions_default_workflow_id: 3
 		motions_default_amendment_workflow_id: 3
@@ -1236,6 +1236,7 @@ func TestSaveEntitledUsers(t *testing.T) {
 			group_ids: [101]
 			user_id: 2
 			meeting_id: 1
+			vote_delegated_to_ids: [31]
 		31:
 			group_ids: [101]
 			user_id: 3
@@ -1249,6 +1250,7 @@ func TestSaveEntitledUsers(t *testing.T) {
 			group_ids: [102]
 			user_id: 2
 			meeting_id: 2
+			vote_delegated_to_ids: [32]
 		32:
 			group_ids: [102]
 			user_id: 3
@@ -1262,6 +1264,7 @@ func TestSaveEntitledUsers(t *testing.T) {
 			group_ids: [103]
 			user_id: 2
 			meeting_id: 3
+			vote_delegated_to_ids: [33]
 		33:
 			group_ids: [103]
 			user_id: 3
@@ -1408,10 +1411,14 @@ func TestSaveEntitledUsers(t *testing.T) {
 					return cmp.Compare(a.id, b.id)
 				})
 
+				// User 11 has voted for himself.
+				// Delegation: 21->31 && 31->21
+				// Only 21 is present
+				// All are in entitled group.
 				want := []entitledUserResult{
-					{id: 11, present: true},  // Present + Voted
-					{id: 21, present: true},  // Present
-					{id: 31, present: false}, // Not present + Not voted
+					{id: 11, present: true},
+					{id: 21, present: true},
+					{id: 31, present: false},
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("got %v, want %v", got, want)
@@ -1441,9 +1448,14 @@ func TestSaveEntitledUsers(t *testing.T) {
 					return cmp.Compare(a.id, b.id)
 				})
 
+				// User 12 has voted for himself.
+				// Delegation: 21->31 && 31->21
+				// Only 22 is present
+				// All are in entitled group.
 				want := []entitledUserResult{
-					{id: 12, present: true},  // Present + Voted
-					{id: 32, present: false}, // Not present + Not voted
+					{id: 12, present: true},
+					{id: 22, present: false},
+					{id: 32, present: true},
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("got %v, want %v", got, want)
@@ -1473,10 +1485,14 @@ func TestSaveEntitledUsers(t *testing.T) {
 					return cmp.Compare(a.id, b.id)
 				})
 
+				// User 12 has voted for himself.
+				// Delegation: 21->31 && 31->21
+				// Only 22 is present
+				// All are in entitled group.
 				want := []entitledUserResult{
-					{id: 13, present: true},  // Present + Voted
-					{id: 23, present: true},  // Present
-					{id: 33, present: false}, // Not present + Not voted
+					{id: 13, present: true},
+					{id: 23, present: true},
+					{id: 33, present: true},
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("got %v, want %v", got, want)
