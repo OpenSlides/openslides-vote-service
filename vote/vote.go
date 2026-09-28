@@ -126,8 +126,8 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 	}
 
 	sql := `INSERT INTO poll_t
-		(title, config_id, visibility, state, content_object_id, meeting_id, result, live_voting_enabled, allow_vote_split)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		(title, config_id, visibility, state, content_object_id, meeting_id, result, live_voting_enabled, allow_vote_split, allow_empty)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id;`
 
 	var newID int
@@ -143,6 +143,7 @@ func (v *Vote) Create(ctx context.Context, requestUserID int, r io.Reader) (int,
 		string(ci.Result),
 		ci.LiveVotingEnabled,
 		ci.AllowVoteSplit,
+		ci.AllowEmpty,
 	).Scan(&newID); err != nil {
 		return 0, fmt.Errorf("save poll: %w", err)
 	}
@@ -237,6 +238,7 @@ type createInput struct {
 	LiveVotingEnabled bool              `json:"live_voting_enabled"`
 	Result            json.RawMessage   `json:"result"`
 	AllowVoteSplit    bool              `json:"allow_vote_split"`
+	AllowEmpty        bool              `json:"allow_empty"`
 }
 
 func parseCreateInput(r io.Reader, electronicVotingEnabled bool) (createInput, error) {
@@ -358,6 +360,11 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		allowVoteSplit = &v
 	}
 
+	var allowEmpty *bool
+	if v, ok := ui.AllowEmpty.Value(); ok {
+		allowEmpty = &v
+	}
+
 	sql := `
 	UPDATE poll_t
 	SET
@@ -365,9 +372,10 @@ func (v *Vote) Update(ctx context.Context, pollID int, requestUserID int, r io.R
 		visibility = COALESCE($3, visibility),
 		live_voting_enabled = COALESCE($4, live_voting_enabled),
 		result = COALESCE($5, result),
-		allow_vote_split = COALESCE($6, allow_vote_split)
+		allow_vote_split = COALESCE($6, allow_vote_split),
+		allow_empty = COALESCE($7, allow_empty)
 	WHERE id = $1;`
-	res, err := tx.Exec(ctx, sql, pollID, title, visibility, liveVotingEnabled, result, allowVoteSplit)
+	res, err := tx.Exec(ctx, sql, pollID, title, visibility, liveVotingEnabled, result, allowVoteSplit, allowEmpty)
 	if err != nil {
 		return fmt.Errorf("update poll: %w", err)
 	}
@@ -465,6 +473,7 @@ type updateInput struct {
 	LiveVotingEnabled dsfetch.Maybe[bool] `json:"live_voting_enabled"`
 	Result            json.RawMessage     `json:"result"`
 	AllowVoteSplit    dsfetch.Maybe[bool] `json:"allow_vote_split"`
+	AllowEmpty        dsfetch.Maybe[bool] `json:"allow_empty"`
 }
 
 func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled bool) (updateInput, error) {
@@ -504,6 +513,11 @@ func parseUpdateInput(r io.Reader, poll dsmodels.Poll, electronicVotingEnabled b
 		if !ui.AllowVoteSplit.Null() {
 			return updateInput{}, MessageError(ErrNotAllowed, "Allow vote split can only be changed before the poll has started")
 		}
+
+		if !ui.AllowEmpty.Null() {
+			return updateInput{}, MessageError(ErrNotAllowed, "Allow empty can only be changed before the poll has started")
+		}
+
 	}
 
 	if !electronicVotingEnabled {
