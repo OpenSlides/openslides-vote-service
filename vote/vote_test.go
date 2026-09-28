@@ -497,11 +497,31 @@ func TestUpdate(t *testing.T) {
 			}
 		})
 
-		t.Run("Update after start, title", func(t *testing.T) {
-			if err := service.Start(t.Context(), 3, 5); err != nil {
-				t.Fatalf("Error starting poll: %v", err)
+		t.Run("Update allow empty before start", func(t *testing.T) {
+			body := `{
+				"allow_empty": true
+			}`
+
+			err := service.Update(t.Context(), 3, 5, strings.NewReader(body))
+			if err != nil {
+				t.Fatalf("Error updating poll: %v", err)
 			}
 
+			ds := dsmodels.New(flow)
+			poll, err := ds.Poll(3).First(t.Context())
+			if err != nil {
+				t.Fatalf("Error getting poll: %v", err)
+			}
+			if !poll.AllowEmpty {
+				t.Fatalf("Expected allow empty to be true, got false")
+			}
+		})
+
+		if err := service.Start(t.Context(), 3, 5); err != nil {
+			t.Fatalf("Error starting poll: %v", err)
+		}
+
+		t.Run("Update after start, title", func(t *testing.T) {
 			body := `{
 				"title": "new title"
 			}`
@@ -520,10 +540,6 @@ func TestUpdate(t *testing.T) {
 		})
 
 		t.Run("Update after start, method.onehundred_percent_base", func(t *testing.T) {
-			if err := service.Start(t.Context(), 3, 5); err != nil {
-				t.Fatalf("Error starting poll: %v", err)
-			}
-
 			body := `{
 				"method_config":{"onehundred_percent_base":"cast"}
 			}`
@@ -554,10 +570,6 @@ func TestUpdate(t *testing.T) {
 		})
 
 		t.Run("Update after start, method.allow_nota", func(t *testing.T) {
-			if err := service.Start(t.Context(), 3, 5); err != nil {
-				t.Fatalf("Error starting poll: %v", err)
-			}
-
 			body := `{
 				"method_config":{"allow_nota":true}
 			}`
@@ -565,6 +577,26 @@ func TestUpdate(t *testing.T) {
 			err := service.Update(t.Context(), 3, 5, strings.NewReader(body))
 			if err == nil {
 				t.Errorf("Expected invalid config error, got none")
+			}
+		})
+
+		t.Run("Update allow empty after start", func(t *testing.T) {
+			body := `{
+				"allow_empty": false
+			}`
+
+			err = service.Update(t.Context(), 3, 5, strings.NewReader(body))
+			if err == nil {
+				t.Errorf("Expected invalid config error, got none")
+			}
+
+			ds := dsmodels.New(flow)
+			poll, err := ds.Poll(3).First(t.Context())
+			if err != nil {
+				t.Fatalf("Error getting poll: %v", err)
+			}
+			if !poll.AllowEmpty {
+				t.Fatalf("Expected allow empty still be true, got false")
 			}
 		})
 	})
