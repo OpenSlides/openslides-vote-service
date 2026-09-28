@@ -541,6 +541,8 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * Fields that need to be moved to meeting_poll_default:
   * meeting/*_poll_default_group_ids -> meeting_poll_default/group_ids
   * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_default/sort_result_by_votes
+* Fields that need to be moved to meeting_poll_default and were split:
+  * meeting/poll_enable_max_votes_per_option -> meeting_poll_default/enable_cumulative_voting
 * Field should be renamed and moved to meeting_poll_default, values should be changed similarly to poll/type:
   * meeting/*_poll_default_type -> meeting_poll_default/visibility
 * Field should be moved to meeting_poll_default and values should be changed similarly to poll/onehundred_percent_base
@@ -549,15 +551,16 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * For topic polls:
   * meeting_poll_default/display_chart: pie
 * Values should be changed and/or used for creating meeting_poll_default:
-  * meeting/assignment_poll_default_method:
-    * Y -> selection
-    * N -> selection (+ meeting_poll_default/strike_out -> true)
-    * YN -> rating_approval
-    * YNA -> rating_approval (+ meeting_poll_default/allow_abstain -> true)
-  * meeting/motion_poll_default_method:
-    * YNA: meeting_poll_default/allow_abstain -> true
-  * meeting/poll_default_method:
-    * N: meeting_poll_default/strike_out -> true
+  * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_default/default_method:
+    * Y -> selection.yes
+    * N -> selection.no
+    * YN -> rating_approval.yes_no
+    * YNA -> rating_approval.yes_no_abstain
+  * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_default/default_method:
+    * YN -> approval.yes_no
+    * YNA -> approval.yes_no_abstain
+  * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_default/default_method:
+    * N -> selection.no
 
 ### Meeting_user
 
