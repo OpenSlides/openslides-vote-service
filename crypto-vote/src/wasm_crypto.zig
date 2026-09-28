@@ -263,7 +263,7 @@ export fn encrypt(
     const mixnet_key_public_list: []const [32]u8 = mixnet_key_public_ptr[0..mixnet_count];
     const trustee_key_public_list: []const [32]u8 = trustee_key_public_ptr[0..trustee_count];
 
-    const result = crypto.encrypt_message(
+    const result = crypto.encryptMessage(
         allocator,
         mixnet_key_public_list,
         trustee_key_public_list,
@@ -343,7 +343,7 @@ export fn decrypt_mixnet(
         return null;
     }
 
-    const decrypted = crypto.decrypt_mixnet(
+    const decrypted = crypto.decryptMixnet(
         allocator,
         key_secret.*,
         cypher_count,
@@ -434,7 +434,7 @@ export fn decrypt_trustee(
         return null;
     }
 
-    const buf_size = crypto.decrypt_trustee_buf_size(cypher_block_size, cypher_count);
+    const buf_size = crypto.decryptTrusteeBufSize(cypher_block_size, cypher_count);
 
     var buf = ManagedBuffer.init(buf_size) catch |err| {
         consoleLog("Error allocating {} bytes of memory for decrypt buf: {}", .{ buf_size, err });
