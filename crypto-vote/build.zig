@@ -5,9 +5,11 @@ pub fn build(b: *std.Build) void {
 
     const wasmCrypto = b.addExecutable(.{
         .name = "crypto",
-        .root_source_file = b.path("src/wasm_crypto.zig"),
-        .target = target,
-        .optimize = .ReleaseSmall,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasm_crypto.zig"),
+            .optimize = .ReleaseSmall,
+            .target = target,
+        }),
     });
 
     wasmCrypto.rdynamic = true;
@@ -19,25 +21,8 @@ pub fn build(b: *std.Build) void {
     var update_wasm_crypto_step = b.step("crypto", "Update crypto.wasm");
     update_wasm_crypto_step.dependOn(&wcf.step);
 
-    const wasmApp = b.addExecutable(.{
-        .name = "crypto_vote",
-        .root_source_file = b.path("src/wasm_app.zig"),
-        .target = target,
-        .optimize = .ReleaseSmall,
-    });
-
-    wasmApp.rdynamic = true;
-    wasmApp.entry = .disabled;
-
-    const waf = b.addUpdateSourceFiles();
-    waf.addCopyFileToSource(wasmApp.getEmittedBin(), "wrapper/crypto_vote.wasm");
-
-    var update_wasm_app_step = b.step("crypto_vote", "Update crpto_vote.wasm");
-    update_wasm_app_step.dependOn(&waf.step);
-
     const default_step = b.step("default", "Default step");
     default_step.dependOn(update_wasm_crypto_step);
-    default_step.dependOn(update_wasm_app_step);
 
     b.default_step = default_step;
 }
