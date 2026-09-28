@@ -30,8 +30,8 @@ pub const KeyPairMixnet = struct {
     ///
     /// Returns:
     ///   KeyPairMixnet: A new key pair with cryptographically secure random keys
-    pub fn generate() KeyPairMixnet {
-        const key = X25519.KeyPair.generate();
+    pub fn generate(io: std.Io) KeyPairMixnet {
+        const key = X25519.KeyPair.generate(io);
         return KeyPairMixnet{
             .key_secret = key.secret_key,
             .key_public = key.public_key,
