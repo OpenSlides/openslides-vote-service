@@ -60,12 +60,6 @@ pub fn getRandom(buf: []u8) void {
     Env.get_random(buf.ptr, buf.len);
 }
 
-/// Standard library options for WebAssembly environment.
-/// Configures the random number generator to use the host-provided randomness.
-pub const std_options = std.Options{
-    .cryptoRandomSeed = getRandom,
-};
-
 /// Managed buffer with RAII (Resource Acquisition Is Initialization) pattern.
 /// Automatically handles memory allocation and deallocation to prevent leaks.
 const ManagedBuffer = struct {
@@ -148,7 +142,7 @@ fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
 ///
 /// Note: The caller is responsible for freeing the returned memory using free()
 export fn gen_mixnet_key_pair() ?[*]const u8 {
-    const kp = crypto.KeyPairMixnet.generate();
+    const kp = crypto.KeyPairMixnet.generate(getRandom);
 
     const result = allocator.alloc(u8, 64) catch return null;
     @memcpy(result[0..32], &kp.key_secret);
@@ -169,7 +163,7 @@ export fn gen_mixnet_key_pair() ?[*]const u8 {
 ///
 /// Note: The caller is responsible for freeing the returned memory using free()
 export fn gen_trustee_key_pair() ?[*]const u8 {
-    const kp = crypto.KeyPairTrustee.generate();
+    const kp = crypto.KeyPairTrustee.generate(getRandom);
 
     const result = allocator.alloc(u8, 64) catch return null;
     @memcpy(result[0..32], &kp.key_secret);
@@ -195,7 +189,7 @@ export fn cypher_size(
 ) u32 {
     if (mixnet_count == 0) return 0;
     if (max_size == 0) return 0;
-    return @intCast(crypto.calc_cypher_size(max_size, mixnet_count));
+    return @intCast(crypto.calcCypherSize(max_size, mixnet_count));
 }
 
 /// Encrypts a voting message for anonymity and integrity protection.
@@ -265,6 +259,7 @@ export fn encrypt(
 
     const result = crypto.encryptMessage(
         allocator,
+        getRandom,
         mixnet_key_public_list,
         trustee_key_public_list,
         message,
@@ -442,7 +437,7 @@ export fn decrypt_trustee(
     };
     defer buf.deinit();
 
-    const decrypted = crypto.decrypt_trustee(
+    const decrypted = crypto.decryptTrustee(
         trustee_keys,
         cypher_count,
         cypher_block,
@@ -557,7 +552,7 @@ export fn validate(
     const mixnet_data_block = mixnet_data_block_ptr[0..mixnet_data_block_size];
     const mixnet_size_list = mixnet_size_ptr[0..mixnet_size_len];
 
-    const mixnet_data_list = convert_mixnet_data(mixnet_size_list, mixnet_data_block) catch return -1000;
+    const mixnet_data_list = convertMixnetData(mixnet_size_list, mixnet_data_block) catch return -1000;
     defer allocator.free(mixnet_data_list);
 
     // Validate key counts match data counts
@@ -602,7 +597,7 @@ export fn validate(
 ///   - Size list length must be divisible by 4 (u32 size)
 ///   - Must have at least one mixnet node
 ///   - Data block must contain enough bytes for all specified sizes
-fn convert_mixnet_data(
+fn convertMixnetData(
     mixnet_size_list: []const u8,
     mixnet_data_block: []const u8,
 ) ![][]const u8 {

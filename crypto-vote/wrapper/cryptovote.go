@@ -15,7 +15,7 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-//go:embed crypto_vote.wasm
+//go:embed crypto.wasm
 var wasmFile []byte
 
 // KeyPair represents a cryptographic key pair with secret and public keys encoded as base64

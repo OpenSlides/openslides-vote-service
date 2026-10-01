@@ -4,11 +4,7 @@ const X25519 = std.crypto.dh.X25519;
 const XCurve = X25519.Curve;
 const EDCurve = std.crypto.sign.Ed25519.Curve;
 const Aes256Gcm = std.crypto.aead.aes_gcm.Aes256Gcm;
-const Aes256 = std.crypto.core.aes.Aes256;
 const HkdfSha256 = std.crypto.kdf.hkdf.HkdfSha256;
-const Ed25519 = std.crypto.sign.Ed25519;
-const Sha256 = std.crypto.hash.sha2.Sha256;
-const Sha512 = std.crypto.hash.sha2.Sha512;
 
 const InvalidPublicKeyError = error{InvalidPublicKey};
 const AuthenticationError = std.crypto.errors.AuthenticationError;
@@ -16,6 +12,13 @@ const IdentityElementError = std.crypto.errors.IdentityElementError;
 const OutOfMemoryError = std.mem.Allocator.Error;
 const InvalidCypherError = error{InvalidCypher};
 const WeakPublicKeyError = std.crypto.errors.WeakPublicKeyError;
+
+const Random = fn ([]u8) void;
+fn coin(r: Random) bool {
+    var v: [1]u8 = undefined;
+    r(&v);
+    return v[0] & 1 != 0;
+}
 
 /// Key pair for mixnet nodes using X25519 cryptography.
 /// Mixnet nodes are responsible for shuffling
@@ -30,11 +33,21 @@ pub const KeyPairMixnet = struct {
     ///
     /// Returns:
     ///   KeyPairMixnet: A new key pair with cryptographically secure random keys
-    pub fn generate(io: std.Io) KeyPairMixnet {
-        const key = X25519.KeyPair.generate(io);
+    pub fn generate(random: Random) KeyPairMixnet {
+        var random_seed: [32]u8 = undefined;
+        while (true) {
+            random(&random_seed);
+            return generateDeterministic(random_seed) catch {
+                @branchHint(.unlikely);
+                continue;
+            };
+        }
+    }
+
+    fn generateDeterministic(seed: [32]u8) (IdentityElementError)!KeyPairMixnet {
         return KeyPairMixnet{
-            .key_secret = key.secret_key,
-            .key_public = key.public_key,
+            .key_secret = seed,
+            .key_public = try X25519.recoverPublicKey(seed),
         };
     }
 };
@@ -54,10 +67,10 @@ pub const KeyPairTrustee = struct {
     ///
     /// Returns:
     ///   KeyPairTrustee: A new key pair with cryptographically secure random keys
-    pub fn generate() KeyPairTrustee {
+    pub fn generate(random: Random) KeyPairTrustee {
         var random_seed: [32]u8 = undefined;
         while (true) {
-            std.crypto.random.bytes(&random_seed);
+            random(&random_seed);
             return generateDeterministic(random_seed) catch {
                 @branchHint(.unlikely);
                 continue;
@@ -195,13 +208,14 @@ fn encryptX25519Deterministic(
 ///   InvalidPublicKeyError: If any public key is invalid
 ///   WeakPublicKeyError: If ephemeral key generation produces weak key
 fn encryptX25519(
+    random: Random,
     key_public: [32]u8,
     message: []const u8,
     buf: []u8,
 ) (InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
     var random_seed: [32]u8 = undefined;
     while (true) {
-        std.crypto.random.bytes(&random_seed);
+        random(&random_seed);
         return encryptX25519Deterministic(key_public, message, random_seed, buf) catch |err| {
             @branchHint(.unlikely);
             switch (err) {
@@ -287,7 +301,7 @@ fn scalarmultNoClamp(secret_key: [32]u8, public_key: [32]u8) ![32]u8 {
 }
 
 test "x25519 encrypt and decrypt" {
-    const key = KeyPairMixnet.generate();
+    const key = KeyPairMixnet.generate(testRandom);
     const msg = "my message to be encrypted";
     const seed = std.mem.zeroes([32]u8);
 
@@ -321,9 +335,7 @@ test "x25519 encrypt and decrypt" {
 /// Returns:
 ///   x25519 public key: Combined public key point converted for x25519.
 ///   InvalidPublicKeyError: If any public key is invalid.
-fn combinePublicKeysToX25519(
-    key_public_list: []const [32]u8,
-) InvalidPublicKeyError![32]u8 {
+fn combinePublicKeysToX25519(key_public_list: []const [32]u8) InvalidPublicKeyError![32]u8 {
     assert(key_public_list.len > 0);
 
     var combined = EDCurve.fromBytes(key_public_list[0]) catch return error.InvalidPublicKey;
@@ -346,9 +358,7 @@ fn combinePublicKeysToX25519(
 ///
 /// Returns:
 ///   [32]u8: Combined secret scalar
-fn combineKeySecret(
-    key_secret_list: []const [32]u8,
-) [32]u8 {
+fn combineKeySecret(key_secret_list: []const [32]u8) [32]u8 {
     assert(key_secret_list.len > 0);
 
     // When generating the keys, the secret keys were clamped before calculating
@@ -365,9 +375,9 @@ fn combineKeySecret(
 }
 
 test "encrypt and decrypt trustee" {
-    const key1 = KeyPairTrustee.generate();
-    const key2 = KeyPairTrustee.generate();
-    const key3 = KeyPairTrustee.generate();
+    const key1 = KeyPairTrustee.generate(testRandom);
+    const key2 = KeyPairTrustee.generate(testRandom);
+    const key3 = KeyPairTrustee.generate(testRandom);
     const msg = "my message to be encrypted";
     const seed = std.mem.zeroes([32]u8);
 
@@ -537,12 +547,12 @@ fn encryptFakeSteps(
 }
 
 test "encrypt_full" {
-    const trustee_key1 = KeyPairTrustee.generate();
-    const trustee_key2 = KeyPairTrustee.generate();
-    const trustee_key3 = KeyPairTrustee.generate();
-    const mixnet_key1 = KeyPairMixnet.generate();
-    const mixnet_key2 = KeyPairMixnet.generate();
-    const mixnet_key3 = KeyPairMixnet.generate();
+    const trustee_key1 = KeyPairTrustee.generate(testRandom);
+    const trustee_key2 = KeyPairTrustee.generate(testRandom);
+    const trustee_key3 = KeyPairTrustee.generate(testRandom);
+    const mixnet_key1 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key2 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key3 = KeyPairMixnet.generate(testRandom);
     const msg = "my message to be encrypted";
     const seed = std.mem.zeroes([128]u8);
 
@@ -603,6 +613,7 @@ const CypherSeed = struct {
 ///   WeakPublicKeyError: If any generated key is weak
 fn encryptFixedSize(
     allocator: std.mem.Allocator,
+    random: Random,
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
     message: []const u8,
@@ -612,7 +623,7 @@ fn encryptFixedSize(
     errdefer allocator.free(seed);
 
     while (true) {
-        std.crypto.random.bytes(seed);
+        random(seed);
         const cypher = encryptFixedSizeDeterministic(
             allocator,
             mixnet_key_public_list,
@@ -778,26 +789,27 @@ pub const EncryptResult = struct {
 ///     - control_data: Encrypted seed for fake message verification
 pub fn encryptMessage(
     allocator: std.mem.Allocator,
+    random: Random,
     mixnet_key_public_list: []const [32]u8,
     trustee_key_public_list: []const [32]u8,
     message: []const u8,
     size: usize,
 ) !EncryptResult {
-    const cypher_real = try encryptFixedSize(allocator, mixnet_key_public_list, trustee_key_public_list, message, size);
+    const cypher_real = try encryptFixedSize(allocator, random, mixnet_key_public_list, trustee_key_public_list, message, size);
     allocator.free(cypher_real.seed);
 
     const zeros = try allocator.alloc(u8, size);
     defer allocator.free(zeros);
     @memset(zeros, 0);
 
-    const cypher_fake = try encryptFixedSize(allocator, mixnet_key_public_list, trustee_key_public_list, zeros, size);
+    const cypher_fake = try encryptFixedSize(allocator, random, mixnet_key_public_list, trustee_key_public_list, zeros, size);
     defer allocator.free(cypher_fake.seed);
 
     const trustee_key_public_combined = try combinePublicKeysToX25519(trustee_key_public_list);
     const buf = try allocator.alloc(u8, encryptBufsize(cypher_fake.seed.len));
-    const control_data = try encryptX25519(trustee_key_public_combined, cypher_fake.seed, buf);
+    const control_data = try encryptX25519(random, trustee_key_public_combined, cypher_fake.seed, buf);
 
-    return if (std.Random.boolean(std.crypto.random))
+    return if (coin(random))
         .{ .cyphers = [2][]u8{ cypher_real.cypher, cypher_fake.cypher }, .control_data = control_data }
     else
         .{ .cyphers = [2][]u8{ cypher_fake.cypher, cypher_real.cypher }, .control_data = control_data };
@@ -805,12 +817,12 @@ pub fn encryptMessage(
 
 test "encrypt_message" {
     const allocator = std.testing.allocator;
-    const trustee_key1 = KeyPairTrustee.generate();
-    const trustee_key2 = KeyPairTrustee.generate();
-    const trustee_key3 = KeyPairTrustee.generate();
-    const mixnet_key1 = KeyPairMixnet.generate();
-    const mixnet_key2 = KeyPairMixnet.generate();
-    const mixnet_key3 = KeyPairMixnet.generate();
+    const trustee_key1 = KeyPairTrustee.generate(testRandom);
+    const trustee_key2 = KeyPairTrustee.generate(testRandom);
+    const trustee_key3 = KeyPairTrustee.generate(testRandom);
+    const mixnet_key1 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key2 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key3 = KeyPairMixnet.generate(testRandom);
     const msg = "my message to be encrypted";
     const max_size = msg.len + 10;
 
@@ -834,6 +846,7 @@ test "encrypt_message" {
 
     const result = try encryptMessage(
         allocator,
+        testRandom,
         mixnet_pk_list,
         trustee_pk_list,
         msg,
@@ -876,8 +889,8 @@ test "encrypt_message" {
         &buf_decrypt4,
     );
 
-    const decrypted1 = std.mem.trimRight(u8, decryptd_from_trustees[0..max_size], "\x00");
-    const decrypted2 = std.mem.trimRight(u8, decryptd_from_trustees[max_size..][0..max_size], "\x00");
+    const decrypted1 = std.mem.trimEnd(u8, decryptd_from_trustees[0..max_size], "\x00");
+    const decrypted2 = std.mem.trimEnd(u8, decryptd_from_trustees[max_size..][0..max_size], "\x00");
 
     if (decrypted1.len == 0) {
         try std.testing.expectEqualDeep("", decrypted1);
@@ -1033,12 +1046,12 @@ pub fn decryptTrustee(
 
 test "decrypt many messages" {
     const allocator = std.testing.allocator;
-    const trustee_key1 = KeyPairTrustee.generate();
-    const trustee_key2 = KeyPairTrustee.generate();
-    const trustee_key3 = KeyPairTrustee.generate();
-    const mixnet_key1 = KeyPairMixnet.generate();
-    const mixnet_key2 = KeyPairMixnet.generate();
-    const mixnet_key3 = KeyPairMixnet.generate();
+    const trustee_key1 = KeyPairTrustee.generate(testRandom);
+    const trustee_key2 = KeyPairTrustee.generate(testRandom);
+    const trustee_key3 = KeyPairTrustee.generate(testRandom);
+    const mixnet_key1 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key2 = KeyPairMixnet.generate(testRandom);
+    const mixnet_key3 = KeyPairMixnet.generate(testRandom);
     const msg1 = "message1";
     const msg2 = "message2";
     const msg_count = 2;
@@ -1229,4 +1242,9 @@ fn inMixnetData(mixnet_data: []const u8, data: []const u8, message_count: usize)
     }
 
     return false;
+}
+
+fn testRandom(buf: []u8) void {
+    const io: std.Io = std.testing.io;
+    io.random(buf);
 }
