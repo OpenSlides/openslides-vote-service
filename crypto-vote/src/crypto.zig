@@ -114,8 +114,6 @@ fn encryptSymmetric(shared_secret: [32]u8, message: []const u8, buf: []u8) void 
 
     const key_aes = HkdfSha256.extract(&[_]u8{}, &shared_secret);
 
-    // With uses a static nonce. Since the data_key is only used once, this is
-    // secure.
     const nonce = blk: {
         var n: [Aes256Gcm.nonce_length]u8 = undefined;
         @memset(&n, 0);
@@ -156,14 +154,14 @@ fn decryptSymmetric(shared_secret: [32]u8, cypher: []const u8, buf: []u8) Authen
     }
 }
 
-/// Calculates the required buffer size for encryption output.
+/// Calculates the required buffer size for X25519 encryption output.
 ///
 /// Args:
 ///   message_len: Length of the message to encrypt
 ///
 /// Returns:
 ///   usize: Required buffer size (32 bytes ephemeral key + message + 16 bytes tag)
-fn encryptBufsize(message_len: usize) usize {
+fn encryptX25519BufSize(message_len: usize) usize {
     return X25519.public_length + message_len + Aes256Gcm.tag_length;
 }
 
@@ -184,14 +182,16 @@ fn encryptX25519Deterministic(
     seed: [32]u8,
     buf: []u8,
 ) IdentityElementError![]u8 {
-    const encrypted_size = encryptBufsize(message.len);
+    const encrypted_size = encryptX25519BufSize(message.len);
     assert(encrypted_size <= buf.len);
 
     const key_ephemeral = try X25519.KeyPair.generateDeterministic(seed);
     const shared_secret = try X25519.scalarmult(key_ephemeral.secret_key, key_public);
 
     encryptSymmetric(shared_secret, message, buf[32..]);
-    // Write the public ephemeral key at the end. This is important, when buf and message are the same.
+
+    // Write the public ephemeral key to buf after message was used. This makes
+    // it possible, that message and buf uses the same memory.
     buf[0..X25519.public_length].* = key_ephemeral.public_key;
     return buf[0..encrypted_size];
 }
@@ -205,35 +205,30 @@ fn encryptX25519Deterministic(
 ///
 /// Returns:
 ///   []u8: Encrypted data (ephemeral_public_key || encrypted_message || tag)
-///   InvalidPublicKeyError: If any public key is invalid
-///   WeakPublicKeyError: If ephemeral key generation produces weak key
 fn encryptX25519(
     random: Random,
     key_public: [32]u8,
     message: []const u8,
     buf: []u8,
-) (InvalidPublicKeyError || WeakPublicKeyError)![]u8 {
+) []u8 {
     var random_seed: [32]u8 = undefined;
     while (true) {
         random(&random_seed);
-        return encryptX25519Deterministic(key_public, message, random_seed, buf) catch |err| {
+        return encryptX25519Deterministic(key_public, message, random_seed, buf) catch {
             @branchHint(.unlikely);
-            switch (err) {
-                IdentityElementError.IdentityElement => continue,
-                else => |leftover| return leftover,
-            }
+            continue;
         };
     }
 }
 
-/// Calculates the size of decrypted message from cypher length.
+/// Calculates the size of decrypted message for X25519 from cypher length.
 ///
 /// Args:
 ///   cypher_len: Length of the encrypted data
 ///
 /// Returns:
 ///   usize: Size of the decrypted message
-fn decryptedBufsize(cypher_len: usize) usize {
+fn decryptX25519BufSize(cypher_len: usize) usize {
     return cypher_len - X25519.public_length - Aes256Gcm.tag_length;
 }
 
@@ -253,7 +248,7 @@ fn decryptX25519(
     cypher: []const u8,
     buf: []u8,
 ) (IdentityElementError || AuthenticationError)![]u8 {
-    const decrypted_size = decryptedBufsize(cypher.len);
+    const decrypted_size = decryptX25519BufSize(cypher.len);
     assert(buf.len >= decrypted_size);
 
     const key_ephemeral_public = cypher[0..X25519.public_length].*;
@@ -267,14 +262,13 @@ fn decryptX25519(
 
 /// Like decrypt_x25519 but without clamping the secret key.
 ///
-/// The combined trustee key can not be clamped. When decrypting a message
-/// encrypted with the combined trustee key, it can not be clamped.
+/// The combined trustee key can not be clamped.
 fn decryptX25519NoClamp(
     key_secret: [32]u8,
     cypher: []const u8,
     buf: []u8,
 ) (IdentityElementError || AuthenticationError || WeakPublicKeyError)![]u8 {
-    const decrypted_size = decryptedBufsize(cypher.len);
+    const decrypted_size = decryptX25519BufSize(cypher.len);
     assert(buf.len >= decrypted_size);
 
     const key_ephemeral_public = cypher[0..X25519.public_length].*;
@@ -305,7 +299,7 @@ test "x25519 encrypt and decrypt" {
     const msg = "my message to be encrypted";
     const seed = std.mem.zeroes([32]u8);
 
-    var buf_encrypt: [encryptBufsize(msg.len)]u8 = undefined;
+    var buf_encrypt: [encryptX25519BufSize(msg.len)]u8 = undefined;
     const encrypted_message = try encryptX25519Deterministic(key.key_public, msg, seed, &buf_encrypt);
 
     var buf_decrypt: [msg.len]u8 = undefined;
@@ -389,7 +383,7 @@ test "encrypt and decrypt trustee" {
 
     const key_public_x25519 = try combinePublicKeysToX25519(key_public_list);
 
-    var buf_encrypt: [encryptBufsize(msg.len)]u8 = undefined;
+    var buf_encrypt: [encryptX25519BufSize(msg.len)]u8 = undefined;
     const encrypted_message = try encryptX25519Deterministic(
         key_public_x25519,
         msg,
@@ -509,19 +503,12 @@ fn encryptFakeSteps(
     message_size: usize,
 ) ![][]u8 {
     const message = try allocator.alloc(u8, message_size);
-    defer allocator.free(message);
     @memset(message, 0);
 
     const result = try allocator.alloc([]u8, mixnet_key_public_list.len + 1);
-    errdefer {
-        for (result) |v| {
-            allocator.free(v);
-        }
-        allocator.free(result);
-    }
 
     const trustee_key_public_x25519 = try combinePublicKeysToX25519(trustee_key_public_list);
-    var cypher = try allocator.alloc(u8, encryptBufsize(message.len));
+    var cypher = try allocator.alloc(u8, encryptX25519BufSize(message.len));
     _ = try encryptX25519Deterministic(
         trustee_key_public_x25519,
         message,
@@ -537,7 +524,7 @@ fn encryptFakeSteps(
         const mixnet_seed = seed[i * 32 ..][0..32];
         i -= 1;
         const key_public = mixnet_key_public_list[i];
-        const mixnet_cypher = try allocator.alloc(u8, encryptBufsize(cypher_size));
+        const mixnet_cypher = try allocator.alloc(u8, encryptX25519BufSize(cypher_size));
         cypher = try encryptX25519Deterministic(key_public, cypher, mixnet_seed.*, mixnet_cypher);
         result[i] = cypher;
         cypher_size = cypher.len;
@@ -620,7 +607,6 @@ fn encryptFixedSize(
     size: usize,
 ) (OutOfMemoryError || InvalidPublicKeyError || WeakPublicKeyError)!CypherSeed {
     const seed = try allocator.alloc(u8, (mixnet_key_public_list.len + 1) * 32);
-    errdefer allocator.free(seed);
 
     while (true) {
         random(seed);
@@ -668,7 +654,6 @@ pub fn encryptFixedSizeDeterministic(
     seed: []u8,
 ) (OutOfMemoryError || InvalidPublicKeyError || IdentityElementError || WeakPublicKeyError)![]u8 {
     const message_with_padding = try allocator.alloc(u8, size);
-    defer allocator.free(message_with_padding);
     @memset(message_with_padding, 0);
     @memcpy(message_with_padding[0..message.len], message);
 
@@ -676,22 +661,14 @@ pub fn encryptFixedSizeDeterministic(
         size,
         mixnet_key_public_list.len,
     ));
-    errdefer allocator.free(buf);
 
-    var cypher = try encryptFull(
+    const cypher = try encryptFull(
         mixnet_key_public_list,
         trustee_key_public_list,
         message_with_padding,
         seed,
         buf,
     );
-
-    if (!allocator.resize(buf, cypher.len)) {
-        const new_buf = try allocator.alloc(u8, cypher.len);
-        @memcpy(new_buf[0..cypher.len], cypher);
-        allocator.free(buf);
-        cypher = new_buf;
-    }
 
     return cypher;
 }
@@ -717,7 +694,7 @@ pub const EncryptResult = struct {
     ///   Self: Reconstructed EncryptResult
     pub fn fromBytes(bytes: []const u8, mixnet_count: usize, max_size: usize) Self {
         const cypher_size = calcCypherSize(max_size, mixnet_count);
-        assert(bytes.len == 2 * cypher_size + encryptBufsize((mixnet_count + 1) * 32));
+        assert(bytes.len == 2 * cypher_size + encryptX25519BufSize((mixnet_count + 1) * 32));
 
         return .{
             .cyphers = [2][]const u8{
@@ -738,16 +715,6 @@ pub const EncryptResult = struct {
         @memcpy(result[cypher_len..][0..cypher_len], self.cyphers[1]);
         @memcpy(result[cypher_len * 2 ..][0..self.control_data.len], self.control_data);
         return result;
-    }
-
-    /// Frees all allocated memory in this EncryptResult.
-    ///
-    /// Args:
-    ///   allocator: The allocator used to create this result
-    pub fn free(self: Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.cyphers[0]);
-        allocator.free(self.cyphers[1]);
-        allocator.free(self.control_data);
     }
 
     /// Serializes the EncryptResult to bytes with a size prefix.
@@ -796,18 +763,14 @@ pub fn encryptMessage(
     size: usize,
 ) !EncryptResult {
     const cypher_real = try encryptFixedSize(allocator, random, mixnet_key_public_list, trustee_key_public_list, message, size);
-    allocator.free(cypher_real.seed);
 
     const zeros = try allocator.alloc(u8, size);
-    defer allocator.free(zeros);
     @memset(zeros, 0);
-
     const cypher_fake = try encryptFixedSize(allocator, random, mixnet_key_public_list, trustee_key_public_list, zeros, size);
-    defer allocator.free(cypher_fake.seed);
 
     const trustee_key_public_combined = try combinePublicKeysToX25519(trustee_key_public_list);
-    const buf = try allocator.alloc(u8, encryptBufsize(cypher_fake.seed.len));
-    const control_data = try encryptX25519(random, trustee_key_public_combined, cypher_fake.seed, buf);
+    const buf = try allocator.alloc(u8, encryptX25519BufSize(cypher_fake.seed.len));
+    const control_data = encryptX25519(random, trustee_key_public_combined, cypher_fake.seed, buf);
 
     return if (coin(random))
         .{ .cyphers = [2][]u8{ cypher_real.cypher, cypher_fake.cypher }, .control_data = control_data }
@@ -816,7 +779,10 @@ pub fn encryptMessage(
 }
 
 test "encrypt_message" {
-    const allocator = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const trustee_key1 = KeyPairTrustee.generate(testRandom);
     const trustee_key2 = KeyPairTrustee.generate(testRandom);
     const trustee_key3 = KeyPairTrustee.generate(testRandom);
@@ -852,10 +818,8 @@ test "encrypt_message" {
         msg,
         max_size,
     );
-    defer result.free(allocator);
 
     const cypher_block = try std.mem.concat(allocator, u8, &result.cyphers);
-    defer allocator.free(cypher_block);
 
     const decrypted_from_mixnet1 = try decryptMixnet(
         allocator,
@@ -863,7 +827,6 @@ test "encrypt_message" {
         2,
         cypher_block,
     );
-    defer allocator.free(decrypted_from_mixnet1);
 
     const decrypted_from_mixnet2 = try decryptMixnet(
         allocator,
@@ -871,7 +834,6 @@ test "encrypt_message" {
         2,
         decrypted_from_mixnet1,
     );
-    defer allocator.free(decrypted_from_mixnet2);
 
     const decrypted_from_mixnet3 = try decryptMixnet(
         allocator,
@@ -879,7 +841,6 @@ test "encrypt_message" {
         2,
         decrypted_from_mixnet2,
     );
-    defer allocator.free(decrypted_from_mixnet3);
 
     var buf_decrypt4: [1024]u8 = undefined;
     const decryptd_from_trustees = try decryptTrustee(
@@ -905,7 +866,7 @@ test "encrypt_message" {
     const user_data_ptr = try result.toBytesWithPrefix(allocator);
     const user_data_size = std.mem.readInt(u32, user_data_ptr[0..4], .little);
     const user_data = user_data_ptr[0 .. user_data_size + 4];
-    defer allocator.free(user_data);
+
     const mixnet_data_list = &[_][]u8{
         decrypted_from_mixnet1,
         decrypted_from_mixnet2,
@@ -952,11 +913,9 @@ pub fn decryptMixnet(
     assert(cypher_block.len % cypher_count == 0);
     const cypher_size = cypher_block.len / cypher_count;
 
-    const decrypted_message_size = decryptedBufsize(cypher_size);
+    const decrypted_message_size = decryptX25519BufSize(cypher_size);
     const decrypted_list = try allocator.alloc([]u8, cypher_count);
-    defer allocator.free(decrypted_list);
     const decrypted_buf = try allocator.alloc(u8, decrypted_message_size * cypher_count);
-    defer allocator.free(decrypted_buf);
 
     for (0..cypher_count) |i| {
         const cypher = cypher_block[i * cypher_size ..][0..cypher_size];
@@ -997,7 +956,7 @@ fn compareBytes(_: void, lhs: []const u8, rhs: []const u8) bool {
 pub fn decryptTrusteeBufSize(cypher_block_size: usize, cypher_count: usize) usize {
     assert(cypher_count > 0);
     const cypher_size = cypher_block_size / cypher_count;
-    return decryptedBufsize(cypher_size) * cypher_count;
+    return decryptX25519BufSize(cypher_size) * cypher_count;
 }
 
 /// Performs the final decryption using combined trustee secret keys.
@@ -1028,8 +987,7 @@ pub fn decryptTrustee(
     const cypher_size = cypher_block.len / cypher_count;
     assert(buf.len >= decryptTrusteeBufSize(cypher_block.len, cypher_count));
 
-    const decrypted_size = decryptedBufsize(cypher_size);
-
+    const decrypted_size = decryptX25519BufSize(cypher_size);
     const key_secret = combineKeySecret(key_secret_list);
 
     for (0..cypher_count) |i| {
@@ -1045,7 +1003,10 @@ pub fn decryptTrustee(
 }
 
 test "decrypt many messages" {
-    const allocator = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const trustee_key1 = KeyPairTrustee.generate(testRandom);
     const trustee_key2 = KeyPairTrustee.generate(testRandom);
     const trustee_key3 = KeyPairTrustee.generate(testRandom);
@@ -1096,7 +1057,6 @@ test "decrypt many messages" {
         msg_count,
         cypher_block[0 .. cypher1.len * 2],
     );
-    defer allocator.free(decrypted_from_mixnet1);
 
     const decrypted_from_mixnet2 = try decryptMixnet(
         allocator,
@@ -1104,7 +1064,6 @@ test "decrypt many messages" {
         msg_count,
         decrypted_from_mixnet1,
     );
-    defer allocator.free(decrypted_from_mixnet2);
 
     const decrypted_from_mixnet3 = try decryptMixnet(
         allocator,
@@ -1112,7 +1071,6 @@ test "decrypt many messages" {
         msg_count,
         decrypted_from_mixnet2,
     );
-    defer allocator.free(decrypted_from_mixnet3);
 
     var buf_decrypt4: [1024]u8 = undefined;
     const decryptd_from_trustees = try decryptTrustee(
@@ -1161,10 +1119,7 @@ pub fn validate(
 ) !i32 {
     const seed_size = (mixnet_data_list.len + 1) * 32;
     const user_data_size = user_data_list.len / user_count;
-
     const seed_decrypt_buf = try allocator.alloc(u8, seed_size);
-    defer allocator.free(seed_decrypt_buf);
-
     const key_secret_combined = combineKeySecret(trustee_key_secret_list);
 
     for (0..user_count) |i| {
@@ -1184,12 +1139,6 @@ pub fn validate(
             seed,
             max_size,
         );
-        defer {
-            for (fake_steps) |step| {
-                allocator.free(step);
-            }
-            allocator.free(fake_steps);
-        }
 
         if (!std.mem.eql(u8, fake_steps[0], user_data.cyphers[0]) and
             !std.mem.eql(u8, fake_steps[0], user_data.cyphers[1]))

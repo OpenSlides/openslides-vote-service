@@ -4,7 +4,7 @@ const crypto = @import("crypto.zig");
 
 /// Global allocator for WebAssembly memory management.
 /// Uses the WASM allocator in production, testing allocator during tests.
-pub const allocator = if (builtin.is_test) std.testing.allocator else std.heap.wasm_allocator;
+const global_allocator = if (builtin.is_test) std.testing.allocator else std.heap.wasm_allocator;
 
 /// Allocates memory in WebAssembly linear memory.
 /// This function is exported and can be called from the host environment.
@@ -15,7 +15,7 @@ pub const allocator = if (builtin.is_test) std.testing.allocator else std.heap.w
 /// Returns:
 ///   ?[*]u8: Pointer to allocated memory, or null if allocation fails
 export fn alloc(size: u32) ?[*]u8 {
-    const buf = allocator.alloc(u8, size) catch return null;
+    const buf = global_allocator.alloc(u8, size) catch return null;
     return buf.ptr;
 }
 
@@ -26,7 +26,7 @@ export fn alloc(size: u32) ?[*]u8 {
 ///   ptr: Pointer to memory to free
 ///   size: Size of the memory block to free
 export fn free(ptr: [*]u8, size: u32) void {
-    allocator.free(ptr[0..size]);
+    global_allocator.free(ptr[0..size]);
 }
 
 /// Host environment functions that must be provided by the WebAssembly runtime.
@@ -43,11 +43,11 @@ const Env = struct {
 /// This function provides printf-style formatting for debugging and error reporting.
 ///
 /// Args:
+///   allocator: A area allocator. consoleLog does not free the used memory.
 ///   fmt: Format string (compile-time known)
 ///   args: Arguments for the format string
-pub fn consoleLog(comptime fmt: []const u8, args: anytype) void {
+pub fn consoleLog(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) void {
     const msg = std.fmt.allocPrint(allocator, fmt, args) catch unreachable;
-    defer allocator.free(msg);
     Env.console_log(msg.ptr, msg.len);
 }
 
@@ -56,77 +56,8 @@ pub fn consoleLog(comptime fmt: []const u8, args: anytype) void {
 ///
 /// Args:
 ///   buf: Buffer to fill with random bytes
-pub fn getRandom(buf: []u8) void {
+fn getRandom(buf: []u8) void {
     Env.get_random(buf.ptr, buf.len);
-}
-
-/// Managed buffer with RAII (Resource Acquisition Is Initialization) pattern.
-/// Automatically handles memory allocation and deallocation to prevent leaks.
-const ManagedBuffer = struct {
-    /// Allocated memory data
-    data: []u8,
-
-    /// Initializes a new managed buffer with the specified size.
-    ///
-    /// Args:
-    ///   size: Number of bytes to allocate
-    ///
-    /// Returns:
-    ///   ManagedBuffer: New managed buffer
-    ///   OutOfMemoryError: If allocation fails
-    fn init(size: usize) !ManagedBuffer {
-        return ManagedBuffer{
-            .data = try allocator.alloc(u8, size),
-        };
-    }
-
-    /// Frees the managed buffer's memory.
-    /// Should be called when the buffer is no longer needed.
-    fn deinit(self: ManagedBuffer) void {
-        allocator.free(self.data);
-    }
-
-    /// Returns a raw pointer to the buffer's memory.
-    ///
-    /// Returns:
-    ///   [*]u8: Raw pointer to the buffer data
-    fn ptr(self: ManagedBuffer) [*]u8 {
-        return self.data.ptr;
-    }
-};
-
-/// Validates input parameters for array-based functions.
-/// Ensures that count is non-zero and validates the pointer.
-///
-/// Args:
-///   T: Type of elements in the array
-///   ptr: Pointer to the array (cannot be null in Zig)
-///   count: Number of elements in the array
-///
-/// Returns:
-///   bool: True if inputs are valid
-fn validateInputs(comptime T: type, ptr: [*]const T, count: u32) bool {
-    if (count == 0) return false;
-    _ = ptr; // ptr cannot be null in Zig, just suppress unused warning
-    return true;
-}
-
-/// Validates message parameters for encryption functions.
-/// Ensures message length and size constraints are met.
-///
-/// Args:
-///   msg_ptr: Pointer to the message (cannot be null in Zig)
-///   msg_len: Length of the message in bytes
-///   max_size: Maximum allowed message size
-///
-/// Returns:
-///   bool: True if message parameters are valid
-fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
-    _ = msg_ptr; // ptr cannot be null in Zig, just suppress unused warning
-    if (msg_len == 0) return false;
-    if (max_size < msg_len) return false;
-    if (max_size > 1024 * 1024) return false; // 1MB limit for safety
-    return true;
 }
 
 /// Generates a cryptographic key pair for a mixnet node.
@@ -144,7 +75,7 @@ fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
 export fn gen_mixnet_key_pair() ?[*]const u8 {
     const kp = crypto.KeyPairMixnet.generate(getRandom);
 
-    const result = allocator.alloc(u8, 64) catch return null;
+    const result = global_allocator.alloc(u8, 64) catch return null;
     @memcpy(result[0..32], &kp.key_secret);
     @memcpy(result[32..][0..32], &kp.key_public);
     return result.ptr;
@@ -165,7 +96,7 @@ export fn gen_mixnet_key_pair() ?[*]const u8 {
 export fn gen_trustee_key_pair() ?[*]const u8 {
     const kp = crypto.KeyPairTrustee.generate(getRandom);
 
-    const result = allocator.alloc(u8, 64) catch return null;
+    const result = global_allocator.alloc(u8, 64) catch return null;
     @memcpy(result[0..32], &kp.key_secret);
     @memcpy(result[32..][0..32], &kp.key_public);
     return result.ptr;
@@ -238,17 +169,12 @@ export fn encrypt(
     msg_len: u32,
     max_size: u32,
 ) ?[*]u8 {
-    // Input validation
-    if (!validateInputs([32]u8, mixnet_key_public_ptr, mixnet_count)) {
-        consoleLog("Invalid mixnet keys", .{});
-        return null;
-    }
-    if (!validateInputs([32]u8, trustee_key_public_ptr, trustee_count)) {
-        consoleLog("Invalid trustee keys", .{});
-        return null;
-    }
+    var arena: std.heap.ArenaAllocator = .init(global_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     if (!validateMessage(msg_ptr, msg_len, max_size)) {
-        consoleLog("Invalid message parameters", .{});
+        consoleLog(allocator, "Invalid message parameters", .{});
         return null;
     }
 
@@ -265,12 +191,11 @@ export fn encrypt(
         message,
         max_size,
     ) catch |err| {
-        consoleLog("Error encrypt_message: {}", .{err});
+        consoleLog(allocator, "Error encrypt_message: {}", .{err});
         return null;
     };
-    defer result.free(allocator);
 
-    return result.toBytesWithPrefix(allocator) catch return null;
+    return result.toBytesWithPrefix(global_allocator) catch return null;
 }
 
 /// Decrypts a block of encrypted messages using a mixnet node's secret key.
@@ -314,29 +239,25 @@ export fn decrypt_mixnet(
     cypher_block_ptr: [*]const u8,
     cypher_block_size: u32,
 ) ?[*]u8 {
-    // Input validation
+    var arena: std.heap.ArenaAllocator = .init(global_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     if (cypher_count == 0) {
-        consoleLog("Invalid cypher count", .{});
+        consoleLog(allocator, "Invalid cypher count", .{});
         return null;
     }
     if (cypher_block_size == 0) {
-        consoleLog("Invalid cypher block", .{});
+        consoleLog(allocator, "Invalid cypher block", .{});
         return null;
     }
     if (cypher_block_size % cypher_count != 0) {
-        consoleLog("Cypher block size not divisible by cypher count", .{});
+        consoleLog(allocator, "Cypher block size not divisible by cypher count", .{});
         return null;
     }
 
     // Create read-only slice without taking ownership
     const cypher_block = cypher_block_ptr[0..cypher_block_size];
-
-    // Ensure all cyphers have the same size
-    const individual_cypher_size = cypher_block_size / cypher_count;
-    if (individual_cypher_size == 0) {
-        consoleLog("Invalid cypher size", .{});
-        return null;
-    }
 
     const decrypted = crypto.decryptMixnet(
         allocator,
@@ -344,12 +265,11 @@ export fn decrypt_mixnet(
         cypher_count,
         cypher_block,
     ) catch |err| {
-        consoleLog("decrypt data: {}", .{err});
+        consoleLog(allocator, "decrypt data: {}", .{err});
         return null;
     };
-    defer allocator.free(decrypted);
 
-    return successSizedBuffer(decrypted);
+    return successSizedBuffer(global_allocator, decrypted);
 }
 
 /// Performs the final decryption of voting messages using trustee secret keys.
@@ -400,21 +320,20 @@ export fn decrypt_trustee(
     cypher_block_ptr: [*]const u8,
     cypher_block_size: u32,
 ) ?[*]u8 {
-    // Input validation
-    if (!validateInputs([32]u8, key_secret_list, trustee_count)) {
-        consoleLog("Invalid trustee keys", .{});
-        return null;
-    }
+    var arena: std.heap.ArenaAllocator = .init(global_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     if (cypher_count == 0) {
-        consoleLog("Invalid cypher count", .{});
+        consoleLog(allocator, "Invalid cypher count", .{});
         return null;
     }
     if (cypher_block_size == 0) {
-        consoleLog("Invalid cypher block", .{});
+        consoleLog(allocator, "Invalid cypher block", .{});
         return null;
     }
     if (cypher_block_size % cypher_count != 0) {
-        consoleLog("Cypher block size not divisible by cypher count", .{});
+        consoleLog(allocator, "Cypher block size not divisible by cypher count", .{});
         return null;
     }
 
@@ -422,32 +341,24 @@ export fn decrypt_trustee(
     const trustee_keys = key_secret_list[0..trustee_count];
     const cypher_block = cypher_block_ptr[0..cypher_block_size];
 
-    // Ensure all cyphers have the same size
-    const individual_cypher_size = cypher_block_size / cypher_count;
-    if (individual_cypher_size == 0) {
-        consoleLog("Invalid cypher size", .{});
-        return null;
-    }
-
     const buf_size = crypto.decryptTrusteeBufSize(cypher_block_size, cypher_count);
 
-    var buf = ManagedBuffer.init(buf_size) catch |err| {
-        consoleLog("Error allocating {} bytes of memory for decrypt buf: {}", .{ buf_size, err });
+    const buf = allocator.alloc(u8, buf_size) catch |err| {
+        consoleLog(allocator, "Error allocating {} bytes of memory for decrypt buf: {}", .{ buf_size, err });
         return null;
     };
-    defer buf.deinit();
 
     const decrypted = crypto.decryptTrustee(
         trustee_keys,
         cypher_count,
         cypher_block,
-        buf.data,
+        buf,
     ) catch |err| {
-        consoleLog("Error calling decrypt_trustee: {}", .{err});
+        consoleLog(allocator, "Error calling decrypt_trustee: {}", .{err});
         return null;
     };
 
-    return successSizedBuffer(decrypted);
+    return successSizedBuffer(global_allocator, decrypted);
 }
 
 /// Validates the integrity of the entire voting process end-to-end.
@@ -513,37 +424,40 @@ export fn validate(
     trustee_key_public_ptr: [*]const [32]u8,
     trustee_key_secret_ptr: [*]const [32]u8,
 ) i32 {
-    // Input validation
+    var arena: std.heap.ArenaAllocator = .init(global_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     if (user_count == 0) {
-        consoleLog("Invalid user count", .{});
+        consoleLog(allocator, "Invalid user count", .{});
         return -1000;
     }
     if (trustee_count == 0) {
-        consoleLog("Invalid trustee count", .{});
+        consoleLog(allocator, "Invalid trustee count", .{});
         return -1000;
     }
     if (user_data_block_size == 0) {
-        consoleLog("Invalid user data block", .{});
+        consoleLog(allocator, "Invalid user data block", .{});
         return -1000;
     }
     if (user_data_block_size % user_count != 0) {
-        consoleLog("User data block size not divisible by user count", .{});
+        consoleLog(allocator, "User data block size not divisible by user count", .{});
         return -1000;
     }
     if (mixnet_size_len == 0) {
-        consoleLog("Invalid mixnet size data", .{});
+        consoleLog(allocator, "Invalid mixnet size data", .{});
         return -1000;
     }
     if (mixnet_size_len % 4 != 0) {
-        consoleLog("Mixnet size length not divisible by 4", .{});
+        consoleLog(allocator, "Mixnet size length not divisible by 4", .{});
         return -1000;
     }
     if (mixnet_data_block_size == 0) {
-        consoleLog("Invalid mixnet data block", .{});
+        consoleLog(allocator, "Invalid mixnet data block", .{});
         return -1000;
     }
     if (max_size == 0 or max_size > 1024 * 1024) {
-        consoleLog("Invalid max size", .{});
+        consoleLog(allocator, "Invalid max size", .{});
         return -1000;
     }
 
@@ -552,8 +466,7 @@ export fn validate(
     const mixnet_data_block = mixnet_data_block_ptr[0..mixnet_data_block_size];
     const mixnet_size_list = mixnet_size_ptr[0..mixnet_size_len];
 
-    const mixnet_data_list = convertMixnetData(mixnet_size_list, mixnet_data_block) catch return -1000;
-    defer allocator.free(mixnet_data_list);
+    const mixnet_data_list = convertMixnetData(allocator, mixnet_size_list, mixnet_data_block) catch return -1000;
 
     // Validate key counts match data counts
     const mixnet_key_public_list = mixnet_key_public_ptr[0..mixnet_data_list.len];
@@ -570,7 +483,7 @@ export fn validate(
         max_size,
         user_count,
     ) catch |err| {
-        consoleLog("Error validate: {}", .{err});
+        consoleLog(allocator, "Error validate: {}", .{err});
         return -1000;
     };
 
@@ -598,6 +511,7 @@ export fn validate(
 ///   - Must have at least one mixnet node
 ///   - Data block must contain enough bytes for all specified sizes
 fn convertMixnetData(
+    allocator: std.mem.Allocator,
     mixnet_size_list: []const u8,
     mixnet_data_block: []const u8,
 ) ![][]const u8 {
@@ -610,19 +524,13 @@ fn convertMixnetData(
         return error.WrongInput;
     }
 
-    var u32_slice = ManagedBuffer.init(mixnet_count * @sizeOf(u32)) catch return error.OutOfMemory;
-    defer u32_slice.deinit();
-    const u32_data = std.mem.bytesAsSlice(u32, u32_slice.data);
-
+    const u32_data = try allocator.alloc(u32, mixnet_count);
     for (0..mixnet_count) |i| {
         u32_data[i] = std.mem.readInt(u32, mixnet_size_list[i * 4 ..][0..4], .little);
     }
 
     const mixnet_data_list = try allocator.alloc([]const u8, mixnet_count);
-    errdefer allocator.free(mixnet_data_list);
-
     var offset: u32 = 0;
-
     for (0..mixnet_count) |i| {
         const size = u32_data[i];
 
@@ -641,6 +549,7 @@ fn convertMixnetData(
 /// This is the standard format for variable-length data returned from WASM functions.
 ///
 /// Args:
+///  allocator: Memory allocator to use
 ///   buf: Data buffer to wrap with size prefix
 ///
 /// Returns:
@@ -651,9 +560,27 @@ fn convertMixnetData(
 ///   Bytes 4-N: Original buffer data
 ///
 /// Note: The caller is responsible for freeing the returned memory
-fn successSizedBuffer(buf: []const u8) ?[*]u8 {
+fn successSizedBuffer(allocator: std.mem.Allocator, buf: []const u8) ?[*]u8 {
     const result = allocator.alloc(u8, buf.len + 4) catch return null;
     std.mem.writeInt(u32, result[0..4], @intCast(buf.len), .little);
     @memcpy(result[4..], buf);
     return result.ptr;
+}
+
+/// Validates message parameters for encryption functions.
+/// Ensures message length and size constraints are met.
+///
+/// Args:
+///   msg_ptr: Pointer to the message (cannot be null in Zig)
+///   msg_len: Length of the message in bytes
+///   max_size: Maximum allowed message size
+///
+/// Returns:
+///   bool: True if message parameters are valid
+fn validateMessage(msg_ptr: [*]const u8, msg_len: u32, max_size: u32) bool {
+    _ = msg_ptr; // ptr cannot be null in Zig, just suppress unused warning
+    if (msg_len == 0) return false;
+    if (max_size < msg_len) return false;
+    if (max_size > 1024 * 1024) return false; // 1MB limit for safety
+    return true;
 }

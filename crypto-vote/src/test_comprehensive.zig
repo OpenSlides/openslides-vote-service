@@ -42,7 +42,9 @@ test "crypto operations - key generation consistency" {
 }
 
 test "crypto operations - encrypt decrypt roundtrip" {
-    const allocator = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     // Generate test keys
     const mixnet_key1 = crypto.KeyPairMixnet.generate(testRandom);
@@ -51,17 +53,14 @@ test "crypto operations - encrypt decrypt roundtrip" {
     const trustee_key2 = crypto.KeyPairTrustee.generate(testRandom);
 
     const mixnet_keys = try allocator.alloc([32]u8, 2);
-    defer allocator.free(mixnet_keys);
     mixnet_keys[0] = mixnet_key1.key_public;
     mixnet_keys[1] = mixnet_key2.key_public;
 
     const trustee_pub_keys = try allocator.alloc([32]u8, 2);
-    defer allocator.free(trustee_pub_keys);
     trustee_pub_keys[0] = trustee_key1.key_public;
     trustee_pub_keys[1] = trustee_key2.key_public;
 
     const trustee_sec_keys = try allocator.alloc([32]u8, 2);
-    defer allocator.free(trustee_sec_keys);
     trustee_sec_keys[0] = trustee_key1.key_secret;
     trustee_sec_keys[1] = trustee_key2.key_secret;
 
@@ -77,7 +76,6 @@ test "crypto operations - encrypt decrypt roundtrip" {
         message,
         max_size,
     );
-    defer result.free(allocator);
 
     // Verify result structure
     try testing.expect(result.cyphers[0].len > 0);
@@ -87,17 +85,11 @@ test "crypto operations - encrypt decrypt roundtrip" {
 
     // Test decryption path
     const cypher_block = try std.mem.concat(allocator, u8, &result.cyphers);
-    defer allocator.free(cypher_block);
-
     const decrypted1 = try crypto.decryptMixnet(allocator, mixnet_key1.key_secret, 2, cypher_block);
-    defer allocator.free(decrypted1);
-
     const decrypted2 = try crypto.decryptMixnet(allocator, mixnet_key2.key_secret, 2, decrypted1);
-    defer allocator.free(decrypted2);
 
     const buf_size = crypto.decryptTrusteeBufSize(decrypted2.len, 2);
     const buf = try allocator.alloc(u8, buf_size);
-    defer allocator.free(buf);
 
     const final_decrypted = try crypto.decryptTrustee(trustee_sec_keys, 2, decrypted2, buf);
 
@@ -130,7 +122,9 @@ test "buffer safety - size validation" {
 }
 
 test "error handling - invalid key operations" {
-    const allocator = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     // Test with invalid public keys (all zeros)
     const invalid_key = std.mem.zeroes([32]u8);
@@ -140,7 +134,7 @@ test "error handling - invalid key operations" {
     const message = "test";
 
     // This should handle invalid keys gracefully
-    const result = crypto.encryptMessage(
+    _ = try crypto.encryptMessage(
         allocator,
         testRandom,
         &[_][32]u8{crypto.KeyPairMixnet.generate(testRandom).key_public},
@@ -148,17 +142,12 @@ test "error handling - invalid key operations" {
         message,
         10,
     );
-
-    // The operation might succeed or fail depending on key validation
-    if (result) |r| {
-        r.free(allocator);
-    } else |_| {
-        // Error is expected with invalid keys
-    }
 }
 
 test "data consistency - message length validation" {
-    const allocator = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     // Test that all messages in a batch have the same length after padding
     const mixnet_key = crypto.KeyPairMixnet.generate(testRandom);
@@ -177,7 +166,6 @@ test "data consistency - message length validation" {
         msg1,
         max_size,
     );
-    defer result1.free(allocator);
 
     const result2 = try crypto.encryptMessage(
         allocator,
@@ -187,7 +175,6 @@ test "data consistency - message length validation" {
         msg2,
         max_size,
     );
-    defer result2.free(allocator);
 
     // Both results should have the same cypher size
     try testing.expectEqual(result1.cyphers[0].len, result2.cyphers[0].len);
@@ -195,7 +182,9 @@ test "data consistency - message length validation" {
 }
 
 test "edge cases - empty and maximum size messages" {
-    const allocator = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const mixnet_key = crypto.KeyPairMixnet.generate(testRandom);
     const trustee_key = crypto.KeyPairTrustee.generate(testRandom);
@@ -211,11 +200,9 @@ test "edge cases - empty and maximum size messages" {
         tiny_msg,
         max_size,
     );
-    defer result_tiny.free(allocator);
 
     // Test with maximum size message
     const large_msg = try allocator.alloc(u8, max_size);
-    defer allocator.free(large_msg);
     @memset(large_msg, 'X');
 
     const result_large = try crypto.encryptMessage(
@@ -226,7 +213,6 @@ test "edge cases - empty and maximum size messages" {
         large_msg,
         max_size,
     );
-    defer result_large.free(allocator);
 
     // Both should produce valid results
     try testing.expect(result_tiny.cyphers[0].len > 0);
@@ -271,7 +257,9 @@ test "security - key uniqueness" {
 }
 
 test "integration - full voting workflow simulation" {
-    const allocator = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     // Simulate a small voting scenario
     const num_mixnets = 3;
@@ -281,9 +269,7 @@ test "integration - full voting workflow simulation" {
 
     // Generate all keys
     var mixnet_keys = try allocator.alloc(crypto.KeyPairMixnet, num_mixnets);
-    defer allocator.free(mixnet_keys);
     var trustee_keys = try allocator.alloc(crypto.KeyPairTrustee, num_trustees);
-    defer allocator.free(trustee_keys);
 
     for (0..num_mixnets) |i| {
         mixnet_keys[i] = crypto.KeyPairMixnet.generate(testRandom);
@@ -294,11 +280,8 @@ test "integration - full voting workflow simulation" {
 
     // Extract public keys
     var mixnet_pub_keys = try allocator.alloc([32]u8, num_mixnets);
-    defer allocator.free(mixnet_pub_keys);
     var trustee_pub_keys = try allocator.alloc([32]u8, num_trustees);
-    defer allocator.free(trustee_pub_keys);
     var trustee_sec_keys = try allocator.alloc([32]u8, num_trustees);
-    defer allocator.free(trustee_sec_keys);
 
     for (0..num_mixnets) |i| {
         mixnet_pub_keys[i] = mixnet_keys[i].key_public;
@@ -311,12 +294,6 @@ test "integration - full voting workflow simulation" {
     // Simulate votes
     const votes = [_][]const u8{ "Alice", "Bob", "Alice", "Carol", "Bob" };
     var encrypted_votes = try allocator.alloc(crypto.EncryptResult, num_voters);
-    defer {
-        for (encrypted_votes) |vote| {
-            vote.free(allocator);
-        }
-        allocator.free(encrypted_votes);
-    }
 
     // Encrypt all votes
     for (0..num_voters) |i| {
@@ -332,7 +309,6 @@ test "integration - full voting workflow simulation" {
 
     // Simulate mixnet processing
     var current_batch = try allocator.alloc([]const u8, num_voters * 2);
-    defer allocator.free(current_batch);
 
     for (0..num_voters) |i| {
         current_batch[i * 2] = encrypted_votes[i].cyphers[0];
@@ -340,7 +316,6 @@ test "integration - full voting workflow simulation" {
     }
 
     const initial_block = try std.mem.concat(allocator, u8, current_batch);
-    defer allocator.free(initial_block);
 
     // Process through each mixnet
     var processed_block = initial_block;
@@ -351,15 +326,12 @@ test "integration - full voting workflow simulation" {
             num_voters * 2,
             processed_block,
         );
-        if (i > 0) allocator.free(processed_block);
         processed_block = decrypted;
     }
-    defer allocator.free(processed_block);
 
     // Final decryption by trustees
     const buf_size = crypto.decryptTrusteeBufSize(processed_block.len, num_voters * 2);
     const final_buf = try allocator.alloc(u8, buf_size);
-    defer allocator.free(final_buf);
 
     const final_result = try crypto.decryptTrustee(
         trustee_sec_keys,
