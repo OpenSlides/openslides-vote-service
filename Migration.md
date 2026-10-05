@@ -315,6 +315,58 @@ Calculation:
 }
 ```
 
+### assignment with max_votes_per_option > 1
+
+The following collections should be created the same way
+as for the [Topic poll](#topic):
+
+* poll
+* poll_option
+* poll_ballot
+
+Other collection have minor differences.
+
+#### poll_config_rating_score
+
+```
+{
+  poll_id: new_poll.id,
+  max_votes_per_option: old_poll.max_votes_per_option,
+  max_vote_sum: old_poll.max_votes_amount,
+  min_vote_sum: old_poll.min_votes_amount,
+  onehundred_percent_base: old_poll.onehundred_percent_base. Map (old_poll -> new) :
+      - Y -> no_general
+      - valid: (remains unchanged).
+      - cast: (remains unchanged).
+      - entitled: (remains unchanged).
+      - entitled_present: (remains unchanged).
+      - disabled: (remains unchanged).
+      - N -> @panic(not allowed for this config type)
+      - YN -> @panic(not allowed for this config type)
+      - YNA -> @panic(not allowed for this config type)
+}
+```
+
+#### poll/result
+
+Calculated similarly to the topic polls, but ids of the poll_options created
+above are used as the keys instead of the poll_option/text.
+
+Example: `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
+
+Calculation:
+```
+{
+  for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
+    poll_option.id: option.yes -> string,  (skip if value is 0)
+
+  abstain: sum(all_options.abstain) -> string,  (skip if 0)
+  nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
+  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
+  total_ballots: old_poll.votescast -> number
+}
+```
+
 ### assignment with global_yes or global_no
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
@@ -326,6 +378,7 @@ Migrate poll this way if:
 * Collection of the old poll's content_object_id is `assignment`
 * Old poll has `global_option_id`
 * `global_yes` and/or `global_no` for the poll is true
+* `max_votes_per_option` <= 1
 
 The following collections should be created the same way
 as for the [Topic poll](#topic):
@@ -350,7 +403,6 @@ but it always has `allow_nota: true` and should not have `display_chart`:
   strike_out: old_poll.pollmethod == N,
   display_chart: null,
   onehundred_percent_base: old_poll.onehundred_percent_base. Map (old_poll -> new):
-      - YNA -> valid
       - Y -> no_general
       - N -> no_general
       - valid: (remains unchanged).
@@ -359,28 +411,13 @@ but it always has `allow_nota: true` and should not have `display_chart`:
       - entitled_present: (remains unchanged).
       - disabled: (remains unchanged).
       - YN -> @panic(not allowed for this config type)
+      - YNA -> @panic(not allowed for this config type)
 }
 ```
 
 #### poll/result
 
-Calculated similarly to the topic polls, but ids of the poll_options created
-above are used as the keys instead of the poll_option/text.
-
-Example: `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
-
-Calculation:
-```
-{
-  for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
-    poll_option.id: option.yes -> string,  (skip if value is 0)
-
-  abstain: sum(all_options.abstain) -> string,  (skip if 0)
-  nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
-  invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
-  total_ballots: old_poll.votescast -> number
-}
-```
+Calculated similarly to the assignment polls with max_votes_per_option > 1.
 
 ### assignment: other cases
 
@@ -505,7 +542,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 * poll/backend: long or short
 * poll/description: was not used
-* For cumulative polls: poll.max_votes_per_option
 * Global options are no longer listed separately, but are included in the result.
 * poll/valid was previously counted separately. In future, it should be
   calculated by subtracting result.invalid from the total number of votes.
@@ -520,7 +556,6 @@ It's a dictionary where each key-value pair represents an old `vote`:
 ### Meeting
 
 * Fields were removed. No migration necessary:
-  * meeting/motion_poll_default_method
   * meeting/assignment_poll_default_backend
   * meeting/poll_default_backend
   * meeting/poll_candidate_list_ids
@@ -536,20 +571,20 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * Fields that were renamed:
   * meeting/motion_poll_projection_name_order_first -> poll_projection_name_order_first
   * meeting/motion_poll_projection_max_columns -> poll_projection_max_columns
-  * meeting/assignment_poll_enable_max_votes_per_option -> poll_enable_max_votes_per_option
   * meeting/default_projector_poll_ids -> default_projector_topic_poll_ids
-* Fields that need to be moved to meeting_poll_default:
+* Fields that need to be moved to meeting_poll_default for the corresponding poll type:
   * meeting/*_poll_default_group_ids -> meeting_poll_default/group_ids
   * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_default/sort_result_by_votes
-* Fields that need to be moved to meeting_poll_default and were split:
-  * meeting/poll_enable_max_votes_per_option -> meeting_poll_default/enable_cumulative_voting
+  * meeting/assignment_poll_enable_max_votes_per_option -> meeting_poll_default/enable_cumulative_voting
+* Fields that need to be moved to all 3 meeting_poll_default instances related to the meeting:
+  * meeting/poll_enable_max_yes_votes -> meeting_poll_default/enable_max_yes_votes
+  * meeting/poll_default_required_majority -> meeting_poll_default/default_required_majority
+  * meeting/poll_default_live_voting_enabled -> meeting_poll_default/default_live_voting_enabled
 * Field should be renamed and moved to meeting_poll_default, values should be changed similarly to poll/type:
   * meeting/*_poll_default_type -> meeting_poll_default/visibility
 * Field should be moved to meeting_poll_default and values should be changed similarly to poll/onehundred_percent_base
   (only the onehundred_percent_base field but not strike_out):
   * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_default/onehundred_percent_base
-* For topic polls:
-  * meeting_poll_default/display_chart: pie
 * Values should be changed and/or used for creating meeting_poll_default:
   * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_default/default_method:
     * Y -> selection.yes
@@ -561,6 +596,8 @@ It's a dictionary where each key-value pair represents an old `vote`:
     * YNA -> approval.yes_no_abstain
   * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_default/default_method:
     * N -> selection.no
+* New field:
+  * meeting_poll_default/allow_live_voting -> always True
 
 ### Meeting_user
 
