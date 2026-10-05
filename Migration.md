@@ -88,6 +88,7 @@ polls. For each item in `entitled_users_at_stop` an entry of
 {
   poll_id: new_poll.id,
   meeting_user_id (optional, if user is in the meeting): meeting_user_id from old_item.user_id and poll.meeting,
+  present: old_item.present
 }
 ```
 
