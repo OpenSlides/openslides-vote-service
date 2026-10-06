@@ -572,32 +572,32 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/motion_poll_projection_name_order_first -> poll_projection_name_order_first
   * meeting/motion_poll_projection_max_columns -> poll_projection_max_columns
   * meeting/default_projector_poll_ids -> default_projector_topic_poll_ids
-* Fields that need to be moved to meeting_poll_default for the corresponding poll type:
-  * meeting/*_poll_default_group_ids -> meeting_poll_default/group_ids
-  * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_default/sort_result_by_votes
-  * meeting/assignment_poll_enable_max_votes_per_option -> meeting_poll_default/enable_cumulative_voting
-* Fields that need to be moved to all 3 meeting_poll_default instances related to the meeting:
-  * meeting/poll_enable_max_yes_votes -> meeting_poll_default/enable_max_yes_votes
-  * meeting/poll_default_required_majority -> meeting_poll_default/default_required_majority
-  * meeting/poll_default_live_voting_enabled -> meeting_poll_default/default_live_voting_enabled
-* Field should be renamed and moved to meeting_poll_default, values should be changed similarly to poll/type:
-  * meeting/*_poll_default_type -> meeting_poll_default/visibility
-* Field should be moved to meeting_poll_default and values should be changed similarly to poll/onehundred_percent_base
+* Fields that need to be moved to meeting_poll_setting for the corresponding poll type:
+  * meeting/*_poll_default_group_ids -> meeting_poll_setting/group_ids
+  * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_setting/sort_result_by_votes
+  * meeting/assignment_poll_enable_max_votes_per_option -> meeting_poll_setting/enable_cumulative_voting
+* Fields that need to be moved to all 3 meeting_poll_setting instances related to the meeting:
+  * meeting/poll_enable_max_yes_votes -> meeting_poll_setting/enable_max_yes_votes
+  * meeting/poll_default_required_majority -> meeting_poll_setting/required_majority
+  * meeting/poll_default_live_voting_enabled -> meeting_poll_setting/enable_live_voting
+* Field should be renamed and moved to meeting_poll_setting, values should be changed similarly to poll/type:
+  * meeting/*_poll_default_type -> meeting_poll_setting/visibility
+* Field should be moved to meeting_poll_setting and values should be changed similarly to poll/onehundred_percent_base
   (only the onehundred_percent_base field but not strike_out):
-  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_default/onehundred_percent_base
-* Values should be changed and/or used for creating meeting_poll_default:
-  * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_default/default_method:
+  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_setting/onehundred_percent_base
+* Values should be changed and/or used for creating meeting_poll_setting:
+  * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_setting/method:
     * Y -> selection.yes
     * N -> selection.no
     * YN -> rating_approval.yes_no
     * YNA -> rating_approval.yes_no_abstain
-  * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_default/default_method:
+  * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_setting/method:
     * YN -> approval.yes_no
     * YNA -> approval.yes_no_abstain
-  * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_default/default_method:
+  * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_setting/method:
     * N -> selection.no
 * New field:
-  * meeting_poll_default/allow_live_voting -> always True
+  * meeting_poll_setting/allow_live_voting -> always True
 
 ### Meeting_user
 
