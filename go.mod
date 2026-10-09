@@ -8,7 +8,7 @@ require (
 	github.com/gomodule/redigo v1.9.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/ory/dockertest/v4 v4.0.0
-	github.com/shopspring/decimal v1.4.0
+	github.com/shopspring/decimal v1.5.0
 )
 
 require (
