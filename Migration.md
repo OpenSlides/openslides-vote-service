@@ -577,9 +577,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/*_poll_default_group_ids -> meeting_poll_setting/group_ids
   * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_setting/sort_result_by_votes
   * meeting/assignment_poll_enable_max_votes_per_option -> meeting_poll_setting/enable_cumulative_voting
-* Fields that need to be moved to all 3 meeting_poll_setting instances related to the meeting:
-  * meeting/poll_enable_max_yes_votes -> meeting_poll_setting/enable_max_yes_votes
-  * meeting/poll_default_required_majority -> meeting_poll_setting/required_majority
+* Field needs to be moved to all 3 meeting_poll_setting instances related to the meeting:
   * meeting/poll_default_live_voting_enabled -> meeting_poll_setting/enable_live_voting
 * Field should be renamed and moved to meeting_poll_setting, values should be changed similarly to poll/type:
   * meeting/*_poll_default_type -> meeting_poll_setting/visibility
