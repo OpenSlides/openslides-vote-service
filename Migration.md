@@ -604,20 +604,21 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/*_poll_default_type -> meeting_poll_setting/visibility
 * Field should be moved to meeting_poll_setting and values should be changed similarly to poll/onehundred_percent_base
   (only the onehundred_percent_base field but not strike_out):
-  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_setting/onehundred_percent_base
+  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_setting/onehundred_percent_base. Defaults if empty based on poll/content_object_id:
+    * assignment_poll_config and topic_poll_config - valid
+    * motion_poll_config - yes_no_abstain
 * Values should be changed and/or used for creating meeting_poll_setting:
   * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_setting/method:
-    * Y -> selection.yes
+    * Y -> selection.yes (default if empty)
     * N -> selection.no
     * YN -> rating_approval.yes_no
     * YNA -> rating_approval.yes_no_abstain
   * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_setting/method:
     * YN -> approval.yes_no
-    * YNA -> approval.yes_no_abstain
-  * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_setting/method:
-    * N -> selection.no
-* New field:
+    * YNA -> approval.yes_no_abstain (default if empty)
+* New fields:
   * meeting_poll_setting/allow_live_voting -> always True
+  * meeting/topic_poll_config_id/meeting_poll_setting/method -> always selection.yes
 
 #### Meeting_user
 
