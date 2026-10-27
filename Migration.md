@@ -161,7 +161,7 @@ When collection of poll/content_object_id == motion.
   allow_abstain: if old.method == "YNA" then "true" else "false",
   onehundred_percent_base: old_poll.onehundred_percent_base. Map (old_poll -> new):
       - YN -> yes_no
-      - YNA -> valid
+      - YNA -> yes_no_abstain
       - valid: (remains unchanged).
       - cast: (remains unchanged).
       - entitled: (remains unchanged).
@@ -474,7 +474,7 @@ Other collections are to be migrated differently.
   allow_abstain: if old.method == "YNA" then "true" else "false",
   onehundred_percent_base: old.onehundred_percent_base. Map (old -> new):
       - YN -> yes_no
-      - YNA -> valid
+      - YNA -> yes_no_abstain
       - valid: (remains unchanged).
       - cast: (remains unchanged).
       - entitled: (remains unchanged).
@@ -648,7 +648,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll/onehundred_percent_base -> poll_config_X/onehundred_percent_base and
   some values have changed:
   * YN -> yes_no
-  * YNA -> valid
+  * YNA -> yes_no_abstain
   * Y -> no_general
   * N -> no_general (+ poll_config_selection/strike_out: true)
   * valid: no changes.
