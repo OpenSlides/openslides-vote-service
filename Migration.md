@@ -80,6 +80,17 @@ Regardless of the type, for each old poll 2 models have to be created: a new
 `poll` and a related `poll_config_X`. If `entitled_users_at_stop` are written for the poll, its content has to be transformed into entries of `poll_entitled_user`. Additionally for some poll types
 `poll_option` models should be generated.
 
+Currently `entitled_users_at_stop` is an array with objects of format:
+
+```
+{
+    "user_id": Id,
+    "voted": boolean,
+    "present": boolean,
+    "vote_delegated_to_id": Id | null
+}
+```
+
 `entitled_users_at_stop` should be processed the same way for all the
 polls. For each item in `entitled_users_at_stop` an entry of
 `poll_entitled_user` has to be created:
@@ -99,8 +110,8 @@ based on content_object_id and whether the global yes or no option is used.
 #### poll_ballot objects and poll/result
 
 If old_poll.type is "analog" (corresponds to the new visibility "manually"),
-no ballots should be created for the poll. Othervise `poll_ballot` models
-should be generated from the old votes.
+no ballots should be created for the poll. Othervise `poll_ballot_user` and
+`poll_ballot` models should be generated from the old votes.
 
 If poll.state is "created" or "started", then poll/result is empty. Otherwise
 it should be generated from the old votes and options.
@@ -170,7 +181,7 @@ When collection of poll/content_object_id == motion.
       - analog -> manually
       - named -> open
       - pseudoanonymous -> secret
-      - cryptographic -> @panic(immpossible)
+      - cryptographic -> secret
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
@@ -205,7 +216,7 @@ Calculated from `old_poll.option_ids[0].vote_ids`:
   no: option.no -> string,  (skip if 0)
   abstain: option.abstain -> string,  (skip if 0)
   invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
-  total_ballots: count(option.vote_ids) -> number
+  total_ballots: old_poll.votescast -> number
 }
 ```
 
@@ -225,8 +236,6 @@ via `old_poll.option_ids[0].vote_ids`. For each old vote a new
       - N -> no
       - A -> abstain
       - else @panic(impossible value)
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -319,14 +328,14 @@ Calculation:
 
 ##### poll_ballot
 
+Calculation (one `poll_ballot` per each `user_token`):
+
 ```
 {
   poll_id: new_poll.id,
   weight: old.weight,
   split: false,
-  value: old.value -> Replace old options ids with corresponding new poll_options ids,
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
+  value: [vote.option_id for all votes],
 }
 ```
 
@@ -358,6 +367,23 @@ Other collection have minor differences.
       - N -> @panic(not allowed for this config type)
       - YN -> @panic(not allowed for this config type)
       - YNA -> @panic(not allowed for this config type)
+}
+```
+
+##### poll_option
+
+For each old option of the assignment polls with multiple options
+`content_object_id` value has to be a `user` collection. Otherwise, @panic.
+
+`poll_option` entries should be created similarly to the topic polls but
+with `content_object_id` instead of `text`.
+
+```
+{
+  poll_id: new_poll.id,
+  weight: old.weight,
+  text: NULL,
+  content_object_id: old.content_object_id
 }
 ```
 
@@ -395,7 +421,7 @@ Migrate poll this way if:
 * `max_votes_per_option` <= 1
 
 The following collections should be created the same way
-as for the [Topic poll](#topic):
+as for the [Assignment polls with max_votes_per_option > 1](#assignment-with-max_votes_per_option--1):
 
 * poll
 * poll_option
@@ -435,6 +461,9 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
 
 #### assignment: other cases
 
+`poll_option` entries should be created similarly as for other assignment polls.
+Other collections are to be migrated differently.
+
 ##### poll_config_rating_approval
 
 ```
@@ -465,7 +494,7 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
       - analog -> manually
       - named -> open
       - pseudoanonymous -> secret
-      - cryptographic -> @panic(immpossible)
+      - cryptographic -> secret
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
@@ -477,21 +506,6 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
   content_object_id: old.content_object_id,
   entitled_group_ids: old.entitled_group_ids,
   meeting_id: old.meeting_id
-}
-```
-
-#### poll_option
-
-For each old option ("old"), the option.content_object_id value has to be a
-`user` collection. Otherwise, @panic. Old content_object_id gets directly
-transfered to the poll_option/content_object_id field.
-
-```
-{
-  poll_id: new_poll.id,
-  weight: old.weight,
-  text: NULL,
-  content_object_id: old.content_object_id
 }
 ```
 
@@ -520,11 +534,8 @@ Calculation:
 
 ##### poll_ballot
 
-In the old system for each pair user-option a sepatate `vote` was created. A single
-`poll_ballot` should be generated for each group of the votes with the same
-`user_token`. All of these votes must have the same `weight` - else @panic.
-
-Old votes that can be found via `old_poll.option_ids.vote_ids`.
+All the votes with the same `poll_id` and `user_token` must have
+the same `weight` - else @panic.
 
 Calculation (one `poll_ballot` per each `user_token`):
 
@@ -534,8 +545,6 @@ Calculation (one `poll_ballot` per each `user_token`):
   weight: old.weight (must be same for all),
   split: false,
   value: see below,
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -543,8 +552,7 @@ Example of `poll_ballot.value`: `{"1":"yes","2":"abstain"}`.
 
 It's a dictionary where each key-value pair represents an old `vote`:
 
-* key: vote.option_id -> should be replaced with the id of the new `poll_option`
-  instances created above
+* key: vote.option_id
 * value: transformed vote.value:
       - Y -> yes
       - N -> no
@@ -562,12 +570,12 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 ## Changes in old fields by collection
 
-### Group
+#### Group
 
 * group/permissions: poll.can_manage -> agenda_item.can_manage_polls (migration
   is needed)
 
-### Meeting
+#### Meeting
 
 * Fields were removed. No migration necessary:
   * meeting/assignment_poll_default_backend
@@ -611,19 +619,19 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * New field:
   * meeting_poll_setting/allow_live_voting -> always True
 
-### Meeting_user
+#### Meeting_user
 
 * meeting_user/vote_delegated_to_id:
   * Field renamed to meeting_user/vote_delegated_to_ids
   * Type changes from relation to relation-list. In backend vote_delegated_to_ids remains the writing side.
   * Value should be transformed as: value -> list with this value as a single item
 
-### Motion
+#### Motion
 
 * Field was removed. No migration necessary:
   * motion/option_ids
 
-### Poll
+#### Poll
 
 * Fields were removed. No migration necessary:
   * poll/description
@@ -668,11 +676,11 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll/entitled_users_at_stop: json-field was replaced with a relation to the
   new collection `poll_entitled_user`
 
-### Poll_candidate_list
+#### Poll_candidate_list
 
 * The `poll_candidate_list` collection was removed. No migration needed.
 
-### Poll_candidate, option -> poll_option
+#### Poll_candidate, option -> poll_option
 
 * Parts `poll_candidate` and `option` were absorbed by the new collection `poll_option`:
   * poll_option/weight:
@@ -688,18 +696,18 @@ It's a dictionary where each key-value pair represents an old `vote`:
     * if collection of content_object_id == "user" -> option/content_object_id
     * fqid from "user" and poll_candidate/user_id
 
-### Option -> other collections
+#### Option -> other collections
 
 * The following fields were removed but have to be used in the migration for
   generating values for generating poll/result:
   * yes, no and abstain
   * vote_ids
 
-### Projection
+#### Projection
 
 * projection/content was removed. No migration necessary.
 
-### Vote -> poll_ballot
+#### Vote -> poll_ballot
 
 * The `vote` collection was renamed into `poll_ballot`.
 * Field was removed. No migration necessary:
@@ -708,7 +716,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * vote/option_id: replaced with the direct relation to the poll. Needs
   migration: vote.option_id/poll_id -> poll_ballot/poll_id.
 
-### Vote -> poll_ballot_user
+#### Vote -> poll_ballot_user
 
 * vote/option_id: replaced with the direct relation to the poll. Needs
   migration: vote.option_id/poll_id -> poll_ballot_user/poll_id.
@@ -719,7 +727,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll_ballot_user/poll_ballot_id: id of the poll_ballot instance generated
   from the same vote.
 
-### User
+#### User
 
 * Field was removed. No migration necessary:
   * user/poll_voted_ids
