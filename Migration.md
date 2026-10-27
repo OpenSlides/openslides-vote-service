@@ -131,9 +131,18 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 }
 ```
 
-### motion
+### Polls with single option
 
-#### poll_config_approval
+2 types of polls should contain exactly one option: motion-polls and
+elections for poll_candidate_list. If count(options_ids) > 1 -> @panic.
+
+Per each poll_id and user_token only one vote should exist. Othewise @panic.
+
+#### motion
+
+When collection of poll/content_object_id == motion.
+
+##### poll_config_approval
 
 ```
 {
@@ -152,7 +161,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 }
 ```
 
-#### poll
+##### poll
 
 ```
 {
@@ -177,7 +186,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 ```
 
 
-#### poll/result
+##### poll/result
 
 In the old system, there is one option per poll. There is also a global option,
 but this can be ignored. The new `poll/result` essentially corresponds to this
@@ -200,7 +209,7 @@ Calculated from `old_poll.option_ids[0].vote_ids`:
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
 
 In the old system only one vote should exist per user. The votes can be found
 via `old_poll.option_ids[0].vote_ids`. For each old vote a new
@@ -221,8 +230,7 @@ via `old_poll.option_ids[0].vote_ids`. For each old vote a new
 }
 ```
 
-
-### assignment with poll_candidate_list
+#### assignment with poll_candidate_list
 
 If in the old system the collection of `old_poll.content_object_id` is
 `poll_candidate_list`, the following collections should be created the same way
@@ -232,7 +240,7 @@ as for the [Motion poll](#motion):
 * poll (including calculation of poll/result)
 * poll_ballot
 
-#### poll_option
+##### poll_option
 
 Additionally, each `poll_candidate` ("old") in
 `old_poll.option_ids[0].content_object_id.poll_candidate_ids` should be saved as
@@ -247,12 +255,18 @@ a `poll_option`:
 }
 ```
 
-### topic
+### Polls with multiple options
+
+In the old system for each pair user-option a sepatate `vote` was created. A single
+`poll_ballot` should be generated for each group of the votes with the same
+`user_token` and `poll_id`..
+
+#### topic
 
 `poll` is being created the same way as for [Motion poll](#motion). The other
 collections are being migrated differently.
 
-#### poll_config_selection
+##### poll_config_selection
 
 ```
 {
@@ -266,7 +280,7 @@ collections are being migrated differently.
 }
 ```
 
-#### poll_option
+##### poll_option
 
 A new `poll_option` should be created for each old `option` ("old"). They can
 be found via `old_poll.option_ids`.
@@ -280,7 +294,7 @@ be found via `old_poll.option_ids`.
 }
 ```
 
-#### poll/result
+##### poll/result
 
 For each old option there is one entry in the result dict. The key is the
 poll_option.text. The value is being calculated from the old votes.
@@ -303,7 +317,7 @@ Calculation:
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
 
 ```
 {
@@ -316,18 +330,17 @@ Calculation:
 }
 ```
 
-### assignment with max_votes_per_option > 1
+#### assignment with max_votes_per_option > 1
 
 The following collections should be created the same way
 as for the [Topic poll](#topic):
 
 * poll
-* poll_option
 * poll_ballot
 
 Other collection have minor differences.
 
-#### poll_config_rating_score
+##### poll_config_rating_score
 
 ```
 {
@@ -348,7 +361,7 @@ Other collection have minor differences.
 }
 ```
 
-#### poll/result
+##### poll/result
 
 Calculated similarly to the topic polls, but ids of the poll_options created
 above are used as the keys instead of the poll_option/text.
@@ -368,7 +381,7 @@ Calculation:
 }
 ```
 
-### assignment with global_yes or global_no
+#### assignment with global_yes or global_no
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
 function almost like the topic polls: with `poll_config_selection` but with
@@ -390,7 +403,7 @@ as for the [Topic poll](#topic):
 
 Other collection have minor differences.
 
-#### poll_config_selection
+##### poll_config_selection
 
 `poll_config_selection` for the assignment poll is similar to the topic poll
 but it always has `allow_nota: true` and should not have `display_chart`:
@@ -416,13 +429,13 @@ but it always has `allow_nota: true` and should not have `display_chart`:
 }
 ```
 
-#### poll/result
+##### poll/result
 
 Calculated similarly to the assignment polls with max_votes_per_option > 1.
 
-### assignment: other cases
+#### assignment: other cases
 
-#### poll_config_rating_approval
+##### poll_config_rating_approval
 
 ```
 {
@@ -443,7 +456,7 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
 }
 ```
 
-#### poll
+##### poll
 
 ```
 {
@@ -482,7 +495,7 @@ transfered to the poll_option/content_object_id field.
 }
 ```
 
-#### poll/result
+##### poll/result
 
 Poll/result is a dict. There is one entry for each old option. The key is
 the poll_option-id created above. The values "yes", "no" and "abstain" are
@@ -505,7 +518,7 @@ Calculation:
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
 
 In the old system for each pair user-option a sepatate `vote` was created. A single
 `poll_ballot` should be generated for each group of the votes with the same
