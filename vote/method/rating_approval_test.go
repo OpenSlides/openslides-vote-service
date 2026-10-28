@@ -102,7 +102,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 				{Value: `{"3":"yes"}`, Weight: decimal.NewFromInt(5)},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":{"yes":"1"},"2":{"no":"1","yes":"1"},"3":{"no":"1","yes":"5"},"total_ballots":3}`,
+			expectResult: `{"1":{"yes":"1"},"2":{"no":"1","yes":"1"},"3":{"no":"1","yes":"5"},"entitled_users":0,"entitled_users_present":0,"total_ballots":3}`,
 		},
 		{
 			name:    "With out abstain but with invalid",
@@ -113,7 +113,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 				{Value: `{"1":"yes","2":"no"}`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"invalid":1,"total_ballots":2}`,
+			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"entitled_users":0,"entitled_users_present":0,"invalid":1,"total_ballots":2}`,
 		},
 		{
 			name:    "Empty allowed",
@@ -125,7 +125,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 				{Value: `null`},
 			},
 			allowEmpty:   true,
-			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"empty":"2","total_ballots":3}`,
+			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"empty":"2","entitled_users":0,"entitled_users_present":0,"total_ballots":3}`,
 		},
 		{
 			name:    "Empty not allowed",
@@ -137,7 +137,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 				{Value: `null`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"invalid":2,"total_ballots":3}`,
+			expectResult: `{"1":{"yes":"1"},"2":{"no":"1"},"entitled_users":0,"entitled_users_present":0,"invalid":2,"total_ballots":3}`,
 		},
 		{
 			name: "Not Voting does not count as abstain",
@@ -149,7 +149,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 				{Value: `{"1":"yes"}`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":{"yes":"2"},"2":{"abstain":"1"},"total_ballots":2}`,
+			expectResult: `{"1":{"yes":"2"},"2":{"abstain":"1"},"entitled_users":0,"entitled_users_present":0,"total_ballots":2}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestRatingApprovalCreateResult(t *testing.T) {
 			}
 			a.Options = tt.options
 
-			result, err := a.Result(tt.ballots, tt.allowEmpty)
+			result, err := a.Result(tt.ballots, tt.allowEmpty, method.AdditionalResultFields{})
 			if err != nil {
 				t.Fatalf("CreateResult: %v", err)
 			}

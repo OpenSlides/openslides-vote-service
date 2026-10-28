@@ -227,8 +227,8 @@ func (s Selection) ValidateBallot(vote json.RawMessage) error {
 }
 
 // Result calculates the result.
-func (s Selection) Result(ballots []Ballot, allowEmpty bool) (string, error) {
-	return iterateValues(s, ballots, allowEmpty, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
+func (s Selection) Result(ballots []Ballot, allowEmpty bool, meta AdditionalResultFields) (string, error) {
+	return iterateValues(s, ballots, allowEmpty, meta, func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error {
 		var votedOptions []int
 		if err := json.Unmarshal([]byte(value), &votedOptions); err != nil {
 			if s.AllowNota && strings.ToLower(value) == `"nota"` {

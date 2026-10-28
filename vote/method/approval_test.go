@@ -90,7 +90,7 @@ func TestApprovalCreateResult(t *testing.T) {
 				{Value: `"No"`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"no":"1","total_ballots":3,"yes":"2"}`,
+			expectResult: `{"entitled_users":0,"entitled_users_present":0,"no":"1","total_ballots":3,"yes":"2"}`,
 		},
 		{
 			name:   "Invalid",
@@ -102,7 +102,7 @@ func TestApprovalCreateResult(t *testing.T) {
 				{Value: `"ABC"`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"invalid":1,"no":"1","total_ballots":4,"yes":"2"}`,
+			expectResult: `{"entitled_users":0,"entitled_users_present":0,"invalid":1,"no":"1","total_ballots":4,"yes":"2"}`,
 		},
 		{
 			name:   "AllowEmpty",
@@ -116,7 +116,7 @@ func TestApprovalCreateResult(t *testing.T) {
 				{Value: `null`},
 			},
 			allowEmpty:   true,
-			expectResult: `{"empty":"2","invalid":1,"no":"1","total_ballots":6,"yes":"2"}`,
+			expectResult: `{"empty":"2","entitled_users":0,"entitled_users_present":0,"invalid":1,"no":"1","total_ballots":6,"yes":"2"}`,
 		},
 		{
 			name:   "Empty not allowed",
@@ -130,7 +130,7 @@ func TestApprovalCreateResult(t *testing.T) {
 				{Value: `null`},
 			},
 			allowEmpty:   false,
-			expectResult: `{"invalid":3,"no":"1","total_ballots":6,"yes":"2"}`,
+			expectResult: `{"entitled_users":0,"entitled_users_present":0,"invalid":3,"no":"1","total_ballots":6,"yes":"2"}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,7 +139,7 @@ func TestApprovalCreateResult(t *testing.T) {
 				t.Fatalf("Error: %v", err)
 			}
 
-			result, err := a.Result(tt.ballots, tt.allowEmpty)
+			result, err := a.Result(tt.ballots, tt.allowEmpty, method.AdditionalResultFields{})
 			if err != nil {
 				t.Fatalf("CreateResult: %v", err)
 			}

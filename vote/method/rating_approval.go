@@ -228,7 +228,7 @@ func (ra RatingApproval) ValidateBallot(vote json.RawMessage) error {
 }
 
 // Result calculates the result.
-func (ra RatingApproval) Result(ballots []Ballot, allowEmpty bool) (string, error) {
+func (ra RatingApproval) Result(ballots []Ballot, allowEmpty bool, meta AdditionalResultFields) (string, error) {
 	result := make(map[string]map[string]decimal.Decimal)
 	invalid := 0
 	var empty decimal.Decimal
@@ -281,7 +281,7 @@ func (ra RatingApproval) Result(ballots []Ballot, allowEmpty bool) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("encode result: %w", err)
 	}
-	withInvalid, err := addFieldsToResult(encodedResult, len(ballots), invalid, empty)
+	withInvalid, err := addFieldsToResult(encodedResult, len(ballots), invalid, empty, meta)
 	if err != nil {
 		return "", fmt.Errorf("add invalid and abstain: %w", err)
 	}
