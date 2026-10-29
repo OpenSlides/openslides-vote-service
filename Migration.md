@@ -80,6 +80,17 @@ Regardless of the type, for each old poll 2 models have to be created: a new
 `poll` and a related `poll_config_X`. If `entitled_users_at_stop` are written for the poll, its content has to be transformed into entries of `poll_entitled_user`. Additionally for some poll types
 `poll_option` models should be generated.
 
+Currently `entitled_users_at_stop` is an array with objects of format:
+
+```
+{
+    "user_id": Id,
+    "voted": boolean,
+    "present": boolean,
+    "vote_delegated_to_id": Id | null
+}
+```
+
 `entitled_users_at_stop` should be processed the same way for all the
 polls. For each item in `entitled_users_at_stop` an entry of
 `poll_entitled_user` has to be created:
@@ -99,8 +110,8 @@ based on content_object_id and whether the global yes or no option is used.
 #### poll_ballot objects and poll/result
 
 If old_poll.type is "analog" (corresponds to the new visibility "manually"),
-no ballots should be created for the poll. Othervise `poll_ballot` models
-should be generated from the old votes.
+no ballots should be created for the poll. Othervise `poll_ballot_user` and
+`poll_ballot` models should be generated from the old votes.
 
 If poll.state is "created" or "started", then poll/result is empty. Otherwise
 it should be generated from the old votes and options.
@@ -131,9 +142,18 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 }
 ```
 
-### motion
+### Polls with single option
 
-#### poll_config_approval
+2 types of polls should contain exactly one option: motion-polls and
+elections for poll_candidate_list. If count(options_ids) > 1 -> @panic.
+
+Per each poll_id and user_token only one vote should exist. Othewise @panic.
+
+#### motion
+
+When collection of poll/content_object_id == motion.
+
+##### poll_config_approval
 
 ```
 {
@@ -141,7 +161,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
   allow_abstain: if old.method == "YNA" then "true" else "false",
   onehundred_percent_base: old_poll.onehundred_percent_base. Map (old_poll -> new):
       - YN -> yes_no
-      - YNA -> valid
+      - YNA -> yes_no_abstain
       - valid: (remains unchanged).
       - cast: (remains unchanged).
       - entitled: (remains unchanged).
@@ -152,7 +172,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 }
 ```
 
-#### poll
+##### poll
 
 ```
 {
@@ -161,7 +181,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
       - analog -> manually
       - named -> open
       - pseudoanonymous -> secret
-      - cryptographic -> @panic(immpossible)
+      - cryptographic -> secret
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
@@ -177,7 +197,7 @@ For each poll that is not anonymized, per each `poll_ballot` an additional
 ```
 
 
-#### poll/result
+##### poll/result
 
 In the old system, there is one option per poll. There is also a global option,
 but this can be ignored. The new `poll/result` essentially corresponds to this
@@ -186,7 +206,8 @@ single option. If there is more than one option, then @panic.
 Values for "invalid" and "total_ballots" should be stored as integers. The
 other values are strings as they are decimal.
 
-Example: `{"yes":"32","no":"20","abstain":"10","invalid":2,"total_ballots":64}`
+Example: `{"yes":"32","no":"20","abstain":"10","entitled_users":40,"entitled_users_present":24,"invalid":2,"total_ballots":64}`
+
 
 Calculated from `old_poll.option_ids[0].vote_ids`:
 
@@ -194,13 +215,17 @@ Calculated from `old_poll.option_ids[0].vote_ids`:
 {
   yes: option.yes -> string,  (skip if 0)
   no: option.no -> string,  (skip if 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
+
   abstain: option.abstain -> string,  (skip if 0)
   invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
-  total_ballots: count(option.vote_ids) -> number
+  total_ballots: old_poll.votescast -> number
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
 
 In the old system only one vote should exist per user. The votes can be found
 via `old_poll.option_ids[0].vote_ids`. For each old vote a new
@@ -216,13 +241,10 @@ via `old_poll.option_ids[0].vote_ids`. For each old vote a new
       - N -> no
       - A -> abstain
       - else @panic(impossible value)
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
-
-### assignment with poll_candidate_list
+#### assignment with poll_candidate_list
 
 If in the old system the collection of `old_poll.content_object_id` is
 `poll_candidate_list`, the following collections should be created the same way
@@ -232,7 +254,7 @@ as for the [Motion poll](#motion):
 * poll (including calculation of poll/result)
 * poll_ballot
 
-#### poll_option
+##### poll_option
 
 Additionally, each `poll_candidate` ("old") in
 `old_poll.option_ids[0].content_object_id.poll_candidate_ids` should be saved as
@@ -247,12 +269,18 @@ a `poll_option`:
 }
 ```
 
-### topic
+### Polls with multiple options
+
+In the old system for each pair user-option a sepatate `vote` was created. A single
+`poll_ballot` should be generated for each group of the votes with the same
+`user_token` and `poll_id`..
+
+#### topic
 
 `poll` is being created the same way as for [Motion poll](#motion). The other
 collections are being migrated differently.
 
-#### poll_config_selection
+##### poll_config_selection
 
 ```
 {
@@ -266,10 +294,11 @@ collections are being migrated differently.
 }
 ```
 
-#### poll_option
+##### poll_option
 
-A new `poll_option` should be created for each old `option` ("old"). They can
-be found via `old_poll.option_ids`.
+A new `poll_option` should be created for each old `option` ("old") that is not
+a global option for the poll (`option/used_as_global_option_in_poll_id` is Null).
+They can be found via `old_poll.option_ids`.
 
 ```
 {
@@ -280,7 +309,7 @@ be found via `old_poll.option_ids`.
 }
 ```
 
-#### poll/result
+##### poll/result
 
 For each old option there is one entry in the result dict. The key is the
 poll_option.text. The value is being calculated from the old votes.
@@ -288,13 +317,16 @@ poll_option.text. The value is being calculated from the old votes.
 `global_yes` and `global_no` in polls with `poll_config_selection` are being
 calculated separately into the value "nota".
 
-Example: `{"Option 1":"40","Option 2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
+Example: `{"Option 1":"40","Option 2":"23","entitled_users":40,"entitled_users_present":24,"nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
-    poll_option.text: option.yes -> string,  (skip if value is 0)
+    poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
@@ -303,31 +335,30 @@ Calculation:
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
+
+Calculation (one `poll_ballot` per each `user_token`):
 
 ```
 {
   poll_id: new_poll.id,
   weight: old.weight,
   split: false,
-  value: old.value -> Replace old options ids with corresponding new poll_options ids,
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
+  value: [vote.option_id for all votes],
 }
 ```
 
-### assignment with max_votes_per_option > 1
+#### assignment with max_votes_per_option > 1
 
 The following collections should be created the same way
 as for the [Topic poll](#topic):
 
 * poll
-* poll_option
 * poll_ballot
 
 Other collection have minor differences.
 
-#### poll_config_rating_score
+##### poll_config_rating_score
 
 ```
 {
@@ -348,18 +379,38 @@ Other collection have minor differences.
 }
 ```
 
-#### poll/result
+##### poll_option
+
+For each old option of the assignment polls with multiple options
+`content_object_id` value has to be a `user` collection. Otherwise, @panic.
+
+`poll_option` entries should be created similarly to the topic polls but
+with `content_object_id` instead of `text`.
+
+```
+{
+  poll_id: new_poll.id,
+  weight: old.weight,
+  text: NULL,
+  content_object_id: old.content_object_id
+}
+```
+
+##### poll/result
 
 Calculated similarly to the topic polls, but ids of the poll_options created
 above are used as the keys instead of the poll_option/text.
 
-Example: `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
+Example: `{"1":"40","2":"23","entitled_users":40,"entitled_users_present":24,"nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
-    poll_option.id: option.yes -> string,  (skip if value is 0)
+    poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
@@ -368,7 +419,7 @@ Calculation:
 }
 ```
 
-### assignment with global_yes or global_no
+#### assignment with global_yes or global_no
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
 function almost like the topic polls: with `poll_config_selection` but with
@@ -382,7 +433,7 @@ Migrate poll this way if:
 * `max_votes_per_option` <= 1
 
 The following collections should be created the same way
-as for the [Topic poll](#topic):
+as for the [Assignment polls with max_votes_per_option > 1](#assignment-with-max_votes_per_option--1):
 
 * poll
 * poll_option
@@ -390,7 +441,7 @@ as for the [Topic poll](#topic):
 
 Other collection have minor differences.
 
-#### poll_config_selection
+##### poll_config_selection
 
 `poll_config_selection` for the assignment poll is similar to the topic poll
 but it always has `allow_nota: true` and should not have `display_chart`:
@@ -416,13 +467,16 @@ but it always has `allow_nota: true` and should not have `display_chart`:
 }
 ```
 
-#### poll/result
+##### poll/result
 
 Calculated similarly to the assignment polls with max_votes_per_option > 1.
 
-### assignment: other cases
+#### assignment: other cases
 
-#### poll_config_rating_approval
+`poll_option` entries should be created similarly as for other assignment polls.
+Other collections are to be migrated differently.
+
+##### poll_config_rating_approval
 
 ```
 {
@@ -432,7 +486,7 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
   allow_abstain: if old.method == "YNA" then "true" else "false",
   onehundred_percent_base: old.onehundred_percent_base. Map (old -> new):
       - YN -> yes_no
-      - YNA -> valid
+      - YNA -> yes_no_abstain
       - valid: (remains unchanged).
       - cast: (remains unchanged).
       - entitled: (remains unchanged).
@@ -443,7 +497,7 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
 }
 ```
 
-#### poll
+##### poll
 
 ```
 {
@@ -452,7 +506,7 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
       - analog -> manually
       - named -> open
       - pseudoanonymous -> secret
-      - cryptographic -> @panic(immpossible)
+      - cryptographic -> secret
   state: if old.state == "published" then "finished" else old.state,
   result: see below,
   published: old.state == "published",
@@ -467,28 +521,13 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
 }
 ```
 
-#### poll_option
-
-For each old option ("old"), the option.content_object_id value has to be a
-`user` collection. Otherwise, @panic. Old content_object_id gets directly
-transfered to the poll_option/content_object_id field.
-
-```
-{
-  poll_id: new_poll.id,
-  weight: old.weight,
-  text: NULL,
-  content_object_id: old.content_object_id
-}
-```
-
-#### poll/result
+##### poll/result
 
 Poll/result is a dict. There is one entry for each old option. The key is
 the poll_option-id created above. The values "yes", "no" and "abstain" are
 adopted as objects.
 
-Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1,"total_ballots":7}`
+Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"entitled_users":40,"entitled_users_present":24,"invalid":1,"total_ballots":7}`
 
 Calculation:
 ```
@@ -500,18 +539,18 @@ Calculation:
       abstain: option.abstain -> string   (skip if 0)
     },
 
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
+
   invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
   total_ballots: old_poll.votescast -> number
 }
 ```
 
-#### poll_ballot
+##### poll_ballot
 
-In the old system for each pair user-option a sepatate `vote` was created. A single
-`poll_ballot` should be generated for each group of the votes with the same
-`user_token`. All of these votes must have the same `weight` - else @panic.
-
-Old votes that can be found via `old_poll.option_ids.vote_ids`.
+All the votes with the same `poll_id` and `user_token` must have
+the same `weight` - else @panic.
 
 Calculation (one `poll_ballot` per each `user_token`):
 
@@ -521,8 +560,6 @@ Calculation (one `poll_ballot` per each `user_token`):
   weight: old.weight (must be same for all),
   split: false,
   value: see below,
-  acting_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.delegated_user_id and poll.meeting,
-  represented_meeting_user_id (optional, if user is in the meeting): meeting_user_id from old.user_id and poll.meeting
 }
 ```
 
@@ -530,8 +567,7 @@ Example of `poll_ballot.value`: `{"1":"yes","2":"abstain"}`.
 
 It's a dictionary where each key-value pair represents an old `vote`:
 
-* key: vote.option_id -> should be replaced with the id of the new `poll_option`
-  instances created above
+* key: vote.option_id
 * value: transformed vote.value:
       - Y -> yes
       - N -> no
@@ -549,12 +585,12 @@ It's a dictionary where each key-value pair represents an old `vote`:
 
 ## Changes in old fields by collection
 
-### Group
+#### Group
 
 * group/permissions: poll.can_manage -> agenda_item.can_manage_polls (migration
   is needed)
 
-### Meeting
+#### Meeting
 
 * Fields were removed. No migration necessary:
   * meeting/assignment_poll_default_backend
@@ -577,42 +613,41 @@ It's a dictionary where each key-value pair represents an old `vote`:
   * meeting/*_poll_default_group_ids -> meeting_poll_setting/group_ids
   * meeting/*_poll_sort_poll_result_by_votes -> meeting_poll_setting/sort_result_by_votes
   * meeting/assignment_poll_enable_max_votes_per_option -> meeting_poll_setting/enable_cumulative_voting
-* Fields that need to be moved to all 3 meeting_poll_setting instances related to the meeting:
-  * meeting/poll_enable_max_yes_votes -> meeting_poll_setting/enable_max_yes_votes
-  * meeting/poll_default_required_majority -> meeting_poll_setting/required_majority
+* Field needs to be moved to all 3 meeting_poll_setting instances related to the meeting:
   * meeting/poll_default_live_voting_enabled -> meeting_poll_setting/enable_live_voting
 * Field should be renamed and moved to meeting_poll_setting, values should be changed similarly to poll/type:
   * meeting/*_poll_default_type -> meeting_poll_setting/visibility
 * Field should be moved to meeting_poll_setting and values should be changed similarly to poll/onehundred_percent_base
   (only the onehundred_percent_base field but not strike_out):
-  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_setting/onehundred_percent_base
+  * meeting/*_poll_default_onehundred_percent_base -> meeting_poll_setting/onehundred_percent_base. Defaults if empty based on poll/content_object_id:
+    * assignment_poll_config and topic_poll_config - valid
+    * motion_poll_config - yes_no_abstain
 * Values should be changed and/or used for creating meeting_poll_setting:
   * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_setting/method:
-    * Y -> selection.yes
+    * Y -> selection.yes (default if empty)
     * N -> selection.no
     * YN -> rating_approval.yes_no
     * YNA -> rating_approval.yes_no_abstain
   * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_setting/method:
     * YN -> approval.yes_no
-    * YNA -> approval.yes_no_abstain
-  * meeting/poll_default_method -> meeting/topic_poll_config_id/meeting_poll_setting/method:
-    * N -> selection.no
-* New field:
+    * YNA -> approval.yes_no_abstain (default if empty)
+* New fields:
   * meeting_poll_setting/allow_live_voting -> always True
+  * meeting/topic_poll_config_id/meeting_poll_setting/method -> always selection.yes
 
-### Meeting_user
+#### Meeting_user
 
 * meeting_user/vote_delegated_to_id:
   * Field renamed to meeting_user/vote_delegated_to_ids
   * Type changes from relation to relation-list. In backend vote_delegated_to_ids remains the writing side.
   * Value should be transformed as: value -> list with this value as a single item
 
-### Motion
+#### Motion
 
 * Field was removed. No migration necessary:
   * motion/option_ids
 
-### Poll
+#### Poll
 
 * Fields were removed. No migration necessary:
   * poll/description
@@ -628,7 +663,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll/onehundred_percent_base -> poll_config_X/onehundred_percent_base and
   some values have changed:
   * YN -> yes_no
-  * YNA -> valid
+  * YNA -> yes_no_abstain
   * Y -> no_general
   * N -> no_general (+ poll_config_selection/strike_out: true)
   * valid: no changes.
@@ -657,11 +692,11 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll/entitled_users_at_stop: json-field was replaced with a relation to the
   new collection `poll_entitled_user`
 
-### Poll_candidate_list
+#### Poll_candidate_list
 
 * The `poll_candidate_list` collection was removed. No migration needed.
 
-### Poll_candidate, option -> poll_option
+#### Poll_candidate, option -> poll_option
 
 * Parts `poll_candidate` and `option` were absorbed by the new collection `poll_option`:
   * poll_option/weight:
@@ -677,18 +712,18 @@ It's a dictionary where each key-value pair represents an old `vote`:
     * if collection of content_object_id == "user" -> option/content_object_id
     * fqid from "user" and poll_candidate/user_id
 
-### Option -> other collections
+#### Option -> other collections
 
 * The following fields were removed but have to be used in the migration for
   generating values for generating poll/result:
   * yes, no and abstain
   * vote_ids
 
-### Projection
+#### Projection
 
 * projection/content was removed. No migration necessary.
 
-### Vote -> poll_ballot
+#### Vote -> poll_ballot
 
 * The `vote` collection was renamed into `poll_ballot`.
 * Field was removed. No migration necessary:
@@ -697,7 +732,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * vote/option_id: replaced with the direct relation to the poll. Needs
   migration: vote.option_id/poll_id -> poll_ballot/poll_id.
 
-### Vote -> poll_ballot_user
+#### Vote -> poll_ballot_user
 
 * vote/option_id: replaced with the direct relation to the poll. Needs
   migration: vote.option_id/poll_id -> poll_ballot_user/poll_id.
@@ -708,7 +743,7 @@ It's a dictionary where each key-value pair represents an old `vote`:
 * poll_ballot_user/poll_ballot_id: id of the poll_ballot instance generated
   from the same vote.
 
-### User
+#### User
 
 * Field was removed. No migration necessary:
   * user/poll_voted_ids
