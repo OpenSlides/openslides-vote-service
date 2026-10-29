@@ -139,7 +139,7 @@ func TestSelectionCreateResult(t *testing.T) {
 				{Value: `[3]`, Weight: decimal.NewFromInt(5)},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":"1","2":"2","3":"6","total_ballots":3}`,
+			expectResult: `{"1":"1","2":"2","3":"6","entitled_users":0,"entitled_users_present":0,"total_ballots":3}`,
 		},
 		{
 			name:    "Abstain allowed",
@@ -151,7 +151,7 @@ func TestSelectionCreateResult(t *testing.T) {
 				{Value: `null`, Weight: decimal.NewFromInt(5)},
 			},
 			allowEmpty:   true,
-			expectResult: `{"1":"1","2":"1","empty":"6","total_ballots":3}`,
+			expectResult: `{"1":"1","2":"1","empty":"6","entitled_users":0,"entitled_users_present":0,"total_ballots":3}`,
 		},
 		{
 			name:    "Abstain not allowed",
@@ -163,7 +163,7 @@ func TestSelectionCreateResult(t *testing.T) {
 				{Value: `null`, Weight: decimal.NewFromInt(5)},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":"1","2":"1","invalid":2,"total_ballots":3}`,
+			expectResult: `{"1":"1","2":"1","entitled_users":0,"entitled_users_present":0,"invalid":2,"total_ballots":3}`,
 		},
 		{
 			name:    "Selection nota",
@@ -175,7 +175,7 @@ func TestSelectionCreateResult(t *testing.T) {
 				{Value: `"nota"`, Weight: decimal.NewFromInt(5)},
 			},
 			allowEmpty:   false,
-			expectResult: `{"1":"1","2":"1","nota":"6","total_ballots":3}`,
+			expectResult: `{"1":"1","2":"1","entitled_users":0,"entitled_users_present":0,"nota":"6","total_ballots":3}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestSelectionCreateResult(t *testing.T) {
 			}
 			a.Options = tt.options
 
-			result, err := a.Result(tt.ballots, tt.allowEmpty)
+			result, err := a.Result(tt.ballots, tt.allowEmpty, method.AdditionalResultFields{})
 			if err != nil {
 				t.Fatalf("CreateResult: %v", err)
 			}

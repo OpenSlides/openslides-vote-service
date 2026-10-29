@@ -28,7 +28,7 @@ type Ballot struct {
 type Method interface {
 	Name() string
 	ValidateBallot(ballot json.RawMessage) error
-	Result(votes []Ballot, allowEmpty bool) (string, error)
+	Result(votes []Ballot, allowEmpty bool, meta AdditionalResultFields) (string, error)
 	RequireOptions() bool
 }
 
@@ -207,15 +207,22 @@ func methodFromString(methodStr string) (Method, error) {
 }
 
 const (
-	keyEmpty        = "empty"
-	keyNota         = "nota"
-	keyInvalid      = "invalid"
-	keyTotalBallots = "total_ballots"
+	keyEmpty                = "empty"
+	keyNota                 = "nota"
+	keyInvalid              = "invalid"
+	keyTotalBallots         = "total_ballots"
+	keyEntitledUsers        = "entitled_users"
+	keyEntitledUsersPresent = "entitled_users_present"
 )
 
 var reservedOptionNames = []string{keyEmpty, keyNota, keyInvalid, keyTotalBallots}
 
-func addFieldsToResult(result []byte, totalBallots, invalid int, empty decimal.Decimal) ([]byte, error) {
+type AdditionalResultFields struct {
+	EntitledUsers        int
+	EntitledUsersPresent int
+}
+
+func addFieldsToResult(result []byte, totalBallots, invalid int, empty decimal.Decimal, meta AdditionalResultFields) ([]byte, error) {
 	var data map[string]any
 	if err := json.Unmarshal(result, &data); err != nil {
 		return nil, err
@@ -229,6 +236,8 @@ func addFieldsToResult(result []byte, totalBallots, invalid int, empty decimal.D
 		data[keyEmpty] = empty
 	}
 	data[keyTotalBallots] = totalBallots
+	data[keyEntitledUsers] = meta.EntitledUsers
+	data[keyEntitledUsersPresent] = meta.EntitledUsersPresent
 
 	return json.Marshal(data)
 }
@@ -237,6 +246,7 @@ func iterateValues(
 	m Method,
 	ballots []Ballot,
 	allowEmpty bool,
+	meta AdditionalResultFields,
 	fn func(value string, weight decimal.Decimal, result map[string]decimal.Decimal) error,
 ) (string, error) {
 	result := make(map[string]decimal.Decimal)
@@ -275,7 +285,7 @@ func iterateValues(
 		return "", fmt.Errorf("encode result: %w", err)
 	}
 
-	withExtraFields, err := addFieldsToResult(encodedResult, len(ballots), invalid, empty)
+	withExtraFields, err := addFieldsToResult(encodedResult, len(ballots), invalid, empty, meta)
 	if err != nil {
 		return "", fmt.Errorf("add invalid: %w", err)
 	}

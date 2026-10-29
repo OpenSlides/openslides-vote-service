@@ -1086,7 +1086,7 @@ func TestFinalize(t *testing.T) {
 					t.Fatalf("load poll after finalize: %v", err)
 				}
 
-				if poll.Result != `{"no":"1","total_ballots":2,"yes":"1"}` {
+				if poll.Result != `{"entitled_users":2,"entitled_users_present":2,"no":"1","total_ballots":2,"yes":"1"}` {
 					t.Errorf("Got result %s, expected %s", poll.Result, `{"no":"1","yes":"1"}`)
 				}
 
@@ -1663,7 +1663,7 @@ func TestSecretPoll(t *testing.T) {
 					t.Fatalf("Error: Getting poll: %v", err)
 				}
 
-				expectResult := `{"total_ballots":2,"yes":"2"}`
+				expectResult := `{"entitled_users":3,"entitled_users_present":2,"total_ballots":2,"yes":"2"}`
 				if poll.Result != expectResult {
 					t.Errorf("Got result %s, expected %s", poll.Result, expectResult)
 				}

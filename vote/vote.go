@@ -744,7 +744,8 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) erro
 		return fmt.Errorf("fetch ballots of poll %d: %w", poll.ID, err)
 	}
 
-	if err := generateEntitledUsers(ctx, tx, poll.ID); err != nil {
+	entitledUsers, entitledUsersPresent, err := generateEntitledUsers(ctx, tx, poll.ID)
+	if err != nil {
 		return fmt.Errorf("generate entitled meeting users: %w", err)
 	}
 
@@ -767,7 +768,7 @@ func (v *Vote) pollStop(ctx context.Context, tx pgx.Tx, poll dsmodels.Poll) erro
 		return fmt.Errorf("resolve poll method: %w", err)
 	}
 
-	result, err := CreateResult(pm, poll.AllowVoteSplit, poll.AllowEmpty, ballots)
+	result, err := CreateResult(pm, poll.AllowVoteSplit, poll.AllowEmpty, ballots, entitledUsers, entitledUsersPresent)
 	if err != nil {
 		return fmt.Errorf("create poll result: %w", err)
 	}
@@ -897,7 +898,8 @@ func rewriteBallotsPostgres(ctx context.Context, tx pgx.Tx, pollID int) error {
 	return nil
 }
 
-// generateEntitledUsers populates the poll_entitled_user_t table for a given poll.
+// generateEntitledUsers populates the poll_entitled_user_t table for a given poll
+// and returns the count of all end present entitled users.
 //
 // Algorithm:
 // 1. Fetch the meeting delegation configuration (delegationActivated, forbidDelegateToVote).
@@ -914,8 +916,8 @@ func rewriteBallotsPostgres(ctx context.Context, tx pgx.Tx, pollID int) error {
 //   - If the user did NOT delegate their vote: true if the user itself is present.
 //     c) Delegations activated & delegators allowed to vote: true if the user itself OR at least one of its delegates is present.
 //
-// 4. Insert the candidate users into poll_entitled_user_t.
-func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
+// 4. Insert the candidate users into poll_entitled_user_t and return the counts.
+func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) (entitledUsers int, entitledUsersPresent int, err error) {
 	var meetingConfig struct {
 		delegationActivated  bool
 		forbidDelegateToVote bool
@@ -930,7 +932,7 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 		WHERE p.id = $1`
 
 	if err := tx.QueryRow(ctx, configSQL, pollID).Scan(&meetingConfig.delegationActivated, &meetingConfig.forbidDelegateToVote); err != nil {
-		return fmt.Errorf("getting meeting config: %w", err)
+		return 0, 0, fmt.Errorf("getting meeting config: %w", err)
 	}
 
 	selfPresentSQL := `
@@ -990,22 +992,30 @@ func generateEntitledUsers(ctx context.Context, tx pgx.Tx, pollID int) error {
 			SELECT meeting_user_id FROM voted_users
 			UNION
 			SELECT meeting_user_id FROM group_users
+		),
+		inserted AS (
+			INSERT INTO poll_entitled_user_t (meeting_user_id, poll_id, present)
+			SELECT
+				c.meeting_user_id,
+				$1,
+				(v.meeting_user_id IS NOT NULL OR COALESCE(g.is_present_by_mode, false)) AS present
+			FROM all_candidates c
+			LEFT JOIN voted_users v ON v.meeting_user_id = c.meeting_user_id
+			LEFT JOIN group_users g ON g.meeting_user_id = c.meeting_user_id
+			RETURNING present
 		)
-		INSERT INTO poll_entitled_user_t (meeting_user_id, poll_id, present)
 		SELECT
-			c.meeting_user_id,
-			$1,
-			(v.meeting_user_id IS NOT NULL OR COALESCE(g.is_present_by_mode, false)) AS present
-		FROM all_candidates c
-		LEFT JOIN voted_users v ON v.meeting_user_id = c.meeting_user_id
-		LEFT JOIN group_users g ON g.meeting_user_id = c.meeting_user_id;
+			COALESCE(COUNT(*) FILTER (WHERE present), 0) AS present_count,
+			COALESCE(COUNT(*) FILTER (WHERE NOT present), 0) AS absent_count
+		FROM inserted;
 	`
 
-	if _, err := tx.Exec(ctx, finalSQL, pollID); err != nil {
-		return fmt.Errorf("inserting entitled users: %w", err)
+	var presentCount, absentCount int
+	if err := tx.QueryRow(ctx, finalSQL, pollID).Scan(&presentCount, &absentCount); err != nil {
+		return 0, 0, fmt.Errorf("inserting and counting entitled users: %w", err)
 	}
 
-	return nil
+	return presentCount + absentCount, presentCount, nil
 }
 
 // Reset removes all ballots from a poll and sets its state to created.
@@ -1356,12 +1366,24 @@ func CalcVoteWeight(ctx context.Context, fetch *dsfetch.Fetch, meetingUserID int
 }
 
 // CreateResult creates the result from a list of votes.
-func CreateResult(method method.Method, allowVoteSplit bool, allowEmpty bool, ballots []method.Ballot) (string, error) {
+func CreateResult(
+	m method.Method,
+	allowVoteSplit bool,
+	allowEmpty bool,
+	ballots []method.Ballot,
+	entitledUsers int,
+	entitledUsersPresent int,
+) (string, error) {
 	if allowVoteSplit {
-		ballots = splitVote(method, ballots)
+		ballots = splitVote(m, ballots)
 	}
 
-	return method.Result(ballots, allowEmpty)
+	meta := method.AdditionalResultFields{
+		EntitledUsers:        entitledUsers,
+		EntitledUsersPresent: entitledUsersPresent,
+	}
+
+	return m.Result(ballots, allowEmpty, meta)
 }
 
 func splitVote(m method.Method, ballots []method.Ballot) []method.Ballot {
