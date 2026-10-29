@@ -291,8 +291,9 @@ collections are being migrated differently.
 
 ##### poll_option
 
-A new `poll_option` should be created for each old `option` ("old"). They can
-be found via `old_poll.option_ids`.
+A new `poll_option` should be created for each old `option` ("old") that is not
+a global option for the poll (`option/used_as_global_option_in_poll_id` is Null).
+They can be found via `old_poll.option_ids`.
 
 ```
 {
@@ -317,7 +318,7 @@ Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
-    poll_option.text: option.yes -> string,  (skip if value is 0)
+    poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
@@ -398,7 +399,7 @@ Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
-    poll_option.id: option.yes -> string,  (skip if value is 0)
+    poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
