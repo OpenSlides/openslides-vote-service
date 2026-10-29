@@ -206,7 +206,8 @@ single option. If there is more than one option, then @panic.
 Values for "invalid" and "total_ballots" should be stored as integers. The
 other values are strings as they are decimal.
 
-Example: `{"yes":"32","no":"20","abstain":"10","invalid":2,"total_ballots":64}`
+Example: `{"yes":"32","no":"20","abstain":"10","entitled_users":40,"entitled_users_present":24,"invalid":2,"total_ballots":64}`
+
 
 Calculated from `old_poll.option_ids[0].vote_ids`:
 
@@ -214,6 +215,10 @@ Calculated from `old_poll.option_ids[0].vote_ids`:
 {
   yes: option.yes -> string,  (skip if 0)
   no: option.no -> string,  (skip if 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
+
   abstain: option.abstain -> string,  (skip if 0)
   invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
   total_ballots: old_poll.votescast -> number
@@ -312,13 +317,16 @@ poll_option.text. The value is being calculated from the old votes.
 `global_yes` and `global_no` in polls with `poll_config_selection` are being
 calculated separately into the value "nota".
 
-Example: `{"Option 1":"40","Option 2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
+Example: `{"Option 1":"40","Option 2":"23","entitled_users":40,"entitled_users_present":24,"nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
     poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
@@ -393,13 +401,16 @@ with `content_object_id` instead of `text`.
 Calculated similarly to the topic polls, but ids of the poll_options created
 above are used as the keys instead of the poll_option/text.
 
-Example: `{"1":"40","2":"23","nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
+Example: `{"1":"40","2":"23","entitled_users":40,"entitled_users_present":24,"nota":"6","abstain":"7","invalid":3,"total_ballots":79}`
 
 Calculation:
 ```
 {
   for each option (if not option.used_as_global_option_in_poll_id == old_poll.id):
     poll_option.text: option.no if old_poll.pollmethod = 'N' else option.yes -> string,  (skip if value is 0)
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
 
   abstain: sum(all_options.abstain) -> string,  (skip if 0)
   nota: old_poll.global_option_id -> (option.yes + option.no) -> string,  (skip if 0)
@@ -516,7 +527,7 @@ Poll/result is a dict. There is one entry for each old option. The key is
 the poll_option-id created above. The values "yes", "no" and "abstain" are
 adopted as objects.
 
-Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"invalid":1,"total_ballots":7}`
+Example: `{"1":{"yes":"5","no":"1"},"2":{"yes":"1","abstain":"6"},"entitled_users":40,"entitled_users_present":24,"invalid":1,"total_ballots":7}`
 
 Calculation:
 ```
@@ -527,6 +538,9 @@ Calculation:
       no: option.no -> string,  (skip if 0)
       abstain: option.abstain -> string   (skip if 0)
     },
+
+  entitled_users: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id -> number,
+  entitled_users_present: count(poll_entitled_user) where poll_entitled_user.id = old_poll.id and present = True -> number,
 
   invalid: old_poll.votesinvalid if new_poll.visibility == "manually" -> number,  (skip if 0)
   total_ballots: old_poll.votescast -> number
