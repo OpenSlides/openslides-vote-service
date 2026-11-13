@@ -703,6 +703,30 @@ func TestManually(t *testing.T) {
 				t.Errorf("Update with invalid json returned an unexpected error: %v", err)
 			}
 		})
+
+		t.Run("Update after publish", func(t *testing.T) {
+			err := service.Finalize(ctx, 1, 5, true, false)
+			if err != nil {
+				t.Fatalf("Error publishing poll: %v", err)
+			}
+
+			body := `{
+				"result": {"update_after_publish":"success"}
+			}`
+
+			if err := service.Update(ctx, 1, 5, strings.NewReader(body)); err != nil {
+				t.Errorf("Error updating poll: %v", err)
+			}
+
+			poll, err := dsmodels.New(flow).Poll(1).First(ctx)
+			if err != nil {
+				t.Fatalf("Fetch poll: %v", err)
+			}
+
+			if poll.Result != `{"update_after_publish":"success"}` {
+				t.Errorf("Result does not match")
+			}
+		})
 	})
 }
 
