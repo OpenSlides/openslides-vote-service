@@ -128,7 +128,7 @@ func handleCreate(create creater, auth authenticater) HandlerFunc {
 		}
 
 		result := struct {
-			PollID int `json:"poll_id"`
+			ID int `json:"id"`
 		}{pollID}
 
 		if err := json.NewEncoder(w).Encode(result); err != nil {
