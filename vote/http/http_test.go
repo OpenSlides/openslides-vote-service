@@ -58,7 +58,7 @@ func TestHandleCreate(t *testing.T) {
 		}
 
 		var body struct {
-			PollID int `json:"poll_id"`
+			PollID int `json:"id"`
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -66,7 +66,7 @@ func TestHandleCreate(t *testing.T) {
 		}
 
 		if body.PollID != 42 {
-			t.Errorf("Got poll_id %d, expected 42", body.PollID)
+			t.Errorf("Got id %d, expected 42", body.PollID)
 		}
 	})
 
