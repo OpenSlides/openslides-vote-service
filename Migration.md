@@ -65,11 +65,6 @@ unpublished results of the polls.
 
 ## Migrating the polls
 
-NOTE: there parts are still in dicsussion and may change:
-
-* Migration of the assignment polls
-* Possible onehundred_percent_base values based on the old logic
-
 ### General rules
 
 The following information is relevant for all the poll types.
@@ -104,8 +99,8 @@ polls. For each item in `entitled_users_at_stop` an entry of
 ```
 
 How the data should be migrated depends on whether it is a motion, assignment
-or a topic poll. When it comes to assignement polls, there are 3 possibilities
-based on content_object_id and whether the global yes or no option is used.
+or a topic poll. When it comes to assignement polls, there are 4 possibilities
+based on poll settings and content_object_id of the option.
 
 #### poll_ballot objects and poll/result
 
@@ -273,7 +268,7 @@ a `poll_option`:
 
 In the old system for each pair user-option a sepatate `vote` was created. A single
 `poll_ballot` should be generated for each group of the votes with the same
-`user_token` and `poll_id`..
+`user_token` and `poll_id`.
 
 #### topic
 
@@ -350,11 +345,7 @@ Calculation (one `poll_ballot` per each `user_token`):
 
 #### assignment with max_votes_per_option > 1
 
-The following collections should be created the same way
-as for the [Topic poll](#topic):
-
-* poll
-* poll_ballot
+Poll should be created the same way as the [Topic poll](#topic).
 
 Other collection have minor differences.
 
@@ -419,6 +410,27 @@ Calculation:
 }
 ```
 
+##### poll_ballot
+
+Calculation (one `poll_ballot` per each `user_token`):
+
+```
+{
+  poll_id: new_poll.id,
+  weight: old.weight,
+  split: false,
+  value: see below,
+}
+```
+
+`poll_ballot.value` is an object where each key-value pair
+represents an old `vote`:
+
+* key: vote.option_id
+* value: vote.weight
+
+Example: `{"1":"1.000000","2":"2.000000"}`.
+
 #### assignment with global_yes or global_no
 
 Assignment polls with `global_yes` or `global_no` in the new voting system will
@@ -433,13 +445,15 @@ Migrate poll this way if:
 * `max_votes_per_option` <= 1
 
 The following collections should be created the same way
-as for the [Assignment polls with max_votes_per_option > 1](#assignment-with-max_votes_per_option--1):
+as for the [Topic poll](#topic):
 
 * poll
-* poll_option
 * poll_ballot
 
-Other collection have minor differences.
+
+poll_option should be created like for [Assignment polls with max_votes_per_option > 1](#assignment-with-max_votes_per_option--1):
+
+Other collection have minor differences from both of these poll types.
 
 ##### poll_config_selection
 
@@ -473,7 +487,8 @@ Calculated similarly to the assignment polls with max_votes_per_option > 1.
 
 #### assignment: other cases
 
-`poll_option` entries should be created similarly as for other assignment polls.
+`poll` and `poll_option` entries should be created similarly to the other
+assignment polls.
 Other collections are to be migrated differently.
 
 ##### poll_config_rating_approval
@@ -494,30 +509,6 @@ Other collections are to be migrated differently.
       - disabled: (remains unchanged).
       - Y -> @panic(not allowed for this config type)
       - N -> @panic(not allowed for this config type)
-}
-```
-
-##### poll
-
-```
-{
-  title: old.title,
-  visibility: old.type. Map (old -> new):
-      - analog -> manually
-      - named -> open
-      - pseudoanonymous -> secret
-      - cryptographic -> secret
-  state: if old.state == "published" then "finished" else old.state,
-  result: see below,
-  published: old.state == "published",
-  anonymized: old.is_pseudoanonymized,
-  allow_invalid: false,
-  allow_vote_split: false,
-  live_voting_enabled: old.live_voting_enabled,
-  sequential_number: old.sequential_number,
-  content_object_id: old.content_object_id,
-  entitled_group_ids: old.entitled_group_ids,
-  meeting_id: old.meeting_id
 }
 ```
 
@@ -624,13 +615,13 @@ It's a dictionary where each key-value pair represents an old `vote`:
     * motion_poll_config - yes_no_abstain
 * Values should be changed and/or used for creating meeting_poll_setting:
   * meeting/assignment_poll_default_method -> meeting/assignment_poll_config_id/meeting_poll_setting/method:
-    * Y -> selection.yes (default if empty)
+    * Y -> selection.yes (default if empty or invalid)
     * N -> selection.no
     * YN -> rating_approval.yes_no
     * YNA -> rating_approval.yes_no_abstain
   * meeting/motion_poll_default_method -> meeting/motion_poll_config_id/meeting_poll_setting/method:
     * YN -> approval.yes_no
-    * YNA -> approval.yes_no_abstain (default if empty)
+    * YNA -> approval.yes_no_abstain (default if empty or invalid)
 * New fields:
   * meeting_poll_setting/allow_live_voting -> always True
   * meeting/topic_poll_config_id/meeting_poll_setting/method -> always selection.yes
